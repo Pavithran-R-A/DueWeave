@@ -43,7 +43,7 @@
 
 - [x] Confirm the Stage 2 branch, remote commit, approved tags, and clean working tree; create `stage-3-core-product` without rewriting history.
 - [x] Audit the existing Stage 2 client, receivable, promise, payment, follow-up, and queue implementations against the approved Stage 3 journey.
-- [ ] Establish a controlled, non-secret browser E2E account strategy and validate signup, login, wrong-password, logout, protected-route, reload, expiry, recovery, and confirmation behavior within default-email limits.
+- [x] Establish a controlled, non-secret browser E2E account strategy and validate signup, login, wrong-password, logout, protected-route, reload, expiry, recovery, and confirmation behavior within default-email limits; external email delivery remains explicitly limited in the Stage 3 report.
 - [x] Strengthen real client creation, validation, persistence, refresh, and User A/User B isolation behavior.
 - [x] Strengthen real receivable creation, paise conversion, money validation, persistence, free-plan limit UX, and direct-bypass defense.
 - [x] Complete persistent promise creation, local-business-date handling, lazy/idempotent broken-promise behavior, and immutable promise lifecycle transitions.

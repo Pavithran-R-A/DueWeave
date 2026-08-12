@@ -12,13 +12,17 @@ The temporary fixture's business records were removed after the passing run. Its
 
 The companion gateway suite was run without credentials. Its **3 passed / 0 failed** results confirm that signed-out visitors are redirected away from the private ledger, invalid sign-in feedback remains non-technical, and the password-recovery entry point is available without disclosing whether an account exists.
 
+## Bounded Authentication Lifecycle — PASS
+
+The final controlled lifecycle smoke test added **2 passed / 0 failed** checks. It verifies that an unavailable sign-up remains at the auth gateway and shows only a normalized `role="alert"` message rather than the raw provider response, and that removing the persisted browser auth token causes a safe redirect to the auth gateway on reload. This supplies browser evidence for safe session loss and sign-up failure handling without sending confirmation messages to an unowned mailbox.
+
 ## Controlled Email Delivery — LIMITED
 
 The project retains Supabase email confirmation and uses no paid SMTP provider. A controlled inbox was not available through the current environment, so receipt of a confirmation email, receipt of a password-reset email, and completion of a reset through an emailed link were not performed. This is documented as **LIMITED**, not as a successful delivery check. No confirmation policy, Auth setting, or rate limit was weakened for testing.
 
 ## Scope Boundary
 
-The browser lifecycle demonstrates real sign-in, authenticated persistence, reload persistence, logout, re-login, and paid-history visibility. It does not claim a browser-automated signup-confirmation or email-reset completion. Database rollback matrices and unit/contract coverage remain the evidence for cross-tenant isolation, free-plan bypass resistance, payment integrity, immutable promise history, and idempotent promise transitions.
+The browser lifecycle demonstrates real sign-in, authenticated persistence, reload persistence, logout, re-login, paid-history visibility, safe unavailable-signup handling, and safe session loss. It does not claim a browser-automated signup-confirmation or email-reset completion. Database rollback matrices and unit/contract coverage remain the evidence for cross-tenant isolation, free-plan bypass resistance, payment integrity, immutable promise history, and idempotent promise transitions.
 
 ## Responsive Screenshot Check
 

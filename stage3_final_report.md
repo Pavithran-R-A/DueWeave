@@ -116,7 +116,7 @@ Follow-up actions persist activity through the guarded database workflow. Snoozi
 | Layer | Final result | Coverage highlights |
 |---|---:|---|
 | Vitest | 27 passed | Finance helpers, data adapters, public config, logout, RLS/security contracts, workflow invariants |
-| Playwright Chromium | 6 passed | Protected route, safe invalid login, recovery entry, lifecycle, responsive views, accessibility smoke |
+| Playwright Chromium | 8 passed | Protected route, safe invalid login, recovery entry, lifecycle, safe session loss, safe unavailable-signup handling, responsive views, accessibility smoke |
 | TypeScript | 0 errors | Application and tests compile cleanly |
 | Database matrices | PASS | Owner isolation, Free-plan enforcement, payment/promise integrity, snooze persistence |
 
@@ -146,7 +146,7 @@ The project remains associated with the private repository `Pavithran-R-A/projec
 
 | Item | Status | Rationale and next action |
 |---|---|---|
-| Email confirmation and reset delivery | LIMITED | The UI and non-enumerating recovery entry are verified, but no controlled mailbox was available to prove email receipt or complete an emailed reset. No Auth policy was weakened. Re-verify with an owned test inbox before relying on those emails operationally. |
+| Email confirmation and reset delivery | LIMITED | The UI, normalised unavailable-signup feedback, and non-enumerating recovery entry are verified, but no controlled mailbox was available to prove email receipt or complete an emailed reset. No Auth policy was weakened. Re-verify with an owned test inbox before relying on those emails operationally. |
 | Session-expiry browser flow | LIMITED | Protected routes and expired/failed auth responses are handled safely, but an artificially expired live session was not forced in browser automation. |
 | Bundle advisory | NON-BLOCKING | Route splitting reduced the initial entry materially, but Vite still reports a shared chunk above its advisory threshold. Further dependency-level splitting is an optimization, not a beta blocker. |
 | Payment collection | OUT OF SCOPE | DueWeave records receivables and promises; it does not integrate a payment processor in this stage. |
