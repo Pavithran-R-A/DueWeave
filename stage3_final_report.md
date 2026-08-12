@@ -140,7 +140,7 @@ Stage 3 introduces **no paid runtime service**. The release remains within the s
 
 ## GITHUB
 
-The project remains associated with the private repository `Pavithran-R-A/project-ar1`. Stage 3 work is prepared on the dedicated `stage-3-beta-readiness` branch. Existing `stage-1-approved` and `stage-2-secure-foundation` tags have not been changed, and no force push is used. The final commit hash, pushed branch status, and Stage 3 tag are recorded after the release commit and push complete.
+The project remains associated with the private repository `Pavithran-R-A/project-ar1`. The immutable Stage 3 product release commit is **`a36b7fb91a47ad80958b9bfba9a8e81f28f483da`**, pushed to the dedicated `stage-3-beta-readiness` branch and tracked at `github/stage-3-beta-readiness`. The annotated `stage-3-beta-readiness` tag resolves to that same release commit. The final project checkpoint also records version **`a36b7fb9`**. Existing `stage-1-approved` and `stage-2-secure-foundation` tags were not changed, and no force push was used.
 
 ## KNOWN LIMITATIONS
 

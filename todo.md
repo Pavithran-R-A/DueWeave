@@ -54,7 +54,7 @@
 - [x] Add and run unit/integration regression coverage for money, queue priority, lifecycle, atomicity, free-plan bypass, and all Stage 3 RPC/function security boundaries.
 - [x] Re-run RLS/anonymous/IDOR/entitlement security tests and scan all source, build, and Git history for secrets.
 - [x] Verify accessibility, responsive authenticated data views at 360/390/430/768/1024/1440, meaningful performance improvements, production build, and dependency audit.
-- [ ] Commit, push, tag `stage-3-beta-readiness` only after PASS, checkpoint, and deliver the exact required Stage 3 report without beginning Stage 4.
+- [x] Commit, push, tag `stage-3-beta-readiness` only after PASS, checkpoint, and deliver the exact required Stage 3 report without beginning Stage 4.
 - [x] Verify Stage 3 client list refresh and explicit User A/User B client read/write isolation for the standalone client workflow.
 - [x] Verify graceful free-plan limit feedback for standalone receivable creation and regression-test the limit handling path.
 - [x] Verify that the live FollowUpSheet action calls `recordContacted`, refreshes Today and timeline state, and never sends a WhatsApp message automatically.
@@ -64,6 +64,6 @@
 - [x] Remove every temporary controlled E2E business record, Auth user, and Auth identity after final browser validation.
 - [x] Run and document explicit accessibility verification for auth and authenticated views, including keyboard order, visible focus, labels, dialog behavior, alerts, and reduced-motion semantics.
 - [x] Verify and document the auth error alert semantics and re-run the final production build after the accessibility changes.
-- [ ] Commit the verified Stage 3 source and report on `stage-3-beta-readiness`, recording the immutable release hash.
-- [ ] Push and verify the `stage-3-beta-readiness` GitHub upstream without force-pushing or altering protected tags.
-- [ ] Create and verify the annotated `stage-3-beta-readiness` tag, save the final project checkpoint, and record release status in the report.
+- [x] Commit the verified Stage 3 source and report on `stage-3-beta-readiness`, recording the immutable release hash.
+- [x] Push and verify the `stage-3-beta-readiness` GitHub upstream without force-pushing or altering protected tags.
+- [x] Create and verify the annotated `stage-3-beta-readiness` tag, save the final project checkpoint, and record release status in the report.
