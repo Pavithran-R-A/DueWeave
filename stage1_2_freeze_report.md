@@ -39,4 +39,6 @@ The existing dependency graph was not expanded. `pnpm audit --prod` completed it
 
 ## Ownership boundary
 
-The source is ready to export to a **private** GitHub repository named `project-ar1` (or `project-ar1-app` if the first name is unavailable). The repository must contain source and documentation only; no credentials, `.env` files, build output, or platform-local secrets should be committed.
+The complete editable source was successfully pushed to the **private** repository [`Pavithran-R-A/project-ar1`](https://github.com/Pavithran-R-A/project-ar1). The default branch is `main`, local `main` tracks `github/main`, the remote and local commits are in parity, and the working tree is clean. The `stage-1-approved` tag was created and pushed after removing the platform-managed preview artifact from the export. The remote source tree contains 95 files and no `.env` files, build output, dependency directories, logs, or `__manus__` platform files.
+
+The repository contains source and documentation only. No credentials, tokens, secrets, or personal payment details were committed. Stage 2 remains explicitly out of scope; no Supabase, backend, payments, deployment, native packaging, or messaging integrations were started.

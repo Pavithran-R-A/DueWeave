@@ -7,6 +7,6 @@
 - [x] Confirm demo financial data remains isolated from UI/application logic.
 - [x] Audit dependencies, secrets, `.gitignore`, and environment handling; do not add paid or hosted runtime dependencies.
 - [x] Create or update the professional README with current scope, zero-cost constraints, security boundary, and roadmap.
-- [ ] Export the complete source to a new private GitHub repository named `project-ar1` or `project-ar1-app` using supported GitHub integration.
+- [x] Export the complete source to the private GitHub repository `Pavithran-R-A/project-ar1` using the authorized GitHub integration.
 - [x] Run typecheck, lint, tests, production build, and runtime checks at 360px, 390px, and 1440px.
-- [ ] Save the approved Stage 1.2 checkpoint and report the repository status without starting Stage 2.
+- [x] Save the approved Stage 1.2 checkpoint and report the repository status without starting Stage 2.
