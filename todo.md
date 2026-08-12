@@ -34,7 +34,7 @@
 - [x] Scan source, build output, and Stage 2 history for secrets and audit runtime dependency vulnerabilities.
 - [x] Remediate Supabase advisor findings by revoking default public and anonymous execution of security-definer functions.
 - [x] Run all tests, typecheck, production build, and responsive UI verification at 360, 390, 768, and 1440 pixels.
-- [ ] Commit, push, and checkpoint the verified Stage 2 foundation without beginning Stage 3.
+- [x] Commit, push, and checkpoint the verified Stage 2 foundation without beginning Stage 3.
 - [x] Preserve the approved Stage 1 UI and keep purchase, payment, deployment, and Stage 3 launch work out of scope.
 - [x] Verify cross-tenant isolation, invalid-data rejection, auth flows, error/loading states, tests, build, and responsive UI.
-- [ ] Save the Stage 2 foundation checkpoint and deliver a bounded report.
+- [x] Save the Stage 2 foundation checkpoint and deliver a bounded report.
