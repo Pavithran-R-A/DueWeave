@@ -5,6 +5,7 @@ import { ArrowUpRight, CalendarDays, ChevronRight, ClipboardList, Filter, LockKe
 import { toast } from "sonner";
 import { BRAND } from "@/config/brand";
 import { createDemoState, DEMO_TODAY } from "@/data/demo";
+import { createLocalRepository } from "@/data/repository";
 import { daysBetween, formatDate, formatINR, getClient, getLatestPromise, getOutstanding, getPaidAmount, getPromiseStatusLabel, getPromisesFor, getQueue, getSuggestion, interpolateMessage, messageTemplates, priorityBreakdown, priorityReasons } from "@/lib/finance";
 import type { AppSection, DemoState, PaymentMethod, PromiseSource, PromiseStatus, Receivable } from "@/types/domain";
 import { AppRail, BottomNav, EmptyStateCard, ErrorState, Field, LoadingState, Metric, PageHeader, QueueCard, Reliability, Sheet, StatusPill, Timeline } from "@/components/finance-ui";
@@ -12,7 +13,8 @@ import { AddPromiseSheet, AddReceivableSheet, FollowUpSheet, PaymentSheet, Upgra
 
 function App() {
   const [active, setActive] = useState<AppSection>("today");
-  const [state, setState] = useState<DemoState>(() => createDemoState());
+  const [repository] = useState(() => createLocalRepository(createDemoState()));
+  const [state, setState] = useState<DemoState>(() => repository.read());
   const [selectedReceivableId, setSelectedReceivableId] = useState("recv-rajesh");
   const [selectedClientId, setSelectedClientId] = useState("client-nova");
   const [sheet, setSheet] = useState<"receivable" | "promise" | "payment" | "followup" | "upgrade" | null>(null);
@@ -20,6 +22,13 @@ function App() {
   const [selectedFilter, setSelectedFilter] = useState<"open" | "all" | "paid">("open");
 
   useEffect(() => { localStorage.setItem("dueweave-theme", theme); }, [theme]);
+  function commit(update: (current: DemoState) => DemoState) {
+    setState((current) => {
+      const next = update(current);
+      repository.write(next);
+      return next;
+    });
+  }
   const selectedReceivable = state.receivables.find((item) => item.id === selectedReceivableId) ?? state.receivables[0];
   const selectedClient = selectedReceivable ? getClient(selectedReceivable.clientId, state.clients) : state.clients[0];
   const queue = useMemo(() => getQueue(state), [state]);
@@ -36,7 +45,7 @@ function App() {
     const receivableId = `recv-${Date.now()}`;
     const newClient = { id: clientId, name: input.clientName || input.company, company: input.company || input.clientName, phone: input.phone, email: input.email, notes: input.notes, createdAt: DEMO_TODAY };
     const newReceivable: Receivable = { id: receivableId, clientId, title: input.invoiceRef || "New client work", invoiceRef: input.invoiceRef, amountDuePaise: input.amountPaise, dueDate: input.dueDate, createdAt: DEMO_TODAY, notes: input.notes, status: "OPEN" };
-    setState((current) => ({ ...current, clients: [...current.clients, newClient], receivables: [...current.receivables, newReceivable], activities: [...current.activities, { id: `act-${Date.now()}`, clientId, receivableId, type: "created", occurredAt: DEMO_TODAY, note: `Receivable created for ${newReceivable.title}.` }] }));
+    commit((current) => ({ ...current, clients: [...current.clients, newClient], receivables: [...current.receivables, newReceivable], activities: [...current.activities, { id: `act-${Date.now()}`, clientId, receivableId, type: "created", occurredAt: DEMO_TODAY, note: `Receivable created for ${newReceivable.title}.` }] }));
     setSelectedReceivableId(receivableId); setSelectedClientId(clientId); setSheet(null); navigate("today"); toast.success("Receivable added", { description: "It is now part of your Today queue." });
   }
 
@@ -45,7 +54,7 @@ function App() {
     const previous = getLatestPromise(selectedReceivable.id, state.promises);
     const nextSequence = getPromisesFor(selectedReceivable.id, state.promises).length + 1;
     const promiseId = `promise-${Date.now()}`;
-    setState((current) => ({ ...current, promises: [...current.promises.map((promise) => promise.id === previous?.id && promise.status === "ACTIVE" ? { ...promise, status: "RENEGOTIATED" as PromiseStatus, resolvedAt: DEMO_TODAY } : promise), { id: promiseId, receivableId: selectedReceivable.id, sequenceNo: nextSequence, promisedAmountPaise: input.amountPaise, promisedDate: input.promisedDate, source: input.source, note: input.note, status: "ACTIVE", createdAt: DEMO_TODAY }], activities: [...current.activities, ...(previous?.status === "ACTIVE" ? [{ id: `act-renegotiated-${Date.now()}`, clientId: selectedReceivable.clientId, receivableId: selectedReceivable.id, type: "note" as const, occurredAt: DEMO_TODAY, note: "Previous promise kept in history as renegotiated.", promiseId: previous.id }] : []), { id: `act-promise-${Date.now()}`, clientId: selectedReceivable.clientId, receivableId: selectedReceivable.id, type: "promise", occurredAt: DEMO_TODAY, note: `New promise recorded for ${formatINR(input.amountPaise)} by ${formatDate(input.promisedDate)}.`, amountPaise: input.amountPaise, promiseId }] }));
+    commit((current) => ({ ...current, promises: [...current.promises.map((promise) => promise.id === previous?.id && promise.status === "ACTIVE" ? { ...promise, status: "RENEGOTIATED" as PromiseStatus, resolvedAt: DEMO_TODAY } : promise), { id: promiseId, receivableId: selectedReceivable.id, sequenceNo: nextSequence, promisedAmountPaise: input.amountPaise, promisedDate: input.promisedDate, source: input.source, note: input.note, status: "ACTIVE", createdAt: DEMO_TODAY }], activities: [...current.activities, ...(previous?.status === "ACTIVE" ? [{ id: `act-renegotiated-${Date.now()}`, clientId: selectedReceivable.clientId, receivableId: selectedReceivable.id, type: "note" as const, occurredAt: DEMO_TODAY, note: "Previous promise kept in history as renegotiated.", promiseId: previous.id }] : []), { id: `act-promise-${Date.now()}`, clientId: selectedReceivable.clientId, receivableId: selectedReceivable.id, type: "promise", occurredAt: DEMO_TODAY, note: `New promise recorded for ${formatINR(input.amountPaise)} by ${formatDate(input.promisedDate)}.`, amountPaise: input.amountPaise, promiseId }] }));
     setSheet(null); toast.success("Promise added", { description: "The old commitment remains in the timeline." });
   }
 
@@ -54,13 +63,13 @@ function App() {
     const nextPaid = getPaidAmount(selectedReceivable.id, state.payments) + input.amountPaise;
     const remaining = Math.max(0, selectedReceivable.amountDuePaise - nextPaid);
     const latest = getLatestPromise(selectedReceivable.id, state.promises);
-    setState((current) => ({ ...current, payments: [...current.payments, { id: `payment-${Date.now()}`, receivableId: selectedReceivable.id, amountPaise: input.amountPaise, paidDate: input.paidDate, method: input.method, reference: input.reference, createdAt: DEMO_TODAY }], receivables: current.receivables.map((item) => item.id === selectedReceivable.id ? { ...item, status: remaining === 0 ? "PAID" : "PARTIALLY_PAID" } : item), promises: current.promises.map((promise) => promise.id === latest?.id && latest.status === "ACTIVE" ? { ...promise, status: remaining === 0 || input.amountPaise >= promise.promisedAmountPaise ? "KEPT" as const : "PARTIALLY_KEPT" as const, resolvedAt: DEMO_TODAY } : promise), activities: [...current.activities, { id: `act-payment-${Date.now()}`, clientId: selectedReceivable.clientId, receivableId: selectedReceivable.id, type: "payment", occurredAt: input.paidDate, note: `${formatINR(input.amountPaise)} payment recorded by ${input.method.toLowerCase()}.`, amountPaise: input.amountPaise }] }));
+    commit((current) => ({ ...current, payments: [...current.payments, { id: `payment-${Date.now()}`, receivableId: selectedReceivable.id, amountPaise: input.amountPaise, paidDate: input.paidDate, method: input.method, reference: input.reference, createdAt: DEMO_TODAY }], receivables: current.receivables.map((item) => item.id === selectedReceivable.id ? { ...item, status: remaining === 0 ? "PAID" : "PARTIALLY_PAID" } : item), promises: current.promises.map((promise) => promise.id === latest?.id && latest.status === "ACTIVE" ? { ...promise, status: remaining === 0 || input.amountPaise >= promise.promisedAmountPaise ? "KEPT" as const : "PARTIALLY_KEPT" as const, resolvedAt: DEMO_TODAY } : promise), activities: [...current.activities, { id: `act-payment-${Date.now()}`, clientId: selectedReceivable.clientId, receivableId: selectedReceivable.id, type: "payment", occurredAt: input.paidDate, note: `${formatINR(input.amountPaise)} payment recorded by ${input.method.toLowerCase()}.`, amountPaise: input.amountPaise }] }));
     setSheet(null); toast.success(remaining === 0 ? `${formatINR(input.amountPaise)} collected` : "Payment recorded", { description: remaining === 0 ? "This receivable is now fully paid." : `${formatINR(remaining)} remains outstanding.` });
   }
 
   function markContacted() {
     if (!selectedReceivable) return;
-    setState((current) => ({ ...current, activities: [...current.activities, { id: `act-contact-${Date.now()}`, clientId: selectedReceivable.clientId, receivableId: selectedReceivable.id, type: "contacted", occurredAt: DEMO_TODAY, note: "Follow-up marked as contacted." }] }));
+    commit((current) => ({ ...current, activities: [...current.activities, { id: `act-contact-${Date.now()}`, clientId: selectedReceivable.clientId, receivableId: selectedReceivable.id, type: "contacted", occurredAt: DEMO_TODAY, note: "Follow-up marked as contacted." }] }));
     setSheet(null); toast.success("Follow-up marked", { description: "The queue will remember this touchpoint." });
   }
 
