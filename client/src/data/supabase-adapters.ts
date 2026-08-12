@@ -52,7 +52,8 @@ export function toPayment(row: Row): Payment {
 
 export function toActivity(row: Row): Activity {
   const databaseType = string(row.type).toUpperCase();
-  return { id: string(row.id), clientId: string(row.client_id), receivableId: string(row.receivable_id), promiseId: optionalString(row.promise_id), type: activityTypeByDatabaseValue[databaseType] ?? "note", occurredAt: calendarDate(row.occurred_at), note: string(row.note), amountPaise: typeof row.amount_paise === "undefined" || row.amount_paise === null ? undefined : paise(row.amount_paise) };
+  const metadata = row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata) ? row.metadata as Row : {};
+  return { id: string(row.id), clientId: string(row.client_id), receivableId: string(row.receivable_id), promiseId: optionalString(row.promise_id), type: activityTypeByDatabaseValue[databaseType] ?? "note", occurredAt: calendarDate(row.occurred_at), note: string(row.note), amountPaise: typeof row.amount_paise === "undefined" || row.amount_paise === null ? undefined : paise(row.amount_paise), snoozedUntil: databaseType === "SNOOZED" ? optionalString(metadata.snoozed_until) : undefined };
 }
 
 export function promiseSourceToDatabase(source: PromiseSource) {
@@ -67,6 +68,13 @@ export function userFacingDataError(message?: string) {
   const normalized = (message ?? "").toLowerCase();
   if (normalized.includes("free plan allows")) return "Your Free plan allows up to three active receivables. Close or settle one before adding another.";
   if (normalized.includes("within the remaining balance")) return "The amount must be greater than zero and no more than the remaining balance.";
+  if (normalized.includes("valid positive receivable amount") || normalized.includes("amount greater than zero")) return "Enter a valid amount greater than zero.";
+  if (normalized.includes("client name") || normalized.includes("business name")) return "Add a short client or business name before saving.";
+  if (normalized.includes("valid email")) return "Enter a valid email address or leave it blank.";
+  if (normalized.includes("valid phone")) return "Enter a valid phone number or leave it blank.";
+  if (normalized.includes("due date") || normalized.includes("business date")) return "Choose a valid business date.";
+  if (normalized.includes("receivable label")) return "Add a short label for this receivable.";
+  if (normalized.includes("snooze date")) return "Choose today or a future date to snooze this follow-up.";
   if (normalized.includes("closed receivable")) return "This receivable is already closed, so it cannot receive a new promise.";
   if (normalized.includes("not available for this account")) return "That item is not available in this private ledger.";
   if (normalized.includes("authentication")) return "Your session has expired. Please sign in again.";

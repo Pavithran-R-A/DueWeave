@@ -38,3 +38,32 @@
 - [x] Preserve the approved Stage 1 UI and keep purchase, payment, deployment, and Stage 3 launch work out of scope.
 - [x] Verify cross-tenant isolation, invalid-data rejection, auth flows, error/loading states, tests, build, and responsive UI.
 - [x] Save the Stage 2 foundation checkpoint and deliver a bounded report.
+
+## Stage 3 Complete Authenticated Product Workflow
+
+- [x] Confirm the Stage 2 branch, remote commit, approved tags, and clean working tree; create `stage-3-core-product` without rewriting history.
+- [x] Audit the existing Stage 2 client, receivable, promise, payment, follow-up, and queue implementations against the approved Stage 3 journey.
+- [ ] Establish a controlled, non-secret browser E2E account strategy and validate signup, login, wrong-password, logout, protected-route, reload, expiry, recovery, and confirmation behavior within default-email limits.
+- [x] Strengthen real client creation, validation, persistence, refresh, and User A/User B isolation behavior.
+- [x] Strengthen real receivable creation, paise conversion, money validation, persistence, free-plan limit UX, and direct-bypass defense.
+- [x] Complete persistent promise creation, local-business-date handling, lazy/idempotent broken-promise behavior, and immutable promise lifecycle transitions.
+- [x] Complete atomic partial-payment, final-payment, overpayment rejection, payment-history, replacement-promise, and recovery-total workflows.
+- [x] Connect all Today metrics, deterministic queue explanations, client history, reliability metrics, and refresh behavior to real authenticated data.
+- [x] Complete snooze, follow-up composer, safe WhatsApp deep links, copy, and persisted mark-contacted behavior without sending messages automatically.
+- [x] Add lightweight browser E2E coverage for the authenticated core journey without committing credentials or weakening confirmation security.
+- [x] Add and run unit/integration regression coverage for money, queue priority, lifecycle, atomicity, free-plan bypass, and all Stage 3 RPC/function security boundaries.
+- [x] Re-run RLS/anonymous/IDOR/entitlement security tests and scan all source, build, and Git history for secrets.
+- [x] Verify accessibility, responsive authenticated data views at 360/390/430/768/1024/1440, meaningful performance improvements, production build, and dependency audit.
+- [ ] Commit, push, tag `stage-3-beta-readiness` only after PASS, checkpoint, and deliver the exact required Stage 3 report without beginning Stage 4.
+- [x] Verify Stage 3 client list refresh and explicit User A/User B client read/write isolation for the standalone client workflow.
+- [x] Verify graceful free-plan limit feedback for standalone receivable creation and regression-test the limit handling path.
+- [x] Verify that the live FollowUpSheet action calls `recordContacted`, refreshes Today and timeline state, and never sends a WhatsApp message automatically.
+- [x] Make the controlled authenticated E2E assertion deterministic when the new client name appears in both the client list and the client detail heading.
+- [x] Refresh Stage 3 browser-QA evidence so it accurately distinguishes passing controlled lifecycle coverage from email-delivery limits.
+- [x] Audit the production bundle and apply only materially useful route-level code splitting without changing the approved UI.
+- [x] Remove every temporary controlled E2E business record, Auth user, and Auth identity after final browser validation.
+- [x] Run and document explicit accessibility verification for auth and authenticated views, including keyboard order, visible focus, labels, dialog behavior, alerts, and reduced-motion semantics.
+- [x] Verify and document the auth error alert semantics and re-run the final production build after the accessibility changes.
+- [ ] Commit the verified Stage 3 source and report on `stage-3-beta-readiness`, recording the immutable release hash.
+- [ ] Push and verify the `stage-3-beta-readiness` GitHub upstream without force-pushing or altering protected tags.
+- [ ] Create and verify the annotated `stage-3-beta-readiness` tag, save the final project checkpoint, and record release status in the report.

@@ -68,6 +68,7 @@ export interface Activity {
   note: string;
   amountPaise?: number;
   promiseId?: string;
+  snoozedUntil?: string;
 }
 
 export interface DemoState {

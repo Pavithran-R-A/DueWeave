@@ -13,6 +13,7 @@ export class SupabaseDashboardRepository {
   private readonly activities = new SupabaseActivityRepository();
 
   async read(): Promise<DemoState> {
+    await this.promises.markDuePromisesBroken();
     const [clients, receivables, promises, payments, activities] = await Promise.all([this.clients.list(), this.receivables.list(), this.promises.list(), this.payments.list(), this.activities.list()]);
     return { clients, receivables, promises, payments, activities };
   }

@@ -3,14 +3,15 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Loader2 } from "lucide-react";
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { Route, Switch, useLocation } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { useSupabaseAuth } from "./hooks/useSupabaseAuth";
-import Auth from "./pages/Auth";
-import Home from "./pages/Home";
 import NotFound from "./pages/NotFound";
+
+const Auth = lazy(() => import("./pages/Auth"));
+const Home = lazy(() => import("./pages/Home"));
 
 function SessionLoading() {
   return <main className="auth-loading" aria-live="polite"><Loader2 className="spin" size={24} /><span>Opening your private ledger…</span></main>;
@@ -43,7 +44,7 @@ function AuthRoute() {
 }
 
 function App() {
-  return <ErrorBoundary><ThemeProvider defaultTheme="light"><TooltipProvider><Toaster position="top-right" /><Switch><Route path="/auth" component={AuthRoute} /><Route path="/auth/update-password" component={Auth} /><Route path="/" component={ProtectedHome} /><Route component={NotFound} /></Switch></TooltipProvider></ThemeProvider></ErrorBoundary>;
+  return <ErrorBoundary><ThemeProvider defaultTheme="light"><TooltipProvider><Toaster position="top-right" /><Suspense fallback={<SessionLoading />}><Switch><Route path="/auth" component={AuthRoute} /><Route path="/auth/update-password" component={Auth} /><Route path="/" component={ProtectedHome} /><Route component={NotFound} /></Switch></Suspense></TooltipProvider></ThemeProvider></ErrorBoundary>;
 }
 
 export default App;

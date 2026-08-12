@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { toActivity, toPayment, toPromise, toReceivable } from "./supabase-adapters";
+import { toActivity, toPayment, toPromise, toReceivable, userFacingDataError } from "./supabase-adapters";
 
 describe("Supabase domain adapters", () => {
   it("preserves integer paise amounts and normalizes database enum values", () => {
@@ -15,5 +15,9 @@ describe("Supabase domain adapters", () => {
   it("converts activity timestamps into the date-only format consumed by the approved timeline", () => {
     const activity = toActivity({ id: "a1", client_id: "c1", receivable_id: "r1", promise_id: null, type: "PAYMENT_RECORDED", occurred_at: "2026-08-12T10:30:00.000Z", note: "Payment recorded", amount_paise: "5000" });
     expect(activity).toMatchObject({ type: "payment", occurredAt: "2026-08-12", amountPaise: 5000 });
+  });
+
+  it("explains the database-enforced Free-plan limit without exposing raw database details", () => {
+    expect(userFacingDataError("Free plan allows at most three active receivables")).toBe("Your Free plan allows up to three active receivables. Close or settle one before adding another.");
   });
 });

@@ -8,6 +8,30 @@ export function todayInIndia() {
   return `${part("year")}-${part("month")}-${part("day")}`;
 }
 
+export function isBusinessDate(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T12:00:00+05:30`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
+export function addIndiaBusinessDays(value: string, days: number) {
+  if (!isBusinessDate(value) || !Number.isInteger(days)) return todayInIndia();
+  const parsed = new Date(`${value}T12:00:00Z`);
+  parsed.setUTCDate(parsed.getUTCDate() + days);
+  return parsed.toISOString().slice(0, 10);
+}
+
+/** Parses an INR decimal string without using floating-point arithmetic. */
+export function parseINRToPaise(value: string) {
+  const normalized = value.trim().replace(/,/g, "");
+  const match = normalized.match(/^(\d{1,13})(?:\.(\d{1,2}))?$/);
+  if (!match) return null;
+  const rupees = Number(match[1]);
+  const fractionalPaise = Number((match[2] ?? "").padEnd(2, "0") || "0");
+  const paise = rupees * 100 + fractionalPaise;
+  return Number.isSafeInteger(paise) && paise <= 900_000_000_000_000 ? paise : null;
+}
+
 export function formatINR(amountPaise: number, compact = false) {
   const amount = amountPaise / 100;
   if (compact && Math.abs(amount) >= 100000) {
@@ -49,6 +73,11 @@ export function getLatestPromise(receivableId: string, promises: PromiseRecord[]
 
 export function getLastContacted(receivableId: string, activities: Activity[]) {
   return activities.filter((activity) => activity.receivableId === receivableId && ["follow_up", "contacted"].includes(activity.type)).sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))[0]?.occurredAt;
+}
+
+/** The latest explicit snooze controls queue visibility until its business date. */
+export function getSnoozedUntil(receivableId: string, activities: Activity[]) {
+  return activities.filter((activity) => activity.receivableId === receivableId && activity.snoozedUntil).sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))[0]?.snoozedUntil;
 }
 
 export interface PriorityBreakdown {
@@ -103,7 +132,8 @@ export function priorityReasons(receivable: Receivable, state: DemoState) {
 }
 
 export function getQueue(state: DemoState) {
-  return state.receivables.filter((receivable) => getOutstanding(receivable, state.payments) > 0).map((receivable) => ({ receivable, score: priorityBreakdown(receivable, state).total })).sort((a, b) => b.score - a.score || getOutstanding(b.receivable, state.payments) - getOutstanding(a.receivable, state.payments));
+  const today = todayInIndia();
+  return state.receivables.filter((receivable) => getOutstanding(receivable, state.payments) > 0 && (getSnoozedUntil(receivable.id, state.activities) ?? today) <= today).map((receivable) => ({ receivable, score: priorityBreakdown(receivable, state).total })).sort((a, b) => b.score - a.score || getOutstanding(b.receivable, state.payments) - getOutstanding(a.receivable, state.payments));
 }
 
 export function getReliability(clientId: string, state: DemoState) {

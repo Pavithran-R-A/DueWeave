@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 import { createDemoState, DEMO_TODAY } from "@/data/demo";
-import { daysBetween, formatINR, getOutstanding, getQueue, getReliability, interpolateMessage, priorityBreakdown, todayInIndia } from "@/lib/finance";
+import { addIndiaBusinessDays, daysBetween, formatINR, getOutstanding, getQueue, getReliability, interpolateMessage, parseINRToPaise, priorityBreakdown, todayInIndia } from "@/lib/finance";
 
 describe("finance helpers", () => {
   it("formats paise as Indian rupee amounts", () => {
@@ -33,6 +33,20 @@ describe("finance helpers", () => {
     expect(queue.length).toBe(5);
     expect(queue[0].receivable.id).toBe("recv-nova");
     expect(priorityBreakdown(queue[0].receivable, state).total).toBeGreaterThan(priorityBreakdown(queue[queue.length - 1].receivable, state).total);
+  });
+
+  it("parses money into integer paise without accepting float ambiguity or negatives", () => {
+    expect(parseINRToPaise("12,500.50")).toBe(1250050);
+    expect(parseINRToPaise("0.009")).toBeNull();
+    expect(parseINRToPaise("-50")).toBeNull();
+    expect(parseINRToPaise("1e3")).toBeNull();
+  });
+
+  it("keeps a snoozed receivable out of Today until its India business date", () => {
+    const state = createDemoState();
+    const snoozedId = state.receivables[0].id;
+    state.activities.push({ id: "activity-snooze", clientId: state.receivables[0].clientId, receivableId: snoozedId, type: "follow_up", occurredAt: todayInIndia(), note: "Follow-up snoozed", snoozedUntil: addIndiaBusinessDays(todayInIndia(), 1) });
+    expect(getQueue(state).some(({ receivable }) => receivable.id === snoozedId)).toBe(false);
   });
 
   it("keeps dates in the configured demo timeline", () => {

@@ -7,11 +7,16 @@ const baseMigration = readFileSync(resolve(root, "supabase/migrations/2026081215
 const alignedMigration = readFileSync(resolve(root, "supabase/migrations/20260812151500_stage2_schema_alignment.sql"), "utf8");
 const rpcGrantMigration = readFileSync(resolve(root, "supabase/migrations/20260812155500_revoke_public_rpc_execution.sql"), "utf8");
 const unusedDeleteRpcMigration = readFileSync(resolve(root, "supabase/migrations/20260812160500_revoke_unused_delete_rpc.sql"), "utf8");
+const stage3WorkflowMigration = readFileSync(resolve(root, "supabase/migrations/20260812170000_stage3_core_workflows.sql"), "utf8");
 const homePage = readFileSync(resolve(root, "client/src/pages/Home.tsx"), "utf8");
 const appShell = readFileSync(resolve(root, "client/src/App.tsx"), "utf8");
 const authPage = readFileSync(resolve(root, "client/src/pages/Auth.tsx"), "utf8");
 const authHook = readFileSync(resolve(root, "client/src/hooks/useSupabaseAuth.ts"), "utf8");
-const schema = `${baseMigration}\n${alignedMigration}\n${rpcGrantMigration}`;
+const dashboardRepository = readFileSync(resolve(root, "client/src/data/supabase-dashboard-repository.ts"), "utf8");
+const activityRepository = readFileSync(resolve(root, "client/src/data/supabase-activity-repository.ts"), "utf8");
+const sheets = readFileSync(resolve(root, "client/src/components/sheets.tsx"), "utf8");
+const financeUi = readFileSync(resolve(root, "client/src/components/finance-ui.tsx"), "utf8");
+const schema = `${baseMigration}\n${alignedMigration}\n${rpcGrantMigration}\n${stage3WorkflowMigration}`;
 
 describe("Stage 2 Supabase security contract", () => {
   it("enables RLS across every private business table", () => {
@@ -70,5 +75,51 @@ describe("Stage 2 Supabase security contract", () => {
     expect(authPage).toMatch(/Create an account/);
     expect(authHook).toMatch(/auth\/update-password/);
     expect(authPage).toMatch(/We never display technical database errors here\./);
+  });
+
+  it("keeps Stage 3 client, receivable, promise-refresh, and snooze workflows authenticated-only", () => {
+    for (const rpc of ["create_client", "create_receivable", "create_client_and_receivable", "mark_due_promises_broken", "create_promise", "snooze_receivable"]) {
+      expect(stage3WorkflowMigration).toMatch(new RegExp(`revoke all on function public\\.${rpc}`, "i"));
+      expect(stage3WorkflowMigration).toMatch(new RegExp(`grant execute on function public\\.${rpc}[^;]* to authenticated`, "i"));
+    }
+    expect(stage3WorkflowMigration).toMatch(/auth\.uid\(\)/i);
+    expect(stage3WorkflowMigration).toMatch(/p_amount_due_paise.*<= 0/s);
+    expect(stage3WorkflowMigration).toMatch(/p_promised_amount_paise.*<= 0/s);
+    expect(stage3WorkflowMigration).toMatch(/p_promised_amount_paise.*outstanding_paise/s);
+    expect(stage3WorkflowMigration).toMatch(/status = 'RENEGOTIATED'/);
+    expect(stage3WorkflowMigration).toMatch(/status = 'BROKEN'/);
+    expect(stage3WorkflowMigration).toMatch(/insert into public\.promise_events/i);
+    expect(stage3WorkflowMigration).toMatch(/snoozed_until/i);
+  });
+
+  it("refreshes the authenticated dashboard after standalone client and receivable writes", () => {
+    expect(homePage).toMatch(/const created = await clientRepository\.create\(input\);\s*await refresh\(\);\s*setSelectedClientId\(created\.id\)/s);
+    expect(homePage).toMatch(/const created = await receivableRepository\.createWithClient\(input\);\s*await refresh\(\);\s*setSelectedReceivableId\(created\.id\)/s);
+  });
+
+  it("passes mapped standalone receivable failures to the actual non-technical UI feedback path", () => {
+    expect(homePage).toMatch(/toast\.error\("Could not add receivable", \{ description: error instanceof Error \? error\.message : "Please try again\." \}\)/);
+    expect(homePage).toMatch(/new SupabaseReceivableRepository\(\)/);
+  });
+
+  it("reads live ledger entities after lazily settling overdue promises for the Today briefing", () => {
+    expect(dashboardRepository).toMatch(/await this\.promises\.markDuePromisesBroken\(\)/);
+    expect(dashboardRepository).toMatch(/Promise\.all\(\[this\.clients\.list\(\), this\.receivables\.list\(\), this\.promises\.list\(\), this\.payments\.list\(\), this\.activities\.list\(\)\]\)/);
+    expect(homePage).toMatch(/Recovered this month/);
+    expect(homePage).toMatch(/Expected this week/);
+    expect(homePage).toMatch(/Broken promises/);
+    expect(homePage).toMatch(/priority is deterministic/i);
+  });
+
+  it("persists snoozes and follow-ups while leaving WhatsApp sending under user control", () => {
+    expect(activityRepository).toMatch(/supabase\.rpc\("snooze_receivable"/);
+    expect(activityRepository).toMatch(/supabase\.rpc\("record_contacted"/);
+    expect(homePage).toMatch(/await activityRepository\.recordContacted\(selectedReceivable\.id\); await refresh\(\); setSheet\(null\); toast\.success\("Follow-up marked"/);
+    expect(homePage).toMatch(/onMarkContacted=\{markContacted\}/);
+    expect(sheets).toMatch(/https:\/\/wa\.me\//);
+    expect(sheets).toMatch(/encodeURIComponent\(message\)/);
+    expect(sheets).toMatch(/target="_blank" rel="noreferrer" onClick=\{onMarkContacted\}/);
+    expect(sheets).toMatch(/never sent automatically/i);
+    expect(financeUi).toMatch(/snoozedUntil/);
   });
 });
