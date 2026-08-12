@@ -1,0 +1,10 @@
+{
+  "name": "DueWeave — Promise ledger",
+  "short_name": "DueWeave",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f4f1eb",
+  "theme_color": "#137b78",
+  "description": "Remember every payment promise. Know who needs a follow-up today.",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}
