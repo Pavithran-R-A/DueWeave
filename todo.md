@@ -8,3 +8,12 @@
 - [x] Verify and harden add receivable, add promise, payment, follow-up, copy, WhatsApp, contacted, snooze, client, detail, upgrade, and theme flows.
 - [x] Run tests, typecheck, lint, production build, and responsive visual verification at 360, 390, 430, 768, and 1280 widths.
 - [x] Save one final Stage 1.1 checkpoint and deliver the updated prototype.
+
+## Resumed Stage 1.2 GitHub Sync
+
+- [ ] Push the complete editable source to `Pavithran-R-A/project-ar1`.
+- [ ] Confirm the repository remains private and contains no secrets, `.env` files, build output, or Manus-local/private files.
+- [ ] Verify the default branch, upstream tracking, remote commit, and clean working tree.
+- [ ] Create the requested checkpoint commit message if it is not already represented by the current approved commit.
+- [ ] Create the `stage-1-approved` tag if it does not already exist.
+- [ ] Save the approved Stage 1.2 checkpoint and stop without beginning Stage 2.
