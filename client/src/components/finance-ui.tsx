@@ -13,13 +13,14 @@ export function BrandMark({ compact = false }: { compact?: boolean }) {
 }
 
 export function StatusPill({ status }: { status: PromiseStatus | Receivable["status"] }) {
-  const label = { OPEN: "Open", PARTIALLY_PAID: "Partially paid", PAID: "Paid", CANCELLED: "Cancelled", ACTIVE: "Active promise", KEPT: "Kept", PARTIALLY_KEPT: "Partially kept", BROKEN: "Promise broken", RENEGOTIATED: "Renegotiated" }[status];
+  const label = { OPEN: "Open", PARTIALLY_PAID: "Partially paid", PAID: "Paid", CANCELLED: "Cancelled", WRITTEN_OFF: "Written off", ACTIVE: "Active promise", KEPT: "Kept", PARTIALLY_KEPT: "Partially kept", BROKEN: "Promise broken", RENEGOTIATED: "Renegotiated" }[status];
   return <span className={`status-pill status-pill--${status.toLowerCase()}`}><span className="status-dot" />{label}</span>;
 }
 
-export function AppRail({ active, onNavigate }: { active: AppSection; onNavigate: (section: AppSection) => void }) {
+export function AppRail({ active, onNavigate, openCount = 0, userName = "Your workspace" }: { active: AppSection; onNavigate: (section: AppSection) => void; openCount?: number; userName?: string }) {
   const items: { id: AppSection; label: string }[] = [{ id: "today", label: "Today" }, { id: "receivables", label: "Receivables" }, { id: "clients", label: "Clients" }, { id: "more", label: "More" }];
-  return <aside className="app-rail" aria-label="Primary navigation"><BrandMark /><div className="rail-label">Workspace</div><nav className="rail-nav">{items.map((item) => { const Icon = iconMap[item.id as keyof typeof iconMap]; return <button key={item.id} className={active === item.id ? "rail-link rail-link--active" : "rail-link"} onClick={() => onNavigate(item.id)} aria-current={active === item.id ? "page" : undefined}><Icon size={17} strokeWidth={1.8} /><span>{item.label}</span>{item.id === "today" && <span className="rail-count">5</span>}</button>; })}</nav><div className="rail-footer"><div className="rail-note"><ShieldCheck size={16} /><span>Local prototype<br /><em>No backend connected</em></span></div><div className="rail-user"><div className="avatar avatar--small">AR</div><div><strong>Aditi Rao</strong><span>Independent studio</span></div></div></div></aside>;
+  const initials = userName.split(" ").map((word) => word[0]).join("").slice(0, 2).toUpperCase() || "DW";
+  return <aside className="app-rail" aria-label="Primary navigation"><BrandMark /><div className="rail-label">Workspace</div><nav className="rail-nav">{items.map((item) => { const Icon = iconMap[item.id as keyof typeof iconMap]; return <button key={item.id} className={active === item.id ? "rail-link rail-link--active" : "rail-link"} onClick={() => onNavigate(item.id)} aria-current={active === item.id ? "page" : undefined}><Icon size={17} strokeWidth={1.8} /><span>{item.label}</span>{item.id === "today" && <span className="rail-count">{openCount}</span>}</button>; })}</nav><div className="rail-footer"><div className="rail-note"><ShieldCheck size={16} /><span>Private workspace<br /><em>RLS-protected records</em></span></div><div className="rail-user"><div className="avatar avatar--small">{initials}</div><div><strong>{userName}</strong><span>Private ledger</span></div></div></div></aside>;
 }
 
 export function BottomNav({ active, onNavigate }: { active: AppSection; onNavigate: (section: AppSection) => void }) {
@@ -29,7 +30,8 @@ export function BottomNav({ active, onNavigate }: { active: AppSection; onNaviga
 
 export function PageHeader({ section, onAdd, onToggleTheme, theme }: { section: AppSection; onAdd: () => void; onToggleTheme: () => void; theme: "light" | "dark" }) {
   const title = { today: "Today", receivables: "Receivables", clients: "Clients", more: "More", empty: "Empty state", loading: "Loading example", error: "Error example" }[section];
-  return <header className="page-header"><div className="page-header__left"><BrandMark compact /><div className="page-header__meta"><span className="eyebrow">Wednesday · 12 August 2026</span><h1>{title}</h1></div></div><div className="page-header__actions"><span className="prototype-chip"><span className="pulse-dot" />Stage 1 prototype</span><button className="icon-button theme-toggle" onClick={onToggleTheme} aria-label={`Switch to ${theme === "light" ? "dark" : "light"} mode`}>{theme === "light" ? <Moon size={17} /> : <Sun size={17} />}</button><button className="button-primary button-primary--compact" onClick={onAdd}><Plus size={17} /><span>Add receivable</span></button><div className="avatar">AR</div></div></header>;
+  const dateLabel = new Intl.DateTimeFormat("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Kolkata" }).format(new Date());
+  return <header className="page-header"><div className="page-header__left"><BrandMark compact /><div className="page-header__meta"><span className="eyebrow">{dateLabel}</span><h1>{title}</h1></div></div><div className="page-header__actions"><span className="prototype-chip"><span className="pulse-dot" />Private workspace</span><button className="icon-button theme-toggle" onClick={onToggleTheme} aria-label={`Switch to ${theme === "light" ? "dark" : "light"} mode`}>{theme === "light" ? <Moon size={17} /> : <Sun size={17} />}</button><button className="button-primary button-primary--compact" onClick={onAdd}><Plus size={17} /><span>Add receivable</span></button></div></header>;
 }
 
 export function Metric({ label, value, accent = "default", sub }: { label: string; value: string; accent?: "default" | "teal" | "amber" | "coral"; sub?: string }) {

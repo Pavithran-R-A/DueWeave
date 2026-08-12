@@ -1,84 +1,100 @@
 // Quiet Ledger style reminder: Today is the operational briefing; every other screen supports the path from promise to recovered money.
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowUpRight, CalendarDays, ChevronRight, ClipboardList, Filter, LockKeyhole, MessageCircle, Moon, MoreHorizontal, Plus, Search, Settings2, ShieldCheck, Sparkles, Sun, WalletCards, WifiOff, Zap } from "lucide-react";
 import { toast } from "sonner";
 import { BRAND } from "@/config/brand";
-import { createDemoState, DEMO_TODAY } from "@/data/demo";
-import { createLocalRepository } from "@/data/repository";
-import { daysBetween, formatDate, formatINR, getClient, getLatestPromise, getOutstanding, getPaidAmount, getPromiseStatusLabel, getPromisesFor, getQueue, getSuggestion, interpolateMessage, messageTemplates, priorityBreakdown, priorityReasons } from "@/lib/finance";
+import { SupabaseActivityRepository } from "@/data/supabase-activity-repository";
+import { SupabaseDashboardRepository } from "@/data/supabase-dashboard-repository";
+import { SupabasePaymentRepository } from "@/data/supabase-payment-repository";
+import { SupabasePromiseRepository } from "@/data/supabase-promise-repository";
+import { SupabaseReceivableRepository } from "@/data/supabase-receivable-repository";
+import { useSupabaseAuth } from "@/hooks/useSupabaseAuth";
+import { daysBetween, formatDate, formatINR, getClient, getLatestPromise, getOutstanding, getPaidAmount, getPromiseStatusLabel, getPromisesFor, getQueue, getSuggestion, interpolateMessage, messageTemplates, priorityBreakdown, priorityReasons, todayInIndia } from "@/lib/finance";
 import type { AppSection, DemoState, PaymentMethod, PromiseSource, PromiseStatus, Receivable } from "@/types/domain";
 import { AppRail, BottomNav, EmptyStateCard, ErrorState, Field, LoadingState, Metric, PageHeader, QueueCard, Reliability, Sheet, StatusPill, Timeline } from "@/components/finance-ui";
 import { AddPromiseSheet, AddReceivableSheet, FollowUpSheet, PaymentSheet, UpgradeSheet } from "@/components/sheets";
 
 function App() {
+  const { user, signOut } = useSupabaseAuth();
   const [active, setActive] = useState<AppSection>("today");
-  const [repository] = useState(() => createLocalRepository(createDemoState()));
-  const [state, setState] = useState<DemoState>(() => repository.read());
-  const [selectedReceivableId, setSelectedReceivableId] = useState("recv-rajesh");
-  const [selectedClientId, setSelectedClientId] = useState("client-nova");
+  const [dashboardRepository] = useState(() => new SupabaseDashboardRepository());
+  const [receivableRepository] = useState(() => new SupabaseReceivableRepository());
+  const [promiseRepository] = useState(() => new SupabasePromiseRepository());
+  const [paymentRepository] = useState(() => new SupabasePaymentRepository());
+  const [activityRepository] = useState(() => new SupabaseActivityRepository());
+  const [state, setState] = useState<DemoState>({ clients: [], receivables: [], promises: [], payments: [], activities: [] });
+  const [selectedReceivableId, setSelectedReceivableId] = useState("");
+  const [selectedClientId, setSelectedClientId] = useState("");
   const [sheet, setSheet] = useState<"receivable" | "promise" | "payment" | "followup" | "upgrade" | null>(null);
   const [theme, setTheme] = useState<"light" | "dark">(() => (localStorage.getItem("dueweave-theme") as "light" | "dark") || "light");
   const [selectedFilter, setSelectedFilter] = useState<"open" | "all" | "paid">("open");
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
   useEffect(() => { localStorage.setItem("dueweave-theme", theme); }, [theme]);
-  function commit(update: (current: DemoState) => DemoState) {
-    setState((current) => {
-      const next = update(current);
-      repository.write(next);
-      return next;
-    });
-  }
+  const refresh = useCallback(async () => {
+    setLoading(true); setLoadError("");
+    try {
+      const next = await dashboardRepository.read();
+      setState(next);
+      setSelectedReceivableId((current) => next.receivables.some((item) => item.id === current) ? current : next.receivables[0]?.id ?? "");
+      setSelectedClientId((current) => next.clients.some((item) => item.id === current) ? current : next.clients[0]?.id ?? "");
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "We could not open your private ledger. Please try again.");
+    } finally { setLoading(false); }
+  }, [dashboardRepository]);
+  useEffect(() => { void refresh(); }, [refresh]);
   const selectedReceivable = state.receivables.find((item) => item.id === selectedReceivableId) ?? state.receivables[0];
   const selectedClient = selectedReceivable ? getClient(selectedReceivable.clientId, state.clients) : state.clients[0];
   const queue = useMemo(() => getQueue(state), [state]);
   const openReceivables = state.receivables.filter((item) => getOutstanding(item, state.payments) > 0);
   const outside = openReceivables.reduce((sum, item) => sum + getOutstanding(item, state.payments), 0);
-  const recoveredThisMonth = state.payments.filter((payment) => payment.paidDate.startsWith("2026-08")).reduce((sum, payment) => sum + payment.amountPaise, 0);
-  const expectedThisWeek = state.promises.filter((promise) => promise.status === "ACTIVE" && daysBetween(DEMO_TODAY, promise.promisedDate) >= 0 && daysBetween(DEMO_TODAY, promise.promisedDate) <= 7).reduce((sum, promise) => sum + promise.promisedAmountPaise, 0);
+  const today = todayInIndia();
+  const userName = typeof user?.user_metadata.display_name === "string" && user.user_metadata.display_name.trim() ? user.user_metadata.display_name.trim() : user?.email?.split("@")[0] ?? "Your workspace";
+  const recoveredThisMonth = state.payments.filter((payment) => payment.paidDate.startsWith(today.slice(0, 7))).reduce((sum, payment) => sum + payment.amountPaise, 0);
+  const expectedThisWeek = state.promises.filter((promise) => promise.status === "ACTIVE" && daysBetween(today, promise.promisedDate) >= 0 && daysBetween(today, promise.promisedDate) <= 7).reduce((sum, promise) => sum + promise.promisedAmountPaise, 0);
   const brokenCount = state.promises.filter((promise) => promise.status === "BROKEN").length;
   function navigate(next: AppSection) { setActive(next); window.scrollTo({ top: 0, behavior: "smooth" }); }
   function openSheet(kind: typeof sheet, id = selectedReceivableId) { setSelectedReceivableId(id); setSheet(kind); }
 
-  function addReceivable(input: { clientName: string; company: string; amountPaise: number; dueDate: string; invoiceRef: string; phone: string; email: string; notes: string }) {
-    const clientId = `client-${Date.now()}`;
-    const receivableId = `recv-${Date.now()}`;
-    const newClient = { id: clientId, name: input.clientName || input.company, company: input.company || input.clientName, phone: input.phone, email: input.email, notes: input.notes, createdAt: DEMO_TODAY };
-    const newReceivable: Receivable = { id: receivableId, clientId, title: input.invoiceRef || "New client work", invoiceRef: input.invoiceRef, amountDuePaise: input.amountPaise, dueDate: input.dueDate, createdAt: DEMO_TODAY, notes: input.notes, status: "OPEN" };
-    commit((current) => ({ ...current, clients: [...current.clients, newClient], receivables: [...current.receivables, newReceivable], activities: [...current.activities, { id: `act-${Date.now()}`, clientId, receivableId, type: "created", occurredAt: DEMO_TODAY, note: `Receivable created for ${newReceivable.title}.` }] }));
-    setSelectedReceivableId(receivableId); setSelectedClientId(clientId); setSheet(null); navigate("today"); toast.success("Receivable added", { description: "It is now part of your Today queue." });
+  async function addReceivable(input: { clientName: string; company: string; amountPaise: number; dueDate: string; invoiceRef: string; phone: string; email: string; notes: string }) {
+    try {
+      const created = await receivableRepository.createWithClient(input);
+      await refresh(); setSelectedReceivableId(created.id); setSelectedClientId(created.clientId); setSheet(null); navigate("today"); toast.success("Receivable added", { description: "It is now part of your Today queue." });
+    } catch (error) { toast.error("Could not add receivable", { description: error instanceof Error ? error.message : "Please try again." }); }
   }
 
-  function addPromise(input: { amountPaise: number; promisedDate: string; source: PromiseSource; note: string }) {
+  async function addPromise(input: { amountPaise: number; promisedDate: string; source: PromiseSource; note: string }) {
     if (!selectedReceivable) return;
-    const previous = getLatestPromise(selectedReceivable.id, state.promises);
-    const nextSequence = getPromisesFor(selectedReceivable.id, state.promises).length + 1;
-    const promiseId = `promise-${Date.now()}`;
-    commit((current) => ({ ...current, promises: [...current.promises.map((promise) => promise.id === previous?.id && promise.status === "ACTIVE" ? { ...promise, status: "RENEGOTIATED" as PromiseStatus, resolvedAt: DEMO_TODAY } : promise), { id: promiseId, receivableId: selectedReceivable.id, sequenceNo: nextSequence, promisedAmountPaise: input.amountPaise, promisedDate: input.promisedDate, source: input.source, note: input.note, status: "ACTIVE", createdAt: DEMO_TODAY }], activities: [...current.activities, ...(previous?.status === "ACTIVE" ? [{ id: `act-renegotiated-${Date.now()}`, clientId: selectedReceivable.clientId, receivableId: selectedReceivable.id, type: "note" as const, occurredAt: DEMO_TODAY, note: "Previous promise kept in history as renegotiated.", promiseId: previous.id }] : []), { id: `act-promise-${Date.now()}`, clientId: selectedReceivable.clientId, receivableId: selectedReceivable.id, type: "promise", occurredAt: DEMO_TODAY, note: `New promise recorded for ${formatINR(input.amountPaise)} by ${formatDate(input.promisedDate)}.`, amountPaise: input.amountPaise, promiseId }] }));
-    setSheet(null); toast.success("Promise added", { description: "The old commitment remains in the timeline." });
+    try { await promiseRepository.create(selectedReceivable.id, input.amountPaise, input.promisedDate, input.source, input.note); await refresh(); setSheet(null); toast.success("Promise added", { description: "The previous commitment remains in the timeline." }); }
+    catch (error) { toast.error("Could not record promise", { description: error instanceof Error ? error.message : "Please try again." }); }
   }
 
-  function recordPayment(input: { amountPaise: number; paidDate: string; method: PaymentMethod; reference: string }) {
+  async function recordPayment(input: { amountPaise: number; paidDate: string; method: PaymentMethod; reference: string }) {
     if (!selectedReceivable) return;
-    const nextPaid = getPaidAmount(selectedReceivable.id, state.payments) + input.amountPaise;
-    const remaining = Math.max(0, selectedReceivable.amountDuePaise - nextPaid);
-    const latest = getLatestPromise(selectedReceivable.id, state.promises);
-    commit((current) => ({ ...current, payments: [...current.payments, { id: `payment-${Date.now()}`, receivableId: selectedReceivable.id, amountPaise: input.amountPaise, paidDate: input.paidDate, method: input.method, reference: input.reference, createdAt: DEMO_TODAY }], receivables: current.receivables.map((item) => item.id === selectedReceivable.id ? { ...item, status: remaining === 0 ? "PAID" : "PARTIALLY_PAID" } : item), promises: current.promises.map((promise) => promise.id === latest?.id && latest.status === "ACTIVE" ? { ...promise, status: remaining === 0 || input.amountPaise >= promise.promisedAmountPaise ? "KEPT" as const : "PARTIALLY_KEPT" as const, resolvedAt: DEMO_TODAY } : promise), activities: [...current.activities, { id: `act-payment-${Date.now()}`, clientId: selectedReceivable.clientId, receivableId: selectedReceivable.id, type: "payment", occurredAt: input.paidDate, note: `${formatINR(input.amountPaise)} payment recorded by ${input.method.toLowerCase()}.`, amountPaise: input.amountPaise }] }));
-    setSheet(null); toast.success(remaining === 0 ? `${formatINR(input.amountPaise)} collected` : "Payment recorded", { description: remaining === 0 ? "This receivable is now fully paid." : `${formatINR(remaining)} remains outstanding.` });
+    try { await paymentRepository.record(selectedReceivable.id, input.amountPaise, input.paidDate, input.method, input.reference); await refresh(); setSheet(null); toast.success("Payment recorded", { description: "Your receivable and promise history are now up to date." }); }
+    catch (error) { toast.error("Could not record payment", { description: error instanceof Error ? error.message : "Please try again." }); }
   }
 
-  function markContacted() {
+  async function markContacted() {
     if (!selectedReceivable) return;
-    commit((current) => ({ ...current, activities: [...current.activities, { id: `act-contact-${Date.now()}`, clientId: selectedReceivable.clientId, receivableId: selectedReceivable.id, type: "contacted", occurredAt: DEMO_TODAY, note: "Follow-up marked as contacted." }] }));
-    setSheet(null); toast.success("Follow-up marked", { description: "The queue will remember this touchpoint." });
+    try { await activityRepository.recordContacted(selectedReceivable.id); await refresh(); setSheet(null); toast.success("Follow-up marked", { description: "The queue will remember this touchpoint." }); }
+    catch (error) { toast.error("Could not record follow-up", { description: error instanceof Error ? error.message : "Please try again." }); }
   }
 
-  return <div className={`app-shell ${theme === "dark" ? "app-shell--dark" : ""}`}><AppRail active={active} onNavigate={navigate} /><div className="app-frame"><PageHeader section={active} onAdd={() => openSheet("receivable")} onToggleTheme={() => setTheme((current) => current === "light" ? "dark" : "light")} theme={theme} /><main className="app-content">{active === "today" && <TodayView state={state} queue={queue} outside={outside} recoveredThisMonth={recoveredThisMonth} expectedThisWeek={expectedThisWeek} brokenCount={brokenCount} selectedReceivable={selectedReceivable} selectedClient={selectedClient} selectedId={selectedReceivableId} onSelect={setSelectedReceivableId} onFollowUp={(id) => openSheet("followup", id)} onAddPromise={() => openSheet("promise")} onPayment={() => openSheet("payment")} onOpenClient={(id) => { setSelectedClientId(id); navigate("clients"); }} onExplain={() => toast.info("Priority is deterministic", { description: "Broken promises, urgency, overdue days, outstanding amount, staleness, and recent partial payments are scored — no AI is deciding for you." })} />}{active === "receivables" && <ReceivablesView state={state} filter={selectedFilter} onFilter={setSelectedFilter} onSelect={(id) => { setSelectedReceivableId(id); navigate("today"); }} onAdd={() => openSheet("receivable")} />}{active === "clients" && <ClientsView state={state} selectedClientId={selectedClientId} onSelect={setSelectedClientId} onOpenReceivable={(id) => { setSelectedReceivableId(id); navigate("today"); }} />}{active === "more" && <MoreView theme={theme} onToggleTheme={() => setTheme((current) => current === "light" ? "dark" : "light")} onUpgrade={() => setSheet("upgrade")} onNavigate={navigate} />}{active === "empty" && <EmptyStateCard onAdd={() => openSheet("receivable")} />}{active === "loading" && <LoadingState />}{active === "error" && <ErrorState onRetry={() => navigate("today")} />}</main></div><button className="floating-add" onClick={() => openSheet("receivable")} aria-label="Add receivable"><Plus size={22} /></button><BottomNav active={active} onNavigate={navigate} />{sheet === "receivable" && <AddReceivableSheet onClose={() => setSheet(null)} onSubmit={addReceivable} />}{sheet === "promise" && selectedReceivable && <AddPromiseSheet receivable={selectedReceivable} client={selectedClient} state={state} onClose={() => setSheet(null)} onSubmit={addPromise} />}{sheet === "payment" && selectedReceivable && <PaymentSheet receivable={selectedReceivable} state={state} onClose={() => setSheet(null)} onSubmit={recordPayment} />}{sheet === "followup" && selectedReceivable && selectedClient && <FollowUpSheet receivable={selectedReceivable} client={selectedClient} state={state} onClose={() => setSheet(null)} onMarkContacted={markContacted} />}{sheet === "upgrade" && <UpgradeSheet onClose={() => setSheet(null)} />}</div>;
+  async function handleSignOut() { const result = await signOut(); if (result.error) toast.error("Could not sign out", { description: result.error }); }
+
+  if (loading) return <div className={`app-shell ${theme === "dark" ? "app-shell--dark" : ""}`}><LoadingState /></div>;
+  if (loadError) return <div className={`app-shell ${theme === "dark" ? "app-shell--dark" : ""}`}><ErrorState onRetry={() => { void refresh(); }} /></div>;
+  if (!state.receivables.length) return <div className={`app-shell ${theme === "dark" ? "app-shell--dark" : ""}`}><AppRail active={active} onNavigate={navigate} openCount={0} userName={userName} /><div className="app-frame"><PageHeader section="today" onAdd={() => openSheet("receivable")} onToggleTheme={() => setTheme((current) => current === "light" ? "dark" : "light")} theme={theme} /><main className="app-content"><EmptyStateCard onAdd={() => openSheet("receivable")} /></main></div>{sheet === "receivable" && <AddReceivableSheet onClose={() => setSheet(null)} onSubmit={addReceivable} />}</div>;
+
+  return <div className={`app-shell ${theme === "dark" ? "app-shell--dark" : ""}`}><AppRail active={active} onNavigate={navigate} openCount={queue.length} userName={userName} /><div className="app-frame"><PageHeader section={active} onAdd={() => openSheet("receivable")} onToggleTheme={() => setTheme((current) => current === "light" ? "dark" : "light")} theme={theme} /><main className="app-content">{active === "today" && selectedReceivable && <TodayView userName={userName} state={state} queue={queue} outside={outside} recoveredThisMonth={recoveredThisMonth} expectedThisWeek={expectedThisWeek} brokenCount={brokenCount} selectedReceivable={selectedReceivable} selectedClient={selectedClient} selectedId={selectedReceivableId} onSelect={setSelectedReceivableId} onFollowUp={(id) => openSheet("followup", id)} onAddPromise={() => openSheet("promise")} onPayment={() => openSheet("payment")} onOpenClient={(id) => { setSelectedClientId(id); navigate("clients"); }} onExplain={() => toast.info("Priority is deterministic", { description: "Broken promises, urgency, overdue days, outstanding amount, staleness, and recent partial payments are scored — no AI is deciding for you." })} />}{active === "receivables" && <ReceivablesView state={state} filter={selectedFilter} onFilter={setSelectedFilter} onSelect={(id) => { setSelectedReceivableId(id); navigate("today"); }} onAdd={() => openSheet("receivable")} />}{active === "clients" && <ClientsView state={state} selectedClientId={selectedClientId} onSelect={setSelectedClientId} onOpenReceivable={(id) => { setSelectedReceivableId(id); navigate("today"); }} />}{active === "more" && <MoreView theme={theme} onToggleTheme={() => setTheme((current) => current === "light" ? "dark" : "light")} onUpgrade={() => toast.info("Founder access is not available during the secure-foundation stage.")} onNavigate={navigate} />}{active === "empty" && <EmptyStateCard onAdd={() => openSheet("receivable")} />}{active === "loading" && <LoadingState />}{active === "error" && <ErrorState onRetry={() => { void refresh(); }} />}</main></div><button className="floating-add" onClick={() => openSheet("receivable")} aria-label="Add receivable"><Plus size={22} /></button><BottomNav active={active} onNavigate={navigate} />{sheet === "receivable" && <AddReceivableSheet onClose={() => setSheet(null)} onSubmit={addReceivable} />}{sheet === "promise" && selectedReceivable && <AddPromiseSheet receivable={selectedReceivable} client={selectedClient} state={state} onClose={() => setSheet(null)} onSubmit={addPromise} />}{sheet === "payment" && selectedReceivable && <PaymentSheet receivable={selectedReceivable} state={state} onClose={() => setSheet(null)} onSubmit={recordPayment} />}{sheet === "followup" && selectedReceivable && selectedClient && <FollowUpSheet receivable={selectedReceivable} client={selectedClient} state={state} onClose={() => setSheet(null)} onMarkContacted={markContacted} />}{sheet === "upgrade" && <UpgradeSheet onClose={() => setSheet(null)} />}</div>;
 }
 
-function TodayView({ state, queue, outside, recoveredThisMonth, expectedThisWeek, brokenCount, selectedReceivable, selectedClient, selectedId, onSelect, onFollowUp, onAddPromise, onPayment, onOpenClient, onExplain }: { state: DemoState; queue: ReturnType<typeof getQueue>; outside: number; recoveredThisMonth: number; expectedThisWeek: number; brokenCount: number; selectedReceivable: Receivable; selectedClient?: ReturnType<typeof getClient>; selectedId: string; onSelect: (id: string) => void; onFollowUp: (id: string) => void; onAddPromise: () => void; onPayment: () => void; onOpenClient: (id: string) => void; onExplain: () => void }) {
+function TodayView({ userName, state, queue, outside, recoveredThisMonth, expectedThisWeek, brokenCount, selectedReceivable, selectedClient, selectedId, onSelect, onFollowUp, onAddPromise, onPayment, onOpenClient, onExplain }: { userName: string; state: DemoState; queue: ReturnType<typeof getQueue>; outside: number; recoveredThisMonth: number; expectedThisWeek: number; brokenCount: number; selectedReceivable: Receivable; selectedClient?: ReturnType<typeof getClient>; selectedId: string; onSelect: (id: string) => void; onFollowUp: (id: string) => void; onAddPromise: () => void; onPayment: () => void; onOpenClient: (id: string) => void; onExplain: () => void }) {
   const attentionCount = queue.filter(({ receivable }) => priorityBreakdown(receivable, state).total >= 30).length;
-  return <div className="today-layout"><section className="today-main"><div className="welcome-line"><div><span className="eyebrow">Good morning, Aditi</span><h2 className="today-brief-heading">{attentionCount} follow-ups matter today.</h2></div><span className="today-note"><Sparkles size={14} /> {queue.length} open receivables</span></div><div className="money-hero"><img src={BRAND.texture} alt="" aria-hidden="true" /><div className="money-hero__copy"><span className="eyebrow">Still outstanding</span><strong>{formatINR(outside)}</strong><span>Across {queue.length} open client amounts</span><span className="money-hero__attention">{attentionCount} clients need attention today</span></div><div className="money-hero__side"><div className="mini-trend"><span className="trend-line" /><span>Steady view</span></div><button className="hero-link" onClick={onExplain}>How priority works <Filter size={14} /></button></div></div><div className="metric-grid"><Metric label="Recovered this month" value={formatINR(recoveredThisMonth)} accent="teal" sub="Across 3 clients" /><Metric label="Expected this week" value={formatINR(expectedThisWeek)} accent="amber" sub="From active promises" /><Metric label="Broken promises" value={String(brokenCount)} accent="coral" sub="Need a human decision" /></div><div className="section-heading"><div><span className="eyebrow">Today’s follow-ups</span><h2>Who needs attention now?</h2></div><button className="filter-button" onClick={onExplain}><Filter size={14} /> Explain queue</button></div><div className="queue-list">{queue.map(({ receivable }) => { const client = getClient(receivable.clientId, state.clients)!; return <QueueCard key={receivable.id} receivable={receivable} client={client} state={state} selected={receivable.id === selectedId} onSelect={() => onSelect(receivable.id)} onFollowUp={() => onFollowUp(receivable.id)} />; })}</div></section><aside className="today-detail"><ReceivablePreview receivable={selectedReceivable} client={selectedClient} state={state} onFollowUp={() => onFollowUp(selectedReceivable.id)} onAddPromise={onAddPromise} onPayment={onPayment} onOpenClient={() => selectedClient && onOpenClient(selectedClient.id)} /></aside></div>;
+  return <div className="today-layout"><section className="today-main"><div className="welcome-line"><div><span className="eyebrow">Good morning, {userName.split(" ")[0]}</span><h2 className="today-brief-heading">{attentionCount} follow-ups matter today.</h2></div><span className="today-note"><Sparkles size={14} /> {queue.length} open receivables</span></div><div className="money-hero"><img src={BRAND.texture} alt="" aria-hidden="true" /><div className="money-hero__copy"><span className="eyebrow">Still outstanding</span><strong>{formatINR(outside)}</strong><span>Across {queue.length} open client amounts</span><span className="money-hero__attention">{attentionCount} clients need attention today</span></div><div className="money-hero__side"><div className="mini-trend"><span className="trend-line" /><span>Steady view</span></div><button className="hero-link" onClick={onExplain}>How priority works <Filter size={14} /></button></div></div><div className="metric-grid"><Metric label="Recovered this month" value={formatINR(recoveredThisMonth)} accent="teal" sub="Across your private ledger" /><Metric label="Expected this week" value={formatINR(expectedThisWeek)} accent="amber" sub="From active promises" /><Metric label="Broken promises" value={String(brokenCount)} accent="coral" sub="Need a human decision" /></div><div className="section-heading"><div><span className="eyebrow">Today’s follow-ups</span><h2>Who needs attention now?</h2></div><button className="filter-button" onClick={onExplain}><Filter size={14} /> Explain queue</button></div><div className="queue-list">{queue.map(({ receivable }) => { const client = getClient(receivable.clientId, state.clients)!; return <QueueCard key={receivable.id} receivable={receivable} client={client} state={state} selected={receivable.id === selectedId} onSelect={() => onSelect(receivable.id)} onFollowUp={() => onFollowUp(receivable.id)} />; })}</div></section><aside className="today-detail"><ReceivablePreview receivable={selectedReceivable} client={selectedClient} state={state} onFollowUp={() => onFollowUp(selectedReceivable.id)} onAddPromise={onAddPromise} onPayment={onPayment} onOpenClient={() => selectedClient && onOpenClient(selectedClient.id)} /></aside></div>;
 }
 
 function ReceivablePreview({ receivable, client, state, onFollowUp, onAddPromise, onPayment, onOpenClient }: { receivable: Receivable; client?: ReturnType<typeof getClient>; state: DemoState; onFollowUp: () => void; onAddPromise: () => void; onPayment: () => void; onOpenClient: () => void }) {

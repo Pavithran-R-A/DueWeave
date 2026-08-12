@@ -1,7 +1,12 @@
 // Quiet Ledger style reminder: deterministic scoring and state transitions stay pure, explainable, and testable.
 
-import { DEMO_TODAY } from "@/data/demo";
 import type { Activity, Client, DemoState, Payment, PromiseRecord, PromiseStatus, Receivable } from "@/types/domain";
+
+export function todayInIndia() {
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
+  const part = (kind: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === kind)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
+}
 
 export function formatINR(amountPaise: number, compact = false) {
   const amount = amountPaise / 100;
@@ -57,16 +62,19 @@ export interface PriorityBreakdown {
 }
 
 export function priorityBreakdown(receivable: Receivable, state: DemoState): PriorityBreakdown {
+  const today = todayInIndia();
   const openReceivables = state.receivables.filter((item) => getOutstanding(item, state.payments) > 0);
   const outstanding = getOutstanding(receivable, state.payments);
   const maxOutstanding = Math.max(...openReceivables.map((item) => getOutstanding(item, state.payments)), 1);
   const brokenCount = getPromisesFor(receivable.id, state.promises).filter((promise) => promise.status === "BROKEN").length;
   const latest = getLatestPromise(receivable.id, state.promises);
-  const overdueDays = Math.max(0, daysBetween(receivable.dueDate, DEMO_TODAY));
-  const daysToPromise = latest?.status === "ACTIVE" ? daysBetween(DEMO_TODAY, latest.promisedDate) : null;
+  const overdueDays = Math.max(0, daysBetween(receivable.dueDate, today));
+  const daysToPromise = latest?.status === "ACTIVE" ? daysBetween(today, latest.promisedDate) : null;
   const lastContacted = getLastContacted(receivable.id, state.activities);
-  const contactDays = lastContacted ? Math.max(0, daysBetween(lastContacted, DEMO_TODAY)) : 30;
-  const recentPartial = getPaymentsFor(receivable.id, state.payments).some((payment) => payment.paidDate >= "2026-08-05" && payment.amountPaise < receivable.amountDuePaise);
+  const contactDays = lastContacted ? Math.max(0, daysBetween(lastContacted, today)) : 30;
+  const fiveDaysAgo = new Date(`${today}T12:00:00Z`); fiveDaysAgo.setUTCDate(fiveDaysAgo.getUTCDate() - 7);
+  const recentThreshold = fiveDaysAgo.toISOString().slice(0, 10);
+  const recentPartial = getPaymentsFor(receivable.id, state.payments).some((payment) => payment.paidDate >= recentThreshold && payment.amountPaise < receivable.amountDuePaise);
   const brokenPromises = Math.min(25, brokenCount * 10);
   const promiseUrgency = daysToPromise === null ? 0 : daysToPromise <= 0 ? 20 : daysToPromise <= 3 ? 12 : daysToPromise <= 7 ? 6 : 0;
   const daysOverdue = Math.min(20, overdueDays * 2);
@@ -78,12 +86,13 @@ export function priorityBreakdown(receivable: Receivable, state: DemoState): Pri
 }
 
 export function priorityReasons(receivable: Receivable, state: DemoState) {
+  const today = todayInIndia();
   const breakdown = priorityBreakdown(receivable, state);
   const reasons: { label: string; value: number }[] = [];
   const brokenCount = getPromisesFor(receivable.id, state.promises).filter((promise) => promise.status === "BROKEN").length;
-  const overdueDays = Math.max(0, daysBetween(receivable.dueDate, DEMO_TODAY));
+  const overdueDays = Math.max(0, daysBetween(receivable.dueDate, today));
   const lastContacted = getLastContacted(receivable.id, state.activities);
-  const contactDays = lastContacted ? Math.max(0, daysBetween(lastContacted, DEMO_TODAY)) : 30;
+  const contactDays = lastContacted ? Math.max(0, daysBetween(lastContacted, today)) : 30;
   if (brokenCount > 0) reasons.push({ label: `${brokenCount} promise${brokenCount > 1 ? "s" : ""} broken`, value: breakdown.brokenPromises });
   if (overdueDays > 0) reasons.push({ label: `${overdueDays} day${overdueDays > 1 ? "s" : ""} overdue`, value: breakdown.daysOverdue });
   if (contactDays >= 3) reasons.push({ label: `No contact for ${contactDays} days`, value: breakdown.contactStaleness });
@@ -116,7 +125,7 @@ export function getSuggestion(receivable: Receivable, state: DemoState) {
   if (latest?.status === "PARTIALLY_KEPT") return "partial" as const;
   if (brokenCount >= 2) return "repeated" as const;
   if (latest?.status === "BROKEN") return "broken" as const;
-  if (Math.max(0, daysBetween(receivable.dueDate, DEMO_TODAY)) > 0) return "overdue" as const;
+  if (Math.max(0, daysBetween(receivable.dueDate, todayInIndia())) > 0) return "overdue" as const;
   return "friendly" as const;
 }
 

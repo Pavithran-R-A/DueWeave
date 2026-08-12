@@ -2,11 +2,17 @@
 
 import { describe, expect, it } from "vitest";
 import { createDemoState, DEMO_TODAY } from "@/data/demo";
-import { daysBetween, formatINR, getOutstanding, getQueue, getReliability, interpolateMessage, priorityBreakdown } from "@/lib/finance";
+import { daysBetween, formatINR, getOutstanding, getQueue, getReliability, interpolateMessage, priorityBreakdown, todayInIndia } from "@/lib/finance";
 
 describe("finance helpers", () => {
   it("formats paise as Indian rupee amounts", () => {
     expect(formatINR(1200000)).toBe("₹12,000");
+    expect(formatINR(1)).toBe("₹0");
+    expect(formatINR(125050)).toBe("₹1,251");
+  });
+
+  it("returns a database-compatible India calendar date for live records", () => {
+    expect(todayInIndia()).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
   it("keeps partial payments visible as an outstanding balance", () => {

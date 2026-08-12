@@ -1,16 +1,18 @@
-# PROJECT AR-1 / DueWeave
+# DueWeave — PROJECT AR-1 Stage 2
 
-DueWeave is the temporary working name for **PROJECT AR-1**, a mobile-first promise ledger for independent service businesses. The Stage 1 prototype helps a founder record receivables, remember payment commitments, see a deterministic Today queue, prepare a respectful follow-up, and keep payment history visible. It is a local frontend prototype only: it does not claim real adoption, real money recovered, or production customer data.
+DueWeave is the temporary working name for **PROJECT AR-1**, a mobile-first promise ledger for Indian independent service businesses. It helps a founder record receivables, remember payment commitments, see a deterministic Today queue, prepare a respectful follow-up, and keep payment history visible. It does not claim real adoption, money recovered, or production customer data.
 
 ## Current stage
 
-Stage 1.1 is the approved mobile product and conversion pass. The interface preserves a Today-first briefing, a compact outstanding-cash summary, an actionable first queue card, promise history, partial-payment clarity, local follow-up templates, client and receivable views, and a Founder upgrade preview that intentionally does not take payment. The current Stage 1.2 checkpoint freezes this approved UI and takes source ownership before any backend work begins.
+Stage 2 adds email-and-password Supabase authentication, a protected application route, RLS-backed persistence, transactional database workflows, and a secure first-user empty state to the Stage 1.2 approved mobile interface. The visual system remains the approved Quiet Ledger design. Stage 3 work, public deployment, real payment collection, and entitlement purchase flows are deliberately out of scope.
 
 ## Architecture
 
-The app is a React 19, TypeScript, Vite, and Tailwind frontend. `client/src/config/brand.ts` is the central temporary identity configuration. `client/src/data/demo.ts` contains the fictional Indian service-business dataset, while `client/src/lib/finance.ts` contains pure, testable INR, date, promise-state, reliability, and priority helpers. `client/src/data/repository.ts` provides the smallest local repository seam used by the UI; it is intentionally in-memory and has no Supabase implementation yet.
+The browser application uses React 19, TypeScript, Vite, Tailwind, Wouter, and `@supabase/supabase-js`. `client/src/config/brand.ts` is the central temporary identity configuration. `client/src/lib/supabase.ts` provides the browser-safe Supabase client, `client/src/hooks/useSupabaseAuth.ts` handles session lifecycle, and `client/src/data/supabase-*-repository.ts` contains the scoped client, receivable, promise, payment, activity, and dashboard adapters. The approved UI calls these repositories rather than querying the database directly.
 
-All money values are stored as integer paise. The priority queue is deterministic and explainable. Demo customer and financial records are isolated from UI components so a later repository adapter can replace them without scattering database calls through the view layer.
+All money values are stored as integer paise. The priority queue is deterministic and explainable. `client/src/data/demo.ts` remains a static fixture for tests and design reference only; it is neither imported nor inserted by the authenticated application. New accounts receive a private, empty ledger.
+
+The reproducible Supabase schema is committed under `supabase/migrations/`. It defines `profiles`, `clients`, `receivables`, `promises`, `payments`, `activities`, `promise_events`, `entitlements`, `purchase_claims`, and `analytics_events`, as well as audited transactional workflows for creating a receivable, creating a promise, recording a payment, and recording a follow-up.
 
 ## Local setup
 
@@ -19,27 +21,34 @@ pnpm install
 pnpm dev
 ```
 
-The development server runs the Vite client. The project uses the existing lightweight static frontend scaffold and has no production backend, authentication, database, payment processor, messaging API, or runtime AI.
+The development server runs the Vite client through the project server. Configure these **browser-safe** values in a local, ignored `.env.local` file before starting the frontend:
+
+```bash
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your-publishable-anon-key
+```
+
+Never add a Supabase service-role key, database password, management token, or `.env` file to the repository. Authentication, authorization, and tenant isolation are enforced by Supabase Auth and PostgreSQL RLS—not by browser-side filtering.
 
 ## Verification commands
 
 ```bash
-pnpm test       # Vitest unit suite
+pnpm test       # Vitest unit and source-contract suite
 pnpm run check  # TypeScript typecheck
 pnpm run lint   # TypeScript-based lint gate
 pnpm run build  # Vite production build plus server bundle
-pnpm audit --prod
+pnpm audit --prod --audit-level=high
 ```
 
-The current unit suite covers INR formatting, outstanding balance behavior, paid-state detection, deterministic queue ordering, demo dates, reliability thresholds, and message interpolation. The Stage 1.2 report records the exact runner counts and the package audit result.
+The Stage 2 suite covers financial formatting and state helpers, Supabase row normalization, public browser configuration, migration security contracts, transactional-RPC access guarantees, and demo-data isolation. The database attack and integrity matrices are run in rollback-only transactions against the connected project.
 
 ## Zero-cost and security boundary
 
-The prototype uses no paid dependencies and adds no hosted vendor runtime dependency. There are no production secrets, Supabase keys, UPI identifiers, service-role credentials, or personal payment credentials in the source. Environment files are ignored. The Founder payment flow is a non-transactional preview only; real payment and access activation remain explicitly out of scope.
+The Stage 2 foundation uses Supabase Free and GitHub Free only. There is no paid SMTP service, payment gateway, messaging API, or runtime AI. Publishable Supabase configuration is supplied from ignored local environment values; no service-role credential is used in the frontend or committed source. The free plan's three active-receivable limit is enforced inside PostgreSQL, and clients cannot self-upgrade their entitlement.
 
 ## Roadmap
 
-Stage 1 is the local product prototype. Stage 1.2 freezes and exports this source. Stage 2, only after explicit approval, may introduce authentication, a production data model, row-level security, repository-backed persistence, and carefully scoped integrations. Supabase, real user data, real payments, Cloudflare, native builds, WhatsApp API access, email delivery, and runtime AI are not created or connected in this checkpoint.
+Stage 1 is the local product prototype and Stage 1.2 is its source-ownership freeze. Stage 2 is the secure Supabase foundation. A later, separately approved stage may address product onboarding, notification delivery, paid plans, external payment, operational analytics, deployment, native builds, WhatsApp API access, email delivery, or runtime AI.
 
 ## Rebranding note
 

@@ -8,7 +8,7 @@ export type PromiseStatus =
   | "RENEGOTIATED"
   | "CANCELLED";
 
-export type ReceivableStatus = "OPEN" | "PARTIALLY_PAID" | "PAID" | "CANCELLED";
+export type ReceivableStatus = "OPEN" | "PARTIALLY_PAID" | "PAID" | "CANCELLED" | "WRITTEN_OFF";
 export type PaymentMethod = "UPI" | "Bank transfer" | "Cash" | "Other";
 export type PromiseSource = "WhatsApp" | "Call" | "Email" | "Meeting" | "Other";
 export type ActivityType = "created" | "due" | "follow_up" | "contacted" | "promise" | "broken" | "payment" | "note";
@@ -29,6 +29,7 @@ export interface Receivable {
   title: string;
   invoiceRef?: string;
   amountDuePaise: number;
+  outstandingPaise?: number;
   dueDate: string;
   createdAt: string;
   notes?: string;
