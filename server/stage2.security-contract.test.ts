@@ -8,15 +8,24 @@ const alignedMigration = readFileSync(resolve(root, "supabase/migrations/2026081
 const rpcGrantMigration = readFileSync(resolve(root, "supabase/migrations/20260812155500_revoke_public_rpc_execution.sql"), "utf8");
 const unusedDeleteRpcMigration = readFileSync(resolve(root, "supabase/migrations/20260812160500_revoke_unused_delete_rpc.sql"), "utf8");
 const stage3WorkflowMigration = readFileSync(resolve(root, "supabase/migrations/20260812170000_stage3_core_workflows.sql"), "utf8");
+const stage4Migration = readFileSync(resolve(root, "supabase/migrations/20260813030000_stage4_founder_monetization.sql"), "utf8");
+const stage4HardeningMigration = readFileSync(resolve(root, "supabase/migrations/20260813030500_stage4_harden_admin_helpers.sql"), "utf8");
+const stage4DraftConstraintMigration = readFileSync(resolve(root, "supabase/migrations/20260813031500_stage4_drop_legacy_draft_reference_constraint.sql"), "utf8");
+const stage4CancellationConstraintMigration = readFileSync(resolve(root, "supabase/migrations/20260813032000_stage4_allow_cancelled_empty_reference.sql"), "utf8");
 const homePage = readFileSync(resolve(root, "client/src/pages/Home.tsx"), "utf8");
 const appShell = readFileSync(resolve(root, "client/src/App.tsx"), "utf8");
 const authPage = readFileSync(resolve(root, "client/src/pages/Auth.tsx"), "utf8");
 const authHook = readFileSync(resolve(root, "client/src/hooks/useSupabaseAuth.ts"), "utf8");
 const dashboardRepository = readFileSync(resolve(root, "client/src/data/supabase-dashboard-repository.ts"), "utf8");
 const activityRepository = readFileSync(resolve(root, "client/src/data/supabase-activity-repository.ts"), "utf8");
+const founderRepository = readFileSync(resolve(root, "client/src/data/supabase-founder-repository.ts"), "utf8");
+const founderAdminRepository = readFileSync(resolve(root, "client/src/data/supabase-founder-admin-repository.ts"), "utf8");
+const founderPage = readFileSync(resolve(root, "client/src/pages/FounderPurchase.tsx"), "utf8");
+const founderAdminPage = readFileSync(resolve(root, "client/src/pages/FounderAdmin.tsx"), "utf8");
+const founderPaymentHelper = readFileSync(resolve(root, "client/src/lib/founder-payment.ts"), "utf8");
 const sheets = readFileSync(resolve(root, "client/src/components/sheets.tsx"), "utf8");
 const financeUi = readFileSync(resolve(root, "client/src/components/finance-ui.tsx"), "utf8");
-const schema = `${baseMigration}\n${alignedMigration}\n${rpcGrantMigration}\n${stage3WorkflowMigration}`;
+const schema = `${baseMigration}\n${alignedMigration}\n${rpcGrantMigration}\n${stage3WorkflowMigration}\n${stage4Migration}\n${stage4HardeningMigration}\n${stage4DraftConstraintMigration}\n${stage4CancellationConstraintMigration}`;
 
 describe("Stage 2 Supabase security contract", () => {
   it("enables RLS across every private business table", () => {
@@ -121,5 +130,78 @@ describe("Stage 2 Supabase security contract", () => {
     expect(sheets).toMatch(/target="_blank" rel="noreferrer" onClick=\{onMarkContacted\}/);
     expect(sheets).toMatch(/never sent automatically/i);
     expect(financeUi).toMatch(/snoozedUntil/);
+  });
+
+  it("keeps Founder monetization tables under RLS with no browser-writable admin allowlist or payment configuration", () => {
+    for (const table of ["founder_offer_config", "founder_admins", "founder_audit_events"]) {
+      expect(stage4Migration).toMatch(new RegExp(`alter table public\\.${table} enable row level security`, "i"));
+    }
+    expect(stage4Migration).toMatch(/revoke all on table public\.founder_offer_config, public\.founder_admins, public\.founder_audit_events from anon, authenticated/i);
+    expect(stage4Migration).toMatch(/revoke insert, update, delete on table public\.purchase_claims, public\.entitlements, public\.analytics_events from authenticated/i);
+    expect(stage4Migration).toMatch(/Server-controlled allowlist for manual Founder claim review/i);
+    expect(founderRepository).not.toMatch(/founder_admins/);
+    expect(founderRepository).not.toMatch(/founder_offer_config["']\)\.update/);
+  });
+
+  it("enforces immutable Founder claim terms, one open claim, duplicate-reference prevention, and a locked 50-seat approval boundary", () => {
+    expect(stage4Migration).toMatch(/purchase_claims_claim_id_format_check/);
+    expect(stage4Migration).toMatch(/purchase_claims_reference_state_check/);
+    expect(stage4Migration).toMatch(/purchase_claims_utr_reference_unique/);
+    expect(stage4Migration).toMatch(/purchase_claims_owner_open_unique/);
+    expect(stage4Migration).toMatch(/Founder claim history is immutable/);
+    expect(stage4Migration).toMatch(/Founder claim identity and offer terms are immutable/);
+    expect(stage4Migration).toMatch(/pg_advisory_xact_lock\(hashtext\('dueweave-founder-seat-cap'\)\)/);
+    expect(stage4Migration).toMatch(/v_active_count >= v_offer\.founder_cap/);
+    expect(stage4Migration).toMatch(/amount_paise bigint not null default 49900 check \(amount_paise = 49900\)/);
+    expect(stage4DraftConstraintMigration).toMatch(/drop constraint if exists purchase_claims_provider_external_reference_key/i);
+    expect(stage4DraftConstraintMigration).toMatch(/purchase_claims_utr_reference_unique/i);
+  });
+
+  it("permits owner cancellation and retry only through guarded workflows while retaining reviewer-only approval and rejection", () => {
+    expect(stage4Migration).toMatch(/create or replace function public\.cancel_founder_claim\(p_claim_id text\)/i);
+    expect(stage4Migration).toMatch(/Only an unsubmitted claim can be cancelled/);
+    expect(stage4Migration).toMatch(/CLAIM_CANCELLED/);
+    expect(stage4Migration).toMatch(/status in \('DRAFT', 'PENDING_REVIEW'\)/);
+    expect(stage4CancellationConstraintMigration).toMatch(/status in \('DRAFT', 'CANCELLED'\) and utr_reference = '' and payer_name = ''/);
+    expect(stage4CancellationConstraintMigration).toMatch(/status in \('PENDING_REVIEW', 'APPROVED', 'REJECTED'\)/);
+    expect(stage4Migration).toMatch(/create or replace function public\.approve_founder_claim\(p_claim_id text\)/i);
+    expect(stage4Migration).toMatch(/create or replace function public\.reject_founder_claim\(p_claim_id text, p_reason text default null\)/i);
+    expect(stage4Migration).toMatch(/perform public\.assert_founder_admin\(\)/g);
+    expect(stage4Migration).toMatch(/pg_advisory_xact_lock\(hashtext\('dueweave-founder-seat-cap'\)\)/);
+  });
+
+  it("permits higher-volume receivables only for an active Founder entitlement and preserves existing records after revocation", () => {
+    expect(stage4Migration).toMatch(/coalesce\(v_plan, 'FREE'\) = 'FOUNDER' and v_status = 'ACTIVE'/);
+    expect(stage4Migration).toMatch(/only future transitions into active receivable states are gated/i);
+    expect(stage4Migration).toMatch(/status = 'REVOKED'/);
+    expect(stage4Migration).toMatch(/ENTITLEMENT_REVOKED/);
+  });
+
+  it("restricts Founder workflows to authenticated users and admin review to the server-side allowlist", () => {
+    for (const rpc of ["get_founder_offer", "create_founder_claim", "submit_founder_payment", "cancel_founder_claim", "record_founder_upgrade_view", "list_pending_founder_claims", "get_founder_funnel", "approve_founder_claim", "reject_founder_claim", "revoke_founder_entitlement"]) {
+      expect(stage4Migration).toMatch(new RegExp(`revoke all on function public\\.${rpc}`, "i"));
+      expect(stage4Migration).toMatch(new RegExp(`grant execute on function public\\.${rpc}`, "i"));
+    }
+    expect(stage4Migration).toMatch(/perform public\.assert_founder_admin\(\)/g);
+    expect(stage4HardeningMigration).toMatch(/revoke all on function public\.is_founder_admin\(\) from public/i);
+    expect(stage4HardeningMigration).toMatch(/revoke all on function public\.assert_founder_admin\(\) from public/i);
+    expect(founderAdminRepository).toMatch(/list_pending_founder_claims/);
+    expect(founderAdminRepository).toMatch(/approve_founder_claim/);
+    expect(founderAdminRepository).toMatch(/revoke_founder_entitlement/);
+  });
+
+  it("keeps the customer payment interface truthful and excludes payment credentials, card collection, and client-side approval", () => {
+    expect(founderPaymentHelper).toMatch(/paymentDestinationStatus === "TEST" \|\| offer\.paymentDestinationStatus === "CONFIGURED"/);
+    expect(founderPage).toMatch(/Do not send money yet/);
+    expect(founderPage).toMatch(/We do not request, store, or view your UPI PIN, OTP, banking password, card details, or bank credentials/);
+    expect(founderPage).toMatch(/manual.*bank-history review/i);
+    expect(founderPage).toMatch(/payment reference you provide, the configured offer amount, claim status, and review timestamps/i);
+    expect(founderPage).toMatch(/not a debt-collection agency or a source of legal advice/i);
+    expect(founderPage).toMatch(/Refund terms are not fabricated in-app and must be confirmed before broad public sales/i);
+    expect(founderPage).toMatch(/operator accounting, tax, or business obligations that require independent confirmation/i);
+    expect(founderPage).not.toMatch(/service_role|sb_secret|stripe|razorpay|payment gateway secret/i);
+    expect(founderAdminPage).toMatch(/Founder review is restricted/);
+    expect(appShell).toContain('path="/founder" component={() => <ProtectedPage Page={FounderPurchase} />');
+    expect(appShell).toContain('path="/admin/founder-claims" component={() => <ProtectedPage Page={FounderAdmin} />');
   });
 });

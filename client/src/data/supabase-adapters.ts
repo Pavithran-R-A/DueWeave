@@ -66,6 +66,16 @@ export function paymentMethodToDatabase(method: PaymentMethod) {
 
 export function userFacingDataError(message?: string) {
   const normalized = (message ?? "").toLowerCase();
+  if (normalized.includes("founder review access")) return "Founder review access is not available for this account.";
+  if (normalized.includes("already active")) return "Founder access is already active for this account.";
+  if (normalized.includes("offer is currently full")) return "The verified Founder offer is currently full.";
+  if (normalized.includes("payment instructions are not ready")) return "UPI instructions are not ready for payment submission yet.";
+  if (normalized.includes("payment reference has already")) return "That payment reference has already been submitted.";
+  if (normalized.includes("payment claim")) return "This Founder payment claim is not available in this account.";
+  if (normalized.includes("payer name")) return "Enter the payer name used for the payment.";
+  if (normalized.includes("payment reference with")) return "Enter a valid UTR or payment reference.";
+  if (normalized.includes("founder access is not available")) return "The Founder offer is unavailable right now.";
+  if (normalized.includes("review note") || normalized.includes("revocation reason")) return "Add a short review reason before continuing.";
   if (normalized.includes("free plan allows")) return "Your Free plan allows up to three active receivables. Close or settle one before adding another.";
   if (normalized.includes("within the remaining balance")) return "The amount must be greater than zero and no more than the remaining balance.";
   if (normalized.includes("valid positive receivable amount") || normalized.includes("amount greater than zero")) return "Enter a valid amount greater than zero.";

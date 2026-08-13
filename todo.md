@@ -67,3 +67,19 @@
 - [x] Commit the verified Stage 3 source and report on `stage-3-beta-readiness`, recording the immutable release hash.
 - [x] Push and verify the `stage-3-beta-readiness` GitHub upstream without force-pushing or altering protected tags.
 - [x] Create and verify the annotated `stage-3-beta-readiness` tag, save the final project checkpoint, and record release status in the report.
+
+## Stage 4 Founder Lifetime Monetization
+
+- [x] Validate the Stage 3 baseline, current entitlements and claims schema, repository state, and secure admin authorization approach without exposing an admin secret to the browser.
+- [x] Add reproducible Stage 4 schema, RLS, constraints, indexes, and secure RPCs for immutable Founder purchase claims, protected entitlements, audit events, plan configuration, duplicate UTR prevention, and 50-seat cap enforcement.
+- [x] Implement atomic, server-authorized Founder claim creation, cancellation/retry, approval, rejection, revocation, entitlement activation, audit logging, and privacy-conscious analytics events.
+- [x] Extend the Free-plan receivable limit to permit additional active receivables only for an active Founder entitlement and retain existing records after revocation.
+- [x] Build the mobile-first Founder purchase, UPI instructions, QR, copy/open-intent, UTR submission, payment-status, support, and Founder badge experiences without fabricating a real payment destination.
+- [x] Build the minimum separate admin claim-review view with protected pending-claim listing, manual bank-history reminder, approve/reject/revoke controls, and no unnecessary customer receivable access.
+- [x] Update privacy and terms copy for manual payment verification, zero payment-credential storage, Founder limitations, manual refund policy decision, and business-compliance notice.
+- [x] Re-run the final Stage 4 regression suite after adding the customer-visible cancel-and-retry browser path; record automated coverage separately from the live Supabase authorization and capacity matrix.
+- [x] Finalise Stage 4 responsive and accessibility evidence at 360/390/430/768/1440, including labelled input focus, semantic QR/status messaging, bundle impact, production build, dependency audit, and secret scan.
+- [x] Correct the Founder claim reference-state constraint so a cancelled unsubmitted draft remains valid and an owner can retry through the protected workflow.
+- [ ] Commit, push, tag `stage-4-monetization-ready`, checkpoint, and deliver the exact Stage 4 readiness report without beginning Stage 5.
+- [x] Remove the legacy global `(payer_name, utr_reference)` uniqueness constraint so multiple protected Founder drafts can coexist while retaining status-aware duplicate UTR prevention.
+- [x] Run a controlled authenticated browser E2E for Founder navigation, live offer display, QR rendering, manual payment-reference submission, pending-review state, and sign-out using an isolated fixture.

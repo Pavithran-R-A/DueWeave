@@ -3,7 +3,7 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Loader2 } from "lucide-react";
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, Suspense, useEffect, type ComponentType } from "react";
 import { Route, Switch, useLocation } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
@@ -12,6 +12,8 @@ import NotFound from "./pages/NotFound";
 
 const Auth = lazy(() => import("./pages/Auth"));
 const Home = lazy(() => import("./pages/Home"));
+const FounderPurchase = lazy(() => import("./pages/FounderPurchase"));
+const FounderAdmin = lazy(() => import("./pages/FounderAdmin"));
 
 function SessionLoading() {
   return <main className="auth-loading" aria-live="polite"><Loader2 className="spin" size={24} /><span>Opening your private ledger…</span></main>;
@@ -30,6 +32,18 @@ function ProtectedHome() {
   return <Home />;
 }
 
+function ProtectedPage({ Page }: { Page: ComponentType }) {
+  const { isAuthenticated, loading } = useSupabaseAuth();
+  const [, navigate] = useLocation();
+
+  useEffect(() => {
+    if (!loading && !isAuthenticated) navigate("/auth", { replace: true });
+  }, [isAuthenticated, loading, navigate]);
+
+  if (loading || !isAuthenticated) return <SessionLoading />;
+  return <Page />;
+}
+
 function AuthRoute() {
   const { isAuthenticated, loading } = useSupabaseAuth();
   const [, navigate] = useLocation();
@@ -44,7 +58,7 @@ function AuthRoute() {
 }
 
 function App() {
-  return <ErrorBoundary><ThemeProvider defaultTheme="light"><TooltipProvider><Toaster position="top-right" /><Suspense fallback={<SessionLoading />}><Switch><Route path="/auth" component={AuthRoute} /><Route path="/auth/update-password" component={Auth} /><Route path="/" component={ProtectedHome} /><Route component={NotFound} /></Switch></Suspense></TooltipProvider></ThemeProvider></ErrorBoundary>;
+  return <ErrorBoundary><ThemeProvider defaultTheme="light"><TooltipProvider><Toaster position="top-right" /><Suspense fallback={<SessionLoading />}><Switch><Route path="/auth" component={AuthRoute} /><Route path="/auth/update-password" component={Auth} /><Route path="/founder" component={() => <ProtectedPage Page={FounderPurchase} />} /><Route path="/admin/founder-claims" component={() => <ProtectedPage Page={FounderAdmin} />} /><Route path="/" component={ProtectedHome} /><Route component={NotFound} /></Switch></Suspense></TooltipProvider></ThemeProvider></ErrorBoundary>;
 }
 
 export default App;

@@ -80,3 +80,53 @@ export interface DemoState {
 }
 
 export type AppSection = "today" | "receivables" | "clients" | "more" | "empty" | "loading" | "error";
+
+export type FounderClaimStatus = "DRAFT" | "PENDING_REVIEW" | "APPROVED" | "REJECTED" | "CANCELLED";
+export type FounderEntitlementStatus = "ACTIVE" | "PENDING_REVIEW" | "REVOKED";
+
+export interface FounderOffer {
+  amountPaise: number;
+  founderCap: number;
+  availableSpots: number;
+  payeeName: string;
+  upiId?: string;
+  paymentDestinationStatus: "PLACEHOLDER" | "TEST" | "CONFIGURED";
+  supportContact: string;
+  reviewWindowCopy: string;
+  enabled: boolean;
+}
+
+export interface FounderClaim {
+  id: string;
+  claimId: string;
+  plan: "FOUNDER";
+  amountPaise: number;
+  payerName: string;
+  utrReference: string;
+  status: FounderClaimStatus;
+  submittedAt?: string;
+  reviewedAt?: string;
+  createdAt: string;
+}
+
+export interface FounderEntitlement {
+  plan: "FREE" | "FOUNDER";
+  status: FounderEntitlementStatus;
+  activatedAt?: string;
+  reviewedAt?: string;
+}
+
+export interface PendingFounderClaim {
+  claimId: string;
+  ownerId: string;
+  ownerEmail: string;
+  payerName: string;
+  utrReference: string;
+  amountPaise: number;
+  submittedAt: string;
+}
+
+export interface FounderFunnelEvent {
+  eventName: "upgrade_viewed" | "founder_claim_created" | "founder_payment_submitted" | "founder_activated" | "founder_rejected";
+  eventCount: number;
+}
