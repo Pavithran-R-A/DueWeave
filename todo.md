@@ -80,6 +80,6 @@
 - [x] Re-run the final Stage 4 regression suite after adding the customer-visible cancel-and-retry browser path; record automated coverage separately from the live Supabase authorization and capacity matrix.
 - [x] Finalise Stage 4 responsive and accessibility evidence at 360/390/430/768/1440, including labelled input focus, semantic QR/status messaging, bundle impact, production build, dependency audit, and secret scan.
 - [x] Correct the Founder claim reference-state constraint so a cancelled unsubmitted draft remains valid and an owner can retry through the protected workflow.
-- [ ] Commit, push, tag `stage-4-monetization-ready`, checkpoint, and deliver the exact Stage 4 readiness report without beginning Stage 5.
+- [x] Commit, push, tag `stage-4-founder-monetization`, checkpoint, and deliver the exact Stage 4 readiness report without beginning Stage 5.
 - [x] Remove the legacy global `(payer_name, utr_reference)` uniqueness constraint so multiple protected Founder drafts can coexist while retaining status-aware duplicate UTR prevention.
 - [x] Run a controlled authenticated browser E2E for Founder navigation, live offer display, QR rendering, manual payment-reference submission, pending-review state, and sign-out using an isolated fixture.
