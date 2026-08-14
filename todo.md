@@ -107,4 +107,4 @@
 - [x] Push the CI repair normally, wait for a fully green GitHub Actions workflow, and inspect every required remote step.
 - [x] Correct the Stage 4.1 report with initial failures, root cause, corrective commit, green run ID, and remote-step evidence.
 - [x] Create and push `stage-4-1-ci-green` only at the exact green commit without moving an existing tag.
-- [ ] Save the final Stage 4.1.1 checkpoint, then stop before Stage 5.
+- [x] Save the final Stage 4.1.1 checkpoint, then stop before Stage 5.
