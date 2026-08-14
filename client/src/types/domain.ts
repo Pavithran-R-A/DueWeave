@@ -90,11 +90,12 @@ export interface FounderOffer {
   availableSpots: number;
   payeeName: string;
   upiId?: string;
-  paymentDestinationStatus: "PLACEHOLDER" | "TEST" | "CONFIGURED";
+  paymentDestinationStatus: "PLACEHOLDER" | "TEST" | "LIVE";
   supportContact: string;
   supportContactStatus: "PENDING" | "CONFIGURED";
   refundPolicyStatus: "PENDING_APPROVAL" | "APPROVED";
   refundPolicyText?: string;
+  disclosuresStatus: "PENDING" | "APPROVED";
   reviewWindowCopy: string;
   enabled: boolean;
 }

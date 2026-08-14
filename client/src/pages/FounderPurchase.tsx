@@ -76,6 +76,9 @@ export default function FounderPurchase() {
 
   const { offer, claim, entitlement } = data;
   const paymentReady = isFounderPaymentDestinationReady(offer);
+  const supportCopy = offer.supportContactStatus === "CONFIGURED" && offer.supportContact.trim().length > 2
+    ? `For payment or refund questions, contact ${offer.supportContact} with your claim ID.`
+    : "Support contact will be available before payments open.";
   const approved = entitlement.plan === "FOUNDER" && entitlement.status === "ACTIVE";
 
   return <main className="founder-page">
@@ -107,7 +110,7 @@ export default function FounderPurchase() {
         <article><strong>Founder Lifetime</strong><p>Founder Lifetime covers core DueWeave V1 Founder access as described here. It does not guarantee that any client will pay, and DueWeave is not a debt-collection agency or a source of legal advice.</p></article>
         <article><strong>Payment-claim privacy</strong><p>For manual verification, we store only the payer name and payment reference you provide, the configured offer amount, claim status, and review timestamps. We do not store UPI PINs, OTPs, banking logins, or card credentials.</p></article>
         <article><strong>Manual review and future services</strong><p>Payment verification is manual. Any future third-party or usage-based service may have a separate cost and is not included automatically in Founder Lifetime.</p></article>
-        <article><strong>Support and policy</strong><p>For payment or refund questions, contact {offer.supportContact} with your claim ID. {offer.refundPolicyStatus === "APPROVED" && offer.refundPolicyText ? offer.refundPolicyText : "Refund terms are pending founder approval; payment instructions remain unavailable until they are confirmed."} Commercial payments may also create operator accounting, tax, or business obligations that require independent confirmation.</p></article>
+        <article><strong>Support and policy</strong><p>{supportCopy} {offer.refundPolicyStatus === "APPROVED" && offer.refundPolicyText ? offer.refundPolicyText : "Founder Beta refund terms are drafted but require founder publication approval; payment instructions remain unavailable until they are confirmed."} Commercial payments may also create operator accounting, tax, or business obligations that require independent confirmation.</p></article>
       </div>
     </section>
     <footer className="founder-footer"><button className="button-ghost" onClick={() => navigate("/")}>Return to my ledger</button><span>Manual refunds are not promised in-app; request support with your claim ID where required by applicable law.</span></footer>

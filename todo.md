@@ -119,9 +119,17 @@
 - [x] Prepare configurable, truthful Founder payment disclosures, a centralized public support contact surface, and the proposed unapproved seven-day beta refund policy without fabricating support details or legal claims.
 - [x] Prepare the operator-bootstrap and controlled-customer procedure without adding client-editable admin flags, frontend UUIDs, browser self-enrollment, secrets, payment gateways, or paid services.
 - [x] Apply and verify the Stage 4.2 server-controlled support and founder-approved refund readiness migration while preserving the non-actionable offer state and passing local lint, tests, typecheck, and build.
-- [ ] Obtain explicit founder-provided operator identity, UPI VPA, payee name, and support address through safe channels before making trusted Supabase configuration changes.
-- [ ] Configure the real trusted operator and controlled Founder offer only through the documented Supabase administrative path, then verify the operator allowlist and normal-user denials.
-- [ ] Generate and independently decode the ₹499 payment QR and mobile intent; verify destination, payee, amount, and note payload only, without inferring bank-account validity.
-- [ ] Verify the production-shaped Founder review surface, Free-to-Founder controlled-customer route, self-upgrade denial, duplicate-UTR protection, and real-payment stop gate.
-- [ ] Run lint, typecheck, tests, build, production audit, push the preparation branch, verify fully green GitHub Actions, and record the Stage 4.2 pre-payment verdict.
-- [ ] Stop before a real payment, deployment, customer acquisition, Stage 5, paid services, or public release; request explicit founder authorization only if readiness is verified.
+- [x] Superseded by the approved Stage 4.2A non-live scope: do not request, obtain, or store a real operator identity, UPI VPA, payee name, or support address.
+- [x] Superseded by the approved Stage 4.2A non-live scope: do not configure a real trusted operator or controlled live Founder offer.
+- [x] Complete the reusable UPI URI, QR, and generic mobile-intent layer with an isolated TEST-only fixture, independent decoding, exact ₹499 INR assertions, and no production fallback.
+- [x] Align the single server-controlled and client-side readiness evaluator to fail closed unless a future `LIVE` offer has a valid VPA, payee, ₹499 price, support contact, approved refund terms, and required disclosures.
+- [x] Complete and verify truthful desktop and 360px, 390px, and 430px mobile Founder purchase UX for `PLACEHOLDER`, including disabled QR, copy, intent, claim, and payment-submission actions.
+- [x] Complete and verify claim-state, admin-review, duplicate-UTR, seat-cap, entitlement, Free-to-Founder, analytics, privacy, and terms coverage with disposable fixtures only; remove all temporary reviewer and entitlement fixtures.
+- [x] Re-run all specified security, browser, responsive, QR, and controlled workflow validation while preserving ordinary-user denial and no live operator configuration.
+- [x] Re-run and record a clear PASS for the controlled Founder placeholder browser suite at desktop plus 360px, 390px, and 430px, including absence of QR, intent, claim, copy, and submission actions.
+- [x] Execute and record disposable-fixture validation for duplicate UTR rejection, seat-cap protection, claim/admin-review lifecycle, entitlement behavior, Free-to-Founder conversion, analytics, privacy, and terms; then clean up every fixture.
+- [x] Record exact passing results for the full Stage 4.2A security, browser, responsive, QR, and controlled workflow validation set, plus the final live `PLACEHOLDER` and zero-operator proof.
+- [x] Remove the unused Stage 4.2A browser-test fixture variable that blocks the mandatory ESLint release gate, then rerun the full release suite.
+- [ ] Run lint, typecheck, tests, build, production audit, push the Stage 4.2A branch, verify fully green GitHub Actions, and record the Stage 4.2A pre-payment verdict.
+- [x] Produce `stage4_2a_final_report.md` with the required PASS/FAIL evidence, remaining private inputs, live placeholder state, ₹0 real money, and explicit Stage 4.2B/Stage 5 stop boundary.
+- [ ] Stop before a real payment, deployment, customer acquisition, Stage 4.2B live configuration, Stage 5, paid services, or public release.

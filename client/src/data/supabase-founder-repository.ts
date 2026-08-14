@@ -16,11 +16,12 @@ function toOffer(row: Row): FounderOffer {
     availableSpots: amount(row, "available_spots"),
     payeeName: text(row, "payee_name"),
     upiId: optionalText(row, "upi_id"),
-    paymentDestinationStatus: status === "TEST" || status === "CONFIGURED" ? status : "PLACEHOLDER",
+    paymentDestinationStatus: status === "TEST" || status === "LIVE" ? status : "PLACEHOLDER",
     supportContact: text(row, "support_contact"),
     supportContactStatus: text(row, "support_contact_status") === "CONFIGURED" ? "CONFIGURED" : "PENDING",
     refundPolicyStatus: text(row, "refund_policy_status") === "APPROVED" ? "APPROVED" : "PENDING_APPROVAL",
     refundPolicyText: optionalText(row, "refund_policy_text"),
+    disclosuresStatus: text(row, "disclosures_status") === "APPROVED" ? "APPROVED" : "PENDING",
     reviewWindowCopy: text(row, "review_window_copy"),
     enabled: row.enabled === true,
   };

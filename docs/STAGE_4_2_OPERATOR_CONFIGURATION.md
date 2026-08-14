@@ -1,50 +1,39 @@
-# Stage 4.2: Trusted Operator and One-Controlled-Payment Procedure
+# Stage 4.2A: Fail-Closed Founder Payment Engineering
 
 ## Purpose and current state
 
-This runbook prepares a **single, explicitly authorized controlled Founder-payment test**. It does not authorize a payment, a public sale, customer acquisition, deployment, or Stage 5.
+Stage 4.2A delivers payment **infrastructure only**. It authorizes neither a payment, public sale, customer acquisition, deployment, real Founder activation, nor Stage 5. The live `FOUNDER_V1` offer remains `PLACEHOLDER`, has no UPI destination, has no configured support contact, has no approved public refund terms, and has no Founder-review operator.
 
-At the start of Stage 4.2, the Founder offer is enabled only as a safe `PLACEHOLDER`: it has no UPI destination, no configured support contact, no approved refund-policy text, and no Founder-review operator. The database-enforced readiness gate prevents claim creation and payment-reference submission until all three trusted configuration conditions are satisfied.
+The database and browser both fail closed. A customer cannot start a claim, submit a payment reference, see a payable QR, open a UPI app, or copy a UPI intent unless a future trusted operator has explicitly configured every live prerequisite. A `TEST` status is allowed only in isolated engineering fixtures and is never accepted by customer claim RPCs.
 
-## What the founder must provide before any trusted configuration
-
-The founder must explicitly supply all of the following in the project conversation. Do not use personal, borrowed, or unverified payment details.
-
-| Required item | Required form | How it is used |
+| Control | Stage 4.2A state | Future live prerequisite |
 |---|---|---|
-| Reviewer account | The email address used for the normal DueWeave account sign-up | Resolves the immutable authenticated UUID for the one-account `founder_admins` allowlist. |
-| Real payment VPA | A business-controlled UPI VPA, such as `business@bank` | Stored only in the server-controlled offer configuration and used in the UPI QR and intent. |
-| Payee name | The name a payer should expect in their UPI app | Stored in the server-controlled offer configuration and displayed before payment. |
-| Public support contact | A business email address intended for customer payment and refund questions | Stored in the server-controlled offer configuration and shown in the Founder terms surface. |
-| Refund-policy decision | Explicit approval or rejection of the proposed policy below | The text is not published and payment remains blocked until explicitly approved. |
+| Payment destination | `PLACEHOLDER`; VPA is `NULL` | A business-controlled VPA and `LIVE` status |
+| Price | ₹499.00 data contract | Exact integer amount `49900` paise |
+| Payee | Not publicly configured | Truthful display name |
+| Support | Not publicly configured | Public support address |
+| Refund terms | Draft only; not published as a promise | Founder-approved publication text |
+| Disclosures | Pending | Trusted approval of required disclosures |
+| Reviewer | No allowlisted operator | Normal signed-in reviewer UUID allowlisted server-side |
 
-No UPI PIN, OTP, bank password, card number, bank login, service-role key, payment-gateway key, or other banking credential is ever requested or accepted.
+## Stage 4.2A payment-readiness evaluator
 
-## Founder sign-up and reviewer identity
+Payment is ready only when all of the following are true: the offer is enabled, `payment_destination_status = 'LIVE'`, a valid VPA and payee name exist, the price equals `49900` paise, support is configured, refund terms are approved and present, and disclosures are approved. Any missing or malformed value results in no QR, no mobile intent, no copy action, no claim creation, and no payment-reference submission.
 
-1. Open the DueWeave preview and select **Create account** on the ordinary authentication surface.
-2. Sign up with the email address that should become the one manual Founder reviewer. Use a normal email-and-password flow; do not create a browser-visible administrator flag.
-3. Complete any normal email verification required by the authentication provider, then sign in successfully once.
-4. Send the account email to the operator in the project conversation. The operator will resolve the immutable `auth.users.id` through an owner-controlled Supabase session and insert that UUID into the server-controlled `founder_admins` allowlist.
-5. The reviewer then signs in normally and uses only `/admin/founder-claims` for manual review. A normal customer must continue to receive a denial from the same reviewer RPCs.
+The reusable URI layer is deliberately generic. Its isolated test fixture uses `dueweave-test@upi` with an explicit TEST note; it is not stored in the live offer and can never become a production fallback.
 
-## Proposed refund policy — requires explicit founder approval
+## Future operator path — not authorized in Stage 4.2A
 
-> **Proposed beta Founder refund policy.** A Founder customer may request a manual refund review within seven calendar days after Founder entitlement activation. A refund may be approved when the payment is confirmed, the request is made within that window, and Founder features have not been materially used. Requests are handled manually through the configured support contact and do not alter any applicable statutory consumer rights.
+Only a separately authorized **Stage 4.2B** may accept the following inputs: a real reviewer account, a business-controlled VPA, a payee display name, a public support address, and final founder-approved refund terms. It must not request or accept a UPI PIN, OTP, banking password, bank login, card number, payment-gateway key, service-role key, or any other banking credential.
 
-This is a proposed operating policy, not legal or tax advice. It remains hidden from the public Founder purchase surface until the founder explicitly approves the exact text. The operator must independently confirm any accounting, tax, consumer-protection, refund-processing, or business-registration obligations before enabling collection.
+When that authorization exists, the owner-controlled administrative path must resolve a normal authenticated reviewer account to its immutable UUID, add it to the server-controlled `founder_admins` allowlist, and configure the single `FOUNDER_V1` record to `LIVE` only after independently checking completeness. The operator must independently decode the generated QR and compare the VPA, payee name, exact amount **₹499.00**, currency `INR`, and note against founder-provided public payment instructions. This validates payload generation only; it does not establish bank-account ownership or routing.
 
-## Configuration and controlled-test sequence
+## Review and customer boundaries
 
-1. The operator validates the founder-provided VPA, payee name, support address, and approved policy text for completeness. This does **not** verify underlying bank-account ownership or UPI routing.
-2. Through the owner-controlled Supabase administrative path, the operator allowlists only the authenticated reviewer UUID and updates the one `FOUNDER_V1` offer to `CONFIGURED`, a configured support status, and an approved policy status/text.
-3. The operator independently decodes the generated QR and UPI intent, then compares the VPA, payee name, amount **₹499.00**, currency `INR`, and note `DueWeave Founder Lifetime` with the founder-provided values. This verifies the generated payload only, not a bank account.
-4. The operator verifies reviewer authorization, normal-user denial, Free-plan upgrade routing, duplicate-UTR rejection, and the restricted Founder review surface.
-5. The operator runs the full release gates and confirms the exact branch head is green in GitHub Actions.
-6. **Stop.** The founder must explicitly authorize the one payment immediately before any UPI action. Neither the application nor the operator initiates an external money transfer automatically.
+If a later authorized live test is approved, a customer must sign in normally, be redirected from the Free-plan active-receivable limit to `/founder`, and create a private claim only after visible payment instructions are live. The restricted reviewer uses `/admin/founder-claims` and manually compares a submitted reference with business bank history outside DueWeave. An ordinary user must remain denied by the same reviewer RPCs. A claim outcome may be `Payment not found`, `Duplicate reference`, `Reference could not be verified`, `Rejected`, `Under review`, or `Founder activated`; none are automatic bank-detection outcomes.
 
-## During and after the one controlled payment
+The application stores only the payer name and payment reference supplied, configured offer amount, verification status, and review timestamps. It never stores UPI PINs, OTPs, bank passwords, internet-banking logins, or card credentials. Any refund decision remains a manual operator outcome and does not alter applicable statutory rights.
 
-The controlled customer creates a private claim, pays only after inspecting the UPI app’s own payee and amount, and submits the reference shown in their payment history. The reviewer compares the reference, payer details, and exact amount against business bank history outside DueWeave before approval. The reviewer records only the claim outcome and short factual review note; no banking credentials are entered into DueWeave.
+## Stage 4.2A stop boundary
 
-After approval, verify that only that customer receives an active Founder entitlement and can create more than three active receivables. If the test is rejected or cancelled, preserve the immutable claim and audit history; do not delete evidence or reuse a UTR. Keep the configured destination disabled again unless the founder separately authorizes broader operation.
+At the end of this stage, the offer must still be `PLACEHOLDER`, `upi_id` must be `NULL`, no reviewer may be allowlisted, approved real Founder customers must be zero, and real money collected must be **₹0**. Do not deploy, collect payment, start Stage 4.2B, or start Stage 5.

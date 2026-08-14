@@ -43,7 +43,8 @@ test.describe("controlled Stage 4.1 existing-client and Founder conversion workf
     await page.getByRole("button", { name: "View Founder access" }).click();
     await expect(page).toHaveURL(/\/founder$/);
     await expect(page.getByRole("heading", { name: "Keep every follow-up in view." })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Pay with your UPI app" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Start payment claim" })).toBeVisible();
+    await expect(page.getByText("Payment instructions are being set up.")).toBeVisible();
+    await expect(page.getByText("Do not send money yet.")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Start payment claim" })).toHaveCount(0);
   });
 });
