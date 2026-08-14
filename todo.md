@@ -95,5 +95,6 @@
 - [x] Document the exact Stage 4.1 dependency and scaffold removals, then re-verify the independent static preview has no live `server/_core` or Manus-runtime module errors.
 - [x] Add and run static, unit, and controlled browser coverage for existing-client reuse, Free-to-Founder conversion, Founder entitlement bypass, reconsideration authorization, and all security regressions.
 - [x] Run the Stage 4.1 dependency, bundle, build, lint, test, migration, browser, audit, and credential-source verification suite; report before/after evidence.
-- [ ] Commit, push, tag `stage-4-1-release-hardening`, checkpoint, report PASS/FAIL, and stop without merging, deploying, configuring real UPI, or beginning Stage 5.
+- [x] Commit, push, tag `stage-4-1-release-hardening`, and report PASS without merging, deploying, configuring real UPI, or beginning Stage 5.
+- [ ] Save the final Stage 4.1 project checkpoint, then stop before Stage 5.
 - [x] Reconcile and verify the final live Supabase migration ledger contains all 11 committed Stage 4.1 migration names, then record the post-reconciliation schema fingerprint evidence in the final report.
