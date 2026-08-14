@@ -13,6 +13,7 @@ const stage4HardeningMigration = readFileSync(resolve(root, "supabase/migrations
 const stage4DraftConstraintMigration = readFileSync(resolve(root, "supabase/migrations/20260813031500_stage4_drop_legacy_draft_reference_constraint.sql"), "utf8");
 const stage4CancellationConstraintMigration = readFileSync(resolve(root, "supabase/migrations/20260813032000_stage4_allow_cancelled_empty_reference.sql"), "utf8");
 const stage41ReconsiderationMigration = readFileSync(resolve(root, "supabase/migrations/20260814090000_stage4_1_founder_claim_reconsideration.sql"), "utf8");
+const stage42PaymentReadinessMigration = readFileSync(resolve(root, "supabase/migrations/20260814100000_stage4_2_payment_readiness_gate.sql"), "utf8");
 const homePage = readFileSync(resolve(root, "client/src/pages/Home.tsx"), "utf8");
 const appShell = readFileSync(resolve(root, "client/src/App.tsx"), "utf8");
 const authPage = readFileSync(resolve(root, "client/src/pages/Auth.tsx"), "utf8");
@@ -26,7 +27,7 @@ const founderAdminPage = readFileSync(resolve(root, "client/src/pages/FounderAdm
 const founderPaymentHelper = readFileSync(resolve(root, "client/src/lib/founder-payment.ts"), "utf8");
 const sheets = readFileSync(resolve(root, "client/src/components/sheets.tsx"), "utf8");
 const financeUi = readFileSync(resolve(root, "client/src/components/finance-ui.tsx"), "utf8");
-const schema = `${baseMigration}\n${alignedMigration}\n${rpcGrantMigration}\n${stage3WorkflowMigration}\n${stage4Migration}\n${stage4HardeningMigration}\n${stage4DraftConstraintMigration}\n${stage4CancellationConstraintMigration}\n${stage41ReconsiderationMigration}`;
+const schema = `${baseMigration}\n${alignedMigration}\n${rpcGrantMigration}\n${stage3WorkflowMigration}\n${stage4Migration}\n${stage4HardeningMigration}\n${stage4DraftConstraintMigration}\n${stage4CancellationConstraintMigration}\n${stage41ReconsiderationMigration}\n${stage42PaymentReadinessMigration}`;
 
 describe("Stage 2 Supabase security contract", () => {
   it("enables RLS across every private business table", () => {
@@ -213,17 +214,29 @@ describe("Stage 2 Supabase security contract", () => {
   });
 
   it("keeps the customer payment interface truthful and excludes payment credentials, card collection, and client-side approval", () => {
-    expect(founderPaymentHelper).toMatch(/paymentDestinationStatus === "TEST" \|\| offer\.paymentDestinationStatus === "CONFIGURED"/);
+    expect(founderPaymentHelper).toMatch(/offer\.paymentDestinationStatus === "CONFIGURED"/);
     expect(founderPage).toMatch(/Do not send money yet/);
+    expect(founderPage).toMatch(/Founder-approved refund terms/);
     expect(founderPage).toMatch(/We do not request, store, or view your UPI PIN, OTP, banking password, card details, or bank credentials/);
     expect(founderPage).toMatch(/manual.*bank-history review/i);
     expect(founderPage).toMatch(/payment reference you provide, the configured offer amount, claim status, and review timestamps/i);
     expect(founderPage).toMatch(/not a debt-collection agency or a source of legal advice/i);
-    expect(founderPage).toMatch(/Refund terms are not fabricated in-app and must be confirmed before broad public sales/i);
+    expect(founderPage).toMatch(/Refund terms are pending founder approval; payment instructions remain unavailable until they are confirmed/i);
     expect(founderPage).toMatch(/operator accounting, tax, or business obligations that require independent confirmation/i);
     expect(founderPage).not.toMatch(/service_role|sb_secret|stripe|razorpay|payment gateway secret/i);
     expect(founderAdminPage).toMatch(/Founder review is restricted/);
     expect(appShell).toContain('path="/founder" component={() => <ProtectedPage Page={FounderPurchase} />');
     expect(appShell).toContain('path="/admin/founder-claims" component={() => <ProtectedPage Page={FounderAdmin} />');
+  });
+
+  it("gates real Founder payment instructions on trusted support and founder-approved refund terms", () => {
+    expect(stage42PaymentReadinessMigration).toMatch(/support_contact_status text not null default 'PENDING'/i);
+    expect(stage42PaymentReadinessMigration).toMatch(/refund_policy_status text not null default 'PENDING_APPROVAL'/i);
+    expect(stage42PaymentReadinessMigration).toMatch(/refund_policy_status = 'APPROVED'/i);
+    expect(stage42PaymentReadinessMigration).toMatch(/v_offer\.payment_destination_status <> 'CONFIGURED'/i);
+    expect(stage42PaymentReadinessMigration).toMatch(/v_offer\.support_contact_status <> 'CONFIGURED'/i);
+    expect(stage42PaymentReadinessMigration).toMatch(/v_offer\.refund_policy_status <> 'APPROVED'/i);
+    expect(stage42PaymentReadinessMigration).toMatch(/revoke all on function public\.get_founder_offer\(\) from public/i);
+    expect(founderRepository).not.toMatch(/founder_offer_config["']\)\.update/);
   });
 });

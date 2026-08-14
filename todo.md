@@ -108,3 +108,20 @@
 - [x] Correct the Stage 4.1 report with initial failures, root cause, corrective commit, green run ID, and remote-step evidence.
 - [x] Create and push `stage-4-1-ci-green` only at the exact green commit without moving an existing tag.
 - [x] Save the final Stage 4.1.1 checkpoint, then stop before Stage 5.
+
+## Stage 4.2 Real Operator Configuration and Payment Readiness
+
+- [x] Create `stage-4-2-operator-readiness` from verified Stage 4.1.1 head `9e449e7e7749ea99e97abd5931e6d526ee239b62` without modifying existing tags or forcing history.
+- [x] Establish and record the payment-readiness baseline: live offer remains `PLACEHOLDER`, no UPI destination, no real payment, and existing static/Supabase security boundaries preserved.
+- [x] Verify and record that Stage 4.2 has made no real payment and created no approval or completed-payment artifacts beyond the existing placeholder offer state.
+- [x] Verify bounded Founder claim, entitlement, and audit-event counts to substantiate the Stage 4.2 no-real-payment and no-activation baseline.
+- [x] Verify and record that Stage 4.2 retains the independent static Vite architecture and browser-safe Supabase boundary without restoring Manus runtime, server code, or privileged frontend credentials.
+- [x] Prepare configurable, truthful Founder payment disclosures, a centralized public support contact surface, and the proposed unapproved seven-day beta refund policy without fabricating support details or legal claims.
+- [x] Prepare the operator-bootstrap and controlled-customer procedure without adding client-editable admin flags, frontend UUIDs, browser self-enrollment, secrets, payment gateways, or paid services.
+- [x] Apply and verify the Stage 4.2 server-controlled support and founder-approved refund readiness migration while preserving the non-actionable offer state and passing local lint, tests, typecheck, and build.
+- [ ] Obtain explicit founder-provided operator identity, UPI VPA, payee name, and support address through safe channels before making trusted Supabase configuration changes.
+- [ ] Configure the real trusted operator and controlled Founder offer only through the documented Supabase administrative path, then verify the operator allowlist and normal-user denials.
+- [ ] Generate and independently decode the ₹499 payment QR and mobile intent; verify destination, payee, amount, and note payload only, without inferring bank-account validity.
+- [ ] Verify the production-shaped Founder review surface, Free-to-Founder controlled-customer route, self-upgrade denial, duplicate-UTR protection, and real-payment stop gate.
+- [ ] Run lint, typecheck, tests, build, production audit, push the preparation branch, verify fully green GitHub Actions, and record the Stage 4.2 pre-payment verdict.
+- [ ] Stop before a real payment, deployment, customer acquisition, Stage 5, paid services, or public release; request explicit founder authorization only if readiness is verified.

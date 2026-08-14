@@ -18,6 +18,9 @@ function toOffer(row: Row): FounderOffer {
     upiId: optionalText(row, "upi_id"),
     paymentDestinationStatus: status === "TEST" || status === "CONFIGURED" ? status : "PLACEHOLDER",
     supportContact: text(row, "support_contact"),
+    supportContactStatus: text(row, "support_contact_status") === "CONFIGURED" ? "CONFIGURED" : "PENDING",
+    refundPolicyStatus: text(row, "refund_policy_status") === "APPROVED" ? "APPROVED" : "PENDING_APPROVAL",
+    refundPolicyText: optionalText(row, "refund_policy_text"),
     reviewWindowCopy: text(row, "review_window_copy"),
     enabled: row.enabled === true,
   };

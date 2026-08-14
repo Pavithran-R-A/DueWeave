@@ -1,7 +1,12 @@
 import type { FounderOffer } from "@/types/domain";
 
 export function isFounderPaymentDestinationReady(offer: FounderOffer): boolean {
-  return offer.enabled && (offer.paymentDestinationStatus === "TEST" || offer.paymentDestinationStatus === "CONFIGURED") && Boolean(offer.upiId);
+  return offer.enabled
+    && offer.paymentDestinationStatus === "CONFIGURED"
+    && Boolean(offer.upiId)
+    && offer.supportContactStatus === "CONFIGURED"
+    && offer.refundPolicyStatus === "APPROVED"
+    && Boolean(offer.refundPolicyText);
 }
 
 export function buildFounderUpiPayload(offer: FounderOffer): string {

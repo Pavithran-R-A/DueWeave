@@ -29,4 +29,6 @@ After allowlisting, verify that the reviewer can access only the restricted pend
 
 ## Payment and release boundaries
 
-The committed offer remains an enabled **PLACEHOLDER** with no UPI destination. Configure a genuine business destination only after separate operational, legal, support, and privacy review. This repository change does not deploy the product, configure a reviewer, configure a payment destination, or merge the release branch.
+The committed offer remains an enabled **PLACEHOLDER** with no UPI destination. The Stage 4.2 readiness gate additionally requires a trusted-operator-configured public support contact and an explicitly Founder-approved refund-policy text before `create_founder_claim()` or `submit_founder_payment()` can proceed. The browser cannot set those fields, write the allowlist, or activate entitlement.
+
+Configure a genuine business destination only after separate operational, legal, support, and privacy review. A controlled test payment still requires an explicit founder authorization at the final payment gate. This repository change does not deploy the product, configure a reviewer, configure a payment destination, or merge the release branch.

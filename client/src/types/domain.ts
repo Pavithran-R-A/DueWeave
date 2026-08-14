@@ -92,6 +92,9 @@ export interface FounderOffer {
   upiId?: string;
   paymentDestinationStatus: "PLACEHOLDER" | "TEST" | "CONFIGURED";
   supportContact: string;
+  supportContactStatus: "PENDING" | "CONFIGURED";
+  refundPolicyStatus: "PENDING_APPROVAL" | "APPROVED";
+  refundPolicyText?: string;
   reviewWindowCopy: string;
   enabled: boolean;
 }

@@ -11,8 +11,11 @@ const configuredOffer: FounderOffer = {
   availableSpots: 49,
   payeeName: "DueWeave Test",
   upiId: "dueweave-test@upi",
-  paymentDestinationStatus: "TEST",
+  paymentDestinationStatus: "CONFIGURED",
   supportContact: "support@example.invalid",
+  supportContactStatus: "CONFIGURED",
+  refundPolicyStatus: "APPROVED",
+  refundPolicyText: "Founder purchases may be refunded on request within seven days of activation when paid features have not been materially used.",
   reviewWindowCopy: "Usually reviewed within 24 hours.",
   enabled: true,
 };
@@ -38,6 +41,8 @@ describe("Founder UPI payment payload", () => {
   it("does not expose a UPI intent while the server-controlled destination is a placeholder or disabled", () => {
     expect(isFounderPaymentDestinationReady({ ...configuredOffer, paymentDestinationStatus: "PLACEHOLDER" })).toBe(false);
     expect(buildFounderUpiPayload({ ...configuredOffer, paymentDestinationStatus: "PLACEHOLDER" })).toBe("");
+    expect(isFounderPaymentDestinationReady({ ...configuredOffer, supportContactStatus: "PENDING" })).toBe(false);
+    expect(isFounderPaymentDestinationReady({ ...configuredOffer, refundPolicyStatus: "PENDING_APPROVAL", refundPolicyText: undefined })).toBe(false);
     expect(isFounderPaymentDestinationReady({ ...configuredOffer, enabled: false })).toBe(false);
     expect(buildFounderUpiPayload({ ...configuredOffer, enabled: false })).toBe("");
   });
