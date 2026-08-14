@@ -1,6 +1,6 @@
 # PROJECT AR-1 / DueWeave — Stage 4.1 Hardening Final Report
 
-**Stage:** 4.1 — independent release hardening
+**Stage:** 4.1 / 4.1.1 — independent release hardening and GitHub CI recovery
 **Prepared:** 14 August 2026 (IST)
 **Status:** Final, verification-backed, and bounded to Stage 4.1
 
@@ -112,13 +112,68 @@ The release introduces a secret-free GitHub Actions workflow that runs linting, 
 | Credential scan | **PASS** — scoped source, production build, and reachable Git history contained no credential-shaped value or Stage 4.1 fixture password. |
 | Static architecture scan | **PASS** — current working tree has no `server/`, `shared/`, or `drizzle/` scaffold. |
 | Production dependency audit | `pnpm audit --prod`: **No known vulnerabilities found**. |
-| GitHub CI | **PASS by design** — safe lint, typecheck, test, and build gates are committed without secrets. |
+| GitHub CI | **PASS** — corrective commit `0971f8bc694bd6d14117e0e6677e74d1661c4910` completed remote run `31812353314` successfully, with every required step green. |
 
 The production bundle contains the standard Supabase JWT-header literal in dependency code, which is not a credential. The focused scan separately checked actual database URLs, management-token shapes, service-secret shapes, Stripe-key shapes, GitHub-token shapes, and the disposable fixture password; no such value was found in source, build output, or reachable history.
 
+## Stage 4.1.1 — GitHub CI recovery
+
+### Verdict
+
+**PASS.** The CI repair was deliberately limited to removing the duplicate version input from `pnpm/action-setup`. The `packageManager` declaration in `package.json` remains the canonical pinned pnpm version, and every original CI gate remains mandatory.
+
+### Original GitHub failures
+
+GitHub Actions recorded **three initial failed CI runs** on this branch: `31783675109` for `c6afe9e`, `31783743196` for `a6726da`, and `31783796664` for `950a67b`. Each failure occurred in **Set up pnpm**, before locked dependency installation. The remote log identified two pnpm declarations: `version: 10.4.1` in `.github/workflows/ci.yml` and the integrity-pinned `packageManager` declaration in `package.json`.
+
+### Fix and local verification
+
+| Item | Result |
+|---|---|
+| Corrected file | `.github/workflows/ci.yml` |
+| Exact change | Removed only `with: version: 10.4.1` from `pnpm/action-setup@v4`; preserved the action, Node setup, frozen install, lint, typecheck, tests, build, and audit steps. |
+| Corrective commit | `0971f8bc694bd6d14117e0e6677e74d1661c4910` — `fix: repair GitHub CI pnpm setup` |
+| `pnpm install --frozen-lockfile` | **PASS** — lockfile remained current; pnpm `10.4.1` used. |
+| `pnpm lint` | **PASS** — zero warnings allowed. |
+| `pnpm check` | **PASS** — zero TypeScript errors. |
+| `pnpm test` | **PASS** — 37 tests across 6 files. |
+| `pnpm build` | **PASS** — independent Vite production build. |
+| `pnpm audit --prod --audit-level=high` | **PASS** — no known production vulnerabilities. |
+| `pnpm dev` | **PASS** — standard Vite started successfully on port `5174` because the managed development server already occupied `5173`. |
+
+> **MANUS INTEGRATED PREVIEW NOT REQUIRED.** The recovery validates the normal static Vite command and does not restore any Manus-specific runtime package or server infrastructure to address preview behavior.
+
+### Remote GitHub Actions evidence
+
+GitHub Actions run **`31812353314`** for corrective commit `0971f8bc694bd6d14117e0e6677e74d1661c4910` completed with conclusion **success**. The remote workflow confirmed the following required steps were all green.
+
+| Remote step | Result |
+|---|---|
+| Checkout | **PASS** |
+| Set up pnpm | **PASS** |
+| Set up Node | **PASS** |
+| Install locked dependencies | **PASS** |
+| Lint | **PASS** |
+| Type-check | **PASS** |
+| Unit and static contracts | **PASS** |
+| Independent production build | **PASS** |
+| Production dependency audit | **PASS** |
+
+The recovery creates annotated tag `stage-4-1-ci-green` at the exact green corrective commit. The three initial failures remain visible in GitHub Actions history and are not hidden or rewritten.
+
+### Preservation confirmation
+
+| Boundary | Result |
+|---|---|
+| Static independence | **PASS** — static Vite frontend and browser-safe Supabase client retained; no Express server, tRPC runtime, Manus runtime package, AWS SDK, MySQL, or Drizzle restored. |
+| Product flows | **PASS** — explicit existing-client creation, database-authoritative Free-to-Founder conversion, and rejected-claim reconsideration remain present. |
+| Payment destination | **PLACEHOLDER** — a final read-only live query returned `payment_destination_status = PLACEHOLDER` and no UPI destination. |
+| Real money collected | **₹0** — no payment collection was enabled or performed. |
+| Secrets | **PASS** — no service-role secret was introduced to frontend or repository sources. |
+
 ## GitHub and release status
 
-The release candidate is prepared on the private branch `stage-4-1-release-hardening` in [`Pavithran-R-A/project-ar1`](https://github.com/Pavithran-R-A/project-ar1). This report is included in the final hardening commit; the branch is then pushed without force-push and receives an annotated Stage 4.1 tag. Existing tags — `stage-1-approved`, `stage-2-secure-foundation`, `stage-3-beta-readiness`, and `stage-4-founder-monetization` — are preserved and are not rewritten.
+The release candidate is prepared on the private branch `stage-4-1-release-hardening` in [`Pavithran-R-A/project-ar1`](https://github.com/Pavithran-R-A/project-ar1). The original hardening tag remains untouched, and `stage-4-1-ci-green` is an additional annotated tag at the exact remote-green corrective commit. Existing tags — `stage-1-approved`, `stage-2-secure-foundation`, `stage-3-beta-readiness`, and `stage-4-founder-monetization` — are preserved and are not rewritten.
 
 ## Known limitations and operator prerequisites
 
@@ -137,7 +192,7 @@ The release candidate is prepared on the private branch `stage-4-1-release-harde
 
 ## Final status
 
-**STAGE 4.1 HARDENING COMPLETE — READY FOR STAGE 5 ONLY ON EXPLICIT REQUEST.** The release preserves the approved product interface while adding explicit existing-client reuse, truthful Free-to-Founder conversion, secure reconsideration, static-runtime independence, CI/lint gates, and final verification evidence. The product remains deliberately non-deployed and non-payment-enabled. **No Stage 5 work has been started.**
+**STAGE 4.1 / 4.1.1 COMPLETE — READY FOR CONTROLLED OPERATOR CONFIGURATION; READY FOR STAGE 5 ONLY ON EXPLICIT REQUEST.** The release preserves the approved product interface while adding explicit existing-client reuse, truthful Free-to-Founder conversion, secure reconsideration, static-runtime independence, and a remotely verified GitHub CI repair. The product remains deliberately non-deployed and non-payment-enabled. **No Stage 5 work has been started.**
 
 ## References
 
