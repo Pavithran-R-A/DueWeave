@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - stage-4-1-release-hardening
+      - stage-4-2-operator-readiness
 
 permissions:
   contents: read
