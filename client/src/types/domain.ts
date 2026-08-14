@@ -126,6 +126,11 @@ export interface PendingFounderClaim {
   submittedAt: string;
 }
 
+export interface RejectedFounderClaim extends PendingFounderClaim {
+  rejectedAt?: string;
+  rejectionNote?: string;
+}
+
 export interface FounderFunnelEvent {
   eventName: "upgrade_viewed" | "founder_claim_created" | "founder_payment_submitted" | "founder_activated" | "founder_rejected";
   eventCount: number;

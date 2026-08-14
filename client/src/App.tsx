@@ -1,7 +1,6 @@
 // Quiet Ledger style reminder: the shell is light-first, locally stateful, and intentionally free of backend assumptions.
 
 import { Toaster } from "@/components/ui/sonner";
-import { TooltipProvider } from "@/components/ui/tooltip";
 import { Loader2 } from "lucide-react";
 import { lazy, Suspense, useEffect, type ComponentType } from "react";
 import { Route, Switch, useLocation } from "wouter";
@@ -58,7 +57,7 @@ function AuthRoute() {
 }
 
 function App() {
-  return <ErrorBoundary><ThemeProvider defaultTheme="light"><TooltipProvider><Toaster position="top-right" /><Suspense fallback={<SessionLoading />}><Switch><Route path="/auth" component={AuthRoute} /><Route path="/auth/update-password" component={Auth} /><Route path="/founder" component={() => <ProtectedPage Page={FounderPurchase} />} /><Route path="/admin/founder-claims" component={() => <ProtectedPage Page={FounderAdmin} />} /><Route path="/" component={ProtectedHome} /><Route component={NotFound} /></Switch></Suspense></TooltipProvider></ThemeProvider></ErrorBoundary>;
+  return <ErrorBoundary><ThemeProvider defaultTheme="light"><Toaster position="top-right" /><Suspense fallback={<SessionLoading />}><Switch><Route path="/auth" component={AuthRoute} /><Route path="/auth/update-password" component={Auth} /><Route path="/founder" component={() => <ProtectedPage Page={FounderPurchase} />} /><Route path="/admin/founder-claims" component={() => <ProtectedPage Page={FounderAdmin} />} /><Route path="/" component={ProtectedHome} /><Route component={NotFound} /></Switch></Suspense></ThemeProvider></ErrorBoundary>;
 }
 
 export default App;

@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase";
-import type { FounderClaim, FounderFunnelEvent, PendingFounderClaim } from "@/types/domain";
+import type { FounderClaim, FounderFunnelEvent, PendingFounderClaim, RejectedFounderClaim } from "@/types/domain";
 import { userFacingDataError } from "./supabase-adapters";
 
 type Row = Record<string, unknown>;
@@ -17,6 +17,16 @@ export class SupabaseFounderAdminRepository {
     return ((data ?? []) as Row[]).map((row): PendingFounderClaim => ({ claimId: text(row, "claim_id"), ownerId: text(row, "owner_id"), ownerEmail: text(row, "owner_email"), payerName: text(row, "payer_name"), utrReference: text(row, "utr_reference"), amountPaise: amount(row, "amount_paise"), submittedAt: text(row, "submitted_at") }));
   }
 
+  async listRejected() {
+    const { data, error } = await supabase.rpc("list_rejected_founder_claims");
+    if (error) throw new Error(userFacingDataError(error.message));
+    return ((data ?? []) as Row[]).map((row): RejectedFounderClaim => ({
+      claimId: text(row, "claim_id"), ownerId: text(row, "owner_id"), ownerEmail: text(row, "owner_email"),
+      payerName: text(row, "payer_name"), utrReference: text(row, "utr_reference"), amountPaise: amount(row, "amount_paise"),
+      submittedAt: "", rejectedAt: text(row, "rejected_at") || undefined, rejectionNote: text(row, "rejection_note") || undefined,
+    }));
+  }
+
   async funnel() {
     const { data, error } = await supabase.rpc("get_founder_funnel");
     if (error) throw new Error(userFacingDataError(error.message));
@@ -31,6 +41,14 @@ export class SupabaseFounderAdminRepository {
 
   async reject(claimId: string, reason: string) {
     const { data, error } = await supabase.rpc("reject_founder_claim", { p_claim_id: claimId, p_reason: reason });
+    if (error) throw new Error(userFacingDataError(error.message));
+    return toClaim(data as Row);
+  }
+
+  async reconsider(claimId: string, note: string) {
+    const { data, error } = await supabase.rpc("reconsider_founder_claim", {
+      p_claim_id: claimId, p_bank_history_verified: true, p_note: note,
+    });
     if (error) throw new Error(userFacingDataError(error.message));
     return toClaim(data as Row);
   }

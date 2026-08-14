@@ -83,3 +83,17 @@
 - [x] Commit, push, tag `stage-4-founder-monetization`, checkpoint, and deliver the exact Stage 4 readiness report without beginning Stage 5.
 - [x] Remove the legacy global `(payer_name, utr_reference)` uniqueness constraint so multiple protected Founder drafts can coexist while retaining status-aware duplicate UTR prevention.
 - [x] Run a controlled authenticated browser E2E for Founder navigation, live offer display, QR rendering, manual payment-reference submission, pending-review state, and sign-out using an isolated fixture.
+- [x] Create `stage-4-1-release-hardening` from the verified Stage 4 branch without merging to main or changing prior tags.
+- [x] Audit product imports, tests, scripts, and build requirements; remove unused Manus, Node-server, tRPC, storage, database, and deployment scaffolding while retaining only static Vite and browser-safe Supabase dependencies.
+- [x] Convert canonical development and production scripts to independent static Vite behavior, remove Manus runtime/debug artifacts and host allowlists, and document every removed dependency.
+- [x] Add searchable existing-client selection plus an explicit new-client option to Add Receivable, routing existing selections through `createForClient` without automatic name-based client merging.
+- [x] Add the authoritative Free-plan fourth-receivable Founder limit state, including stale database-rejection translation and a real `/founder` CTA while preserving the database limit.
+- [x] Implement and secure an idempotent, audited, capacity-protected admin-only reconsideration workflow for rejected Founder claims without weakening duplicate-UTR prevention.
+- [x] Document recommended GitHub main-branch protections without configuring a real operator account or changing repository settings.
+- [x] Add a correctness-focused ESLint gate and free GitHub Actions CI that runs safe checks without live Supabase credentials on untrusted pull requests.
+- [x] Update README and Stage 4.1 documentation for the provisional product, static Supabase architecture, Founder workflow, security model, zero-cost intent, release blockers, and no-deployment boundary.
+- [x] Document the exact Stage 4.1 dependency and scaffold removals, then re-verify the independent static preview has no live `server/_core` or Manus-runtime module errors.
+- [x] Add and run static, unit, and controlled browser coverage for existing-client reuse, Free-to-Founder conversion, Founder entitlement bypass, reconsideration authorization, and all security regressions.
+- [x] Run the Stage 4.1 dependency, bundle, build, lint, test, migration, browser, audit, and credential-source verification suite; report before/after evidence.
+- [ ] Commit, push, tag `stage-4-1-release-hardening`, checkpoint, report PASS/FAIL, and stop without merging, deploying, configuring real UPI, or beginning Stage 5.
+- [x] Reconcile and verify the final live Supabase migration ledger contains all 11 committed Stage 4.1 migration names, then record the post-reconciliation schema fingerprint evidence in the final report.

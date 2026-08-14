@@ -1,9 +1,9 @@
 // Quiet Ledger style reminder: reusable surfaces carry hierarchy through typography, rules, and restrained state color.
 
 import { useEffect, useRef, type ReactNode } from "react";
-import { ArrowUpRight, CalendarClock, Check, ChevronRight, CircleAlert, Info, MessageCircle, Moon, MoreHorizontal, Plus, RefreshCw, ShieldCheck, Sparkles, Sun, Users, WalletCards, WifiOff, X } from "lucide-react";
+import { CalendarClock, Check, ChevronRight, CircleAlert, Info, MessageCircle, Moon, MoreHorizontal, Plus, RefreshCw, ShieldCheck, Sparkles, Sun, Users, WalletCards, X } from "lucide-react";
 import { BRAND } from "@/config/brand";
-import { formatDate, formatINR, getLatestPromise, getOutstanding, getPromiseStatusLabel, getPromisesFor, getReliability, priorityBreakdown, priorityReasons } from "@/lib/finance";
+import { formatDate, formatINR, getLatestPromise, getOutstanding, getReliability, priorityBreakdown, priorityReasons } from "@/lib/finance";
 import type { AppSection, Client, DemoState, PromiseStatus, Receivable } from "@/types/domain";
 
 export const iconMap = { today: Sparkles, receivables: WalletCards, clients: Users, more: MoreHorizontal } as const;

@@ -77,7 +77,6 @@ export default function FounderPurchase() {
   const { offer, claim, entitlement } = data;
   const paymentReady = isFounderPaymentDestinationReady(offer);
   const approved = entitlement.plan === "FOUNDER" && entitlement.status === "ACTIVE";
-  const canSubmit = claim?.status === "DRAFT" && paymentReady;
 
   return <main className="founder-page">
     <header className="founder-topbar"><button className="icon-button" onClick={() => navigate("/")} aria-label="Back to DueWeave"><ArrowLeft size={18} /></button><span className="wordmark">Due<span>Weave</span></span><span className="founder-topbar__label">Founder Lifetime</span></header>
