@@ -130,7 +130,7 @@
 - [x] Execute and record disposable-fixture validation for duplicate UTR rejection, seat-cap protection, claim/admin-review lifecycle, entitlement behavior, Free-to-Founder conversion, analytics, privacy, and terms; then clean up every fixture.
 - [x] Record exact passing results for the full Stage 4.2A security, browser, responsive, QR, and controlled workflow validation set, plus the final live `PLACEHOLDER` and zero-operator proof.
 - [x] Remove the unused Stage 4.2A browser-test fixture variable that blocks the mandatory ESLint release gate, then rerun the full release suite.
-- [ ] Extend the existing secret-free CI workflow’s push trigger to the Stage 4.2A branch so the required remote verification can run without weakening any CI gate.
+- [x] Extend the existing secret-free CI workflow’s push trigger to the Stage 4.2A branch so the required remote verification can run without weakening any CI gate.
 - [ ] Run lint, typecheck, tests, build, production audit, push the Stage 4.2A branch, verify fully green GitHub Actions, and record the Stage 4.2A pre-payment verdict.
 - [x] Produce `stage4_2a_final_report.md` with the required PASS/FAIL evidence, remaining private inputs, live placeholder state, ₹0 real money, and explicit Stage 4.2B/Stage 5 stop boundary.
 - [ ] Stop before a real payment, deployment, customer acquisition, Stage 4.2B live configuration, Stage 5, paid services, or public release.

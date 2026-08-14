@@ -64,6 +64,8 @@ Free-plan conversion remains a route to the Founder information surface, not a p
 
 The final local release candidate completed a frozen install and the following gates with no suppressed failures: ESLint, TypeScript, **38 Vitest tests**, production build, and production dependency audit. The build succeeded; the existing Rollup large-chunk advisory remains a non-blocking performance observation and does not affect payment safety. The production audit reported no known vulnerabilities. [6]
 
+The private GitHub Actions workflow was extended only to include this preparation branch; it retains the same locked-install, lint, type-check, test, build, and production-audit gates used by the prior release hardening. Run **31825601643** for commit `6154df5109bbd17589aa5f8d6b08ec23776c078a` completed successfully, with every required remote step green. [7]
+
 A tracked-source credential scan and whitespace check found no service-role key, database credential, private key, or privileged runtime value. The only literal matching the phrase `service_role` was an intentional negative assertion in the security contract test and was excluded from the second, otherwise clean source scan. The application remains an independent static Vite frontend with only browser-safe Supabase variables. [5] [6]
 
 ## Remaining private inputs for Stage 4.2B only
@@ -92,3 +94,4 @@ Even with those future inputs, no payment should occur until a founder explicitl
 [4]: client/src/pages/FounderPurchase.tsx "Founder customer purchase and disclosure surface"
 [5]: tests/security-contract.test.ts "Database and browser security contract assertions"
 [6]: package.json "Stage 4.2A release-gate scripts"
+[7]: https://github.com/Pavithran-R-A/project-ar1/actions/runs/31825601643 "Stage 4.2A GitHub Actions CI run"
