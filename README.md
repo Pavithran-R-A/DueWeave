@@ -65,7 +65,6 @@ The Playwright suite is intentionally not run in CI because it needs a manually 
 
 ```bash
 pnpm exec playwright install chromium
-pnpm exec playwright install chromium
 pnpm build
 pnpm preview --port 3000    # serve dist on the port the suite's default baseURL expects
 pnpm test:e2e               # in a second terminal
