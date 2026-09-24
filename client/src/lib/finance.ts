@@ -1,7 +1,36 @@
 // Quiet Ledger style reminder: deterministic scoring and state transitions stay pure, explainable, and testable.
 
-import { DEMO_TODAY } from "@/data/demo";
 import type { Activity, Client, DemoState, Payment, PromiseRecord, PromiseStatus, Receivable } from "@/types/domain";
+
+export function todayInIndia() {
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
+  const part = (kind: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === kind)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
+}
+
+export function isBusinessDate(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T12:00:00+05:30`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
+export function addIndiaBusinessDays(value: string, days: number) {
+  if (!isBusinessDate(value) || !Number.isInteger(days)) return todayInIndia();
+  const parsed = new Date(`${value}T12:00:00Z`);
+  parsed.setUTCDate(parsed.getUTCDate() + days);
+  return parsed.toISOString().slice(0, 10);
+}
+
+/** Parses an INR decimal string without using floating-point arithmetic. */
+export function parseINRToPaise(value: string) {
+  const normalized = value.trim().replace(/,/g, "");
+  const match = normalized.match(/^(\d{1,13})(?:\.(\d{1,2}))?$/);
+  if (!match) return null;
+  const rupees = Number(match[1]);
+  const fractionalPaise = Number((match[2] ?? "").padEnd(2, "0") || "0");
+  const paise = rupees * 100 + fractionalPaise;
+  return Number.isSafeInteger(paise) && paise <= 900_000_000_000_000 ? paise : null;
+}
 
 export function formatINR(amountPaise: number, compact = false) {
   const amount = amountPaise / 100;
@@ -46,6 +75,11 @@ export function getLastContacted(receivableId: string, activities: Activity[]) {
   return activities.filter((activity) => activity.receivableId === receivableId && ["follow_up", "contacted"].includes(activity.type)).sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))[0]?.occurredAt;
 }
 
+/** The latest explicit snooze controls queue visibility until its business date. */
+export function getSnoozedUntil(receivableId: string, activities: Activity[]) {
+  return activities.filter((activity) => activity.receivableId === receivableId && activity.snoozedUntil).sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))[0]?.snoozedUntil;
+}
+
 export interface PriorityBreakdown {
   brokenPromises: number;
   promiseUrgency: number;
@@ -57,16 +91,19 @@ export interface PriorityBreakdown {
 }
 
 export function priorityBreakdown(receivable: Receivable, state: DemoState): PriorityBreakdown {
+  const today = todayInIndia();
   const openReceivables = state.receivables.filter((item) => getOutstanding(item, state.payments) > 0);
   const outstanding = getOutstanding(receivable, state.payments);
   const maxOutstanding = Math.max(...openReceivables.map((item) => getOutstanding(item, state.payments)), 1);
   const brokenCount = getPromisesFor(receivable.id, state.promises).filter((promise) => promise.status === "BROKEN").length;
   const latest = getLatestPromise(receivable.id, state.promises);
-  const overdueDays = Math.max(0, daysBetween(receivable.dueDate, DEMO_TODAY));
-  const daysToPromise = latest?.status === "ACTIVE" ? daysBetween(DEMO_TODAY, latest.promisedDate) : null;
+  const overdueDays = Math.max(0, daysBetween(receivable.dueDate, today));
+  const daysToPromise = latest?.status === "ACTIVE" ? daysBetween(today, latest.promisedDate) : null;
   const lastContacted = getLastContacted(receivable.id, state.activities);
-  const contactDays = lastContacted ? Math.max(0, daysBetween(lastContacted, DEMO_TODAY)) : 30;
-  const recentPartial = getPaymentsFor(receivable.id, state.payments).some((payment) => payment.paidDate >= "2026-08-05" && payment.amountPaise < receivable.amountDuePaise);
+  const contactDays = lastContacted ? Math.max(0, daysBetween(lastContacted, today)) : 30;
+  const fiveDaysAgo = new Date(`${today}T12:00:00Z`); fiveDaysAgo.setUTCDate(fiveDaysAgo.getUTCDate() - 7);
+  const recentThreshold = fiveDaysAgo.toISOString().slice(0, 10);
+  const recentPartial = getPaymentsFor(receivable.id, state.payments).some((payment) => payment.paidDate >= recentThreshold && payment.amountPaise < receivable.amountDuePaise);
   const brokenPromises = Math.min(25, brokenCount * 10);
   const promiseUrgency = daysToPromise === null ? 0 : daysToPromise <= 0 ? 20 : daysToPromise <= 3 ? 12 : daysToPromise <= 7 ? 6 : 0;
   const daysOverdue = Math.min(20, overdueDays * 2);
@@ -78,12 +115,13 @@ export function priorityBreakdown(receivable: Receivable, state: DemoState): Pri
 }
 
 export function priorityReasons(receivable: Receivable, state: DemoState) {
+  const today = todayInIndia();
   const breakdown = priorityBreakdown(receivable, state);
   const reasons: { label: string; value: number }[] = [];
   const brokenCount = getPromisesFor(receivable.id, state.promises).filter((promise) => promise.status === "BROKEN").length;
-  const overdueDays = Math.max(0, daysBetween(receivable.dueDate, DEMO_TODAY));
+  const overdueDays = Math.max(0, daysBetween(receivable.dueDate, today));
   const lastContacted = getLastContacted(receivable.id, state.activities);
-  const contactDays = lastContacted ? Math.max(0, daysBetween(lastContacted, DEMO_TODAY)) : 30;
+  const contactDays = lastContacted ? Math.max(0, daysBetween(lastContacted, today)) : 30;
   if (brokenCount > 0) reasons.push({ label: `${brokenCount} promise${brokenCount > 1 ? "s" : ""} broken`, value: breakdown.brokenPromises });
   if (overdueDays > 0) reasons.push({ label: `${overdueDays} day${overdueDays > 1 ? "s" : ""} overdue`, value: breakdown.daysOverdue });
   if (contactDays >= 3) reasons.push({ label: `No contact for ${contactDays} days`, value: breakdown.contactStaleness });
@@ -94,7 +132,8 @@ export function priorityReasons(receivable: Receivable, state: DemoState) {
 }
 
 export function getQueue(state: DemoState) {
-  return state.receivables.filter((receivable) => getOutstanding(receivable, state.payments) > 0).map((receivable) => ({ receivable, score: priorityBreakdown(receivable, state).total })).sort((a, b) => b.score - a.score || getOutstanding(b.receivable, state.payments) - getOutstanding(a.receivable, state.payments));
+  const today = todayInIndia();
+  return state.receivables.filter((receivable) => getOutstanding(receivable, state.payments) > 0 && (getSnoozedUntil(receivable.id, state.activities) ?? today) <= today).map((receivable) => ({ receivable, score: priorityBreakdown(receivable, state).total })).sort((a, b) => b.score - a.score || getOutstanding(b.receivable, state.payments) - getOutstanding(a.receivable, state.payments));
 }
 
 export function getReliability(clientId: string, state: DemoState) {
@@ -116,7 +155,7 @@ export function getSuggestion(receivable: Receivable, state: DemoState) {
   if (latest?.status === "PARTIALLY_KEPT") return "partial" as const;
   if (brokenCount >= 2) return "repeated" as const;
   if (latest?.status === "BROKEN") return "broken" as const;
-  if (Math.max(0, daysBetween(receivable.dueDate, DEMO_TODAY)) > 0) return "overdue" as const;
+  if (Math.max(0, daysBetween(receivable.dueDate, todayInIndia())) > 0) return "overdue" as const;
   return "friendly" as const;
 }
 

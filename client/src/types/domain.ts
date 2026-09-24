@@ -8,7 +8,7 @@ export type PromiseStatus =
   | "RENEGOTIATED"
   | "CANCELLED";
 
-export type ReceivableStatus = "OPEN" | "PARTIALLY_PAID" | "PAID" | "CANCELLED";
+export type ReceivableStatus = "OPEN" | "PARTIALLY_PAID" | "PAID" | "CANCELLED" | "WRITTEN_OFF";
 export type PaymentMethod = "UPI" | "Bank transfer" | "Cash" | "Other";
 export type PromiseSource = "WhatsApp" | "Call" | "Email" | "Meeting" | "Other";
 export type ActivityType = "created" | "due" | "follow_up" | "contacted" | "promise" | "broken" | "payment" | "note";
@@ -29,6 +29,7 @@ export interface Receivable {
   title: string;
   invoiceRef?: string;
   amountDuePaise: number;
+  outstandingPaise?: number;
   dueDate: string;
   createdAt: string;
   notes?: string;
@@ -67,6 +68,7 @@ export interface Activity {
   note: string;
   amountPaise?: number;
   promiseId?: string;
+  snoozedUntil?: string;
 }
 
 export interface DemoState {
@@ -78,3 +80,62 @@ export interface DemoState {
 }
 
 export type AppSection = "today" | "receivables" | "clients" | "more" | "empty" | "loading" | "error";
+
+export type FounderClaimStatus = "DRAFT" | "PENDING_REVIEW" | "APPROVED" | "REJECTED" | "CANCELLED";
+export type FounderEntitlementStatus = "ACTIVE" | "PENDING_REVIEW" | "REVOKED";
+
+export interface FounderOffer {
+  amountPaise: number;
+  founderCap: number;
+  availableSpots: number;
+  payeeName: string;
+  upiId?: string;
+  paymentDestinationStatus: "PLACEHOLDER" | "TEST" | "LIVE";
+  supportContact: string;
+  supportContactStatus: "PENDING" | "CONFIGURED";
+  refundPolicyStatus: "PENDING_APPROVAL" | "APPROVED";
+  refundPolicyText?: string;
+  disclosuresStatus: "PENDING" | "APPROVED";
+  reviewWindowCopy: string;
+  enabled: boolean;
+}
+
+export interface FounderClaim {
+  id: string;
+  claimId: string;
+  plan: "FOUNDER";
+  amountPaise: number;
+  payerName: string;
+  utrReference: string;
+  status: FounderClaimStatus;
+  submittedAt?: string;
+  reviewedAt?: string;
+  createdAt: string;
+}
+
+export interface FounderEntitlement {
+  plan: "FREE" | "FOUNDER";
+  status: FounderEntitlementStatus;
+  activatedAt?: string;
+  reviewedAt?: string;
+}
+
+export interface PendingFounderClaim {
+  claimId: string;
+  ownerId: string;
+  ownerEmail: string;
+  payerName: string;
+  utrReference: string;
+  amountPaise: number;
+  submittedAt: string;
+}
+
+export interface RejectedFounderClaim extends PendingFounderClaim {
+  rejectedAt?: string;
+  rejectionNote?: string;
+}
+
+export interface FounderFunnelEvent {
+  eventName: "upgrade_viewed" | "founder_claim_created" | "founder_payment_submitted" | "founder_activated" | "founder_rejected";
+  eventCount: number;
+}

@@ -44,6 +44,11 @@ pids
 *.pid
 *.seed
 *.pid.lock
+*.bak
+
+# Test runner output (Playwright HTML report, failure artifacts, traces, videos)
+playwright-report/
+test-results/
 
 # Coverage directory used by tools like istanbul
 coverage/
@@ -107,7 +112,3 @@ temp/
 
 # Webdev artifacts (checkpoint zips, migrations, etc.)
 .webdev/
-
-# Manus version file (auto-generated, not part of source)
-client/public/__manus__/version.json
-.project-config.json

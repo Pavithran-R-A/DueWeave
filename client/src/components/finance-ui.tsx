@@ -1,9 +1,9 @@
 // Quiet Ledger style reminder: reusable surfaces carry hierarchy through typography, rules, and restrained state color.
 
-import type { ReactNode } from "react";
-import { ArrowUpRight, CalendarClock, Check, ChevronRight, CircleAlert, Info, MessageCircle, Moon, MoreHorizontal, Plus, RefreshCw, ShieldCheck, Sparkles, Sun, Users, WalletCards, WifiOff, X } from "lucide-react";
+import { useEffect, useRef, type ReactNode } from "react";
+import { CalendarClock, Check, ChevronRight, CircleAlert, Info, MessageCircle, Moon, MoreHorizontal, Plus, RefreshCw, ShieldCheck, Sparkles, Sun, Users, WalletCards, X } from "lucide-react";
 import { BRAND } from "@/config/brand";
-import { formatDate, formatINR, getLatestPromise, getOutstanding, getPromiseStatusLabel, getPromisesFor, getReliability, priorityBreakdown, priorityReasons } from "@/lib/finance";
+import { formatDate, formatINR, getLatestPromise, getOutstanding, getReliability, priorityBreakdown, priorityReasons } from "@/lib/finance";
 import type { AppSection, Client, DemoState, PromiseStatus, Receivable } from "@/types/domain";
 
 export const iconMap = { today: Sparkles, receivables: WalletCards, clients: Users, more: MoreHorizontal } as const;
@@ -13,13 +13,14 @@ export function BrandMark({ compact = false }: { compact?: boolean }) {
 }
 
 export function StatusPill({ status }: { status: PromiseStatus | Receivable["status"] }) {
-  const label = { OPEN: "Open", PARTIALLY_PAID: "Partially paid", PAID: "Paid", CANCELLED: "Cancelled", ACTIVE: "Active promise", KEPT: "Kept", PARTIALLY_KEPT: "Partially kept", BROKEN: "Promise broken", RENEGOTIATED: "Renegotiated" }[status];
+  const label = { OPEN: "Open", PARTIALLY_PAID: "Partially paid", PAID: "Paid", CANCELLED: "Cancelled", WRITTEN_OFF: "Written off", ACTIVE: "Active promise", KEPT: "Kept", PARTIALLY_KEPT: "Partially kept", BROKEN: "Promise broken", RENEGOTIATED: "Renegotiated" }[status];
   return <span className={`status-pill status-pill--${status.toLowerCase()}`}><span className="status-dot" />{label}</span>;
 }
 
-export function AppRail({ active, onNavigate }: { active: AppSection; onNavigate: (section: AppSection) => void }) {
+export function AppRail({ active, onNavigate, openCount = 0, userName = "Your workspace" }: { active: AppSection; onNavigate: (section: AppSection) => void; openCount?: number; userName?: string }) {
   const items: { id: AppSection; label: string }[] = [{ id: "today", label: "Today" }, { id: "receivables", label: "Receivables" }, { id: "clients", label: "Clients" }, { id: "more", label: "More" }];
-  return <aside className="app-rail" aria-label="Primary navigation"><BrandMark /><div className="rail-label">Workspace</div><nav className="rail-nav">{items.map((item) => { const Icon = iconMap[item.id as keyof typeof iconMap]; return <button key={item.id} className={active === item.id ? "rail-link rail-link--active" : "rail-link"} onClick={() => onNavigate(item.id)} aria-current={active === item.id ? "page" : undefined}><Icon size={17} strokeWidth={1.8} /><span>{item.label}</span>{item.id === "today" && <span className="rail-count">5</span>}</button>; })}</nav><div className="rail-footer"><div className="rail-note"><ShieldCheck size={16} /><span>Local prototype<br /><em>No backend connected</em></span></div><div className="rail-user"><div className="avatar avatar--small">AR</div><div><strong>Aditi Rao</strong><span>Independent studio</span></div></div></div></aside>;
+  const initials = userName.split(" ").map((word) => word[0]).join("").slice(0, 2).toUpperCase() || "DW";
+  return <aside className="app-rail" aria-label="Primary navigation"><BrandMark /><div className="rail-label">Workspace</div><nav className="rail-nav">{items.map((item) => { const Icon = iconMap[item.id as keyof typeof iconMap]; return <button key={item.id} className={active === item.id ? "rail-link rail-link--active" : "rail-link"} onClick={() => onNavigate(item.id)} aria-current={active === item.id ? "page" : undefined}><Icon size={17} strokeWidth={1.8} /><span>{item.label}</span>{item.id === "today" && <span className="rail-count">{openCount}</span>}</button>; })}</nav><div className="rail-footer"><div className="rail-note"><ShieldCheck size={16} /><span>Private workspace<br /><em>RLS-protected records</em></span></div><div className="rail-user"><div className="avatar avatar--small">{initials}</div><div><strong>{userName}</strong><span>Private ledger</span></div></div></div></aside>;
 }
 
 export function BottomNav({ active, onNavigate }: { active: AppSection; onNavigate: (section: AppSection) => void }) {
@@ -29,7 +30,8 @@ export function BottomNav({ active, onNavigate }: { active: AppSection; onNaviga
 
 export function PageHeader({ section, onAdd, onToggleTheme, theme }: { section: AppSection; onAdd: () => void; onToggleTheme: () => void; theme: "light" | "dark" }) {
   const title = { today: "Today", receivables: "Receivables", clients: "Clients", more: "More", empty: "Empty state", loading: "Loading example", error: "Error example" }[section];
-  return <header className="page-header"><div className="page-header__left"><BrandMark compact /><div className="page-header__meta"><span className="eyebrow">Wednesday · 12 August 2026</span><h1>{title}</h1></div></div><div className="page-header__actions"><span className="prototype-chip"><span className="pulse-dot" />Stage 1 prototype</span><button className="icon-button theme-toggle" onClick={onToggleTheme} aria-label={`Switch to ${theme === "light" ? "dark" : "light"} mode`}>{theme === "light" ? <Moon size={17} /> : <Sun size={17} />}</button><button className="button-primary button-primary--compact" onClick={onAdd}><Plus size={17} /><span>Add receivable</span></button><div className="avatar">AR</div></div></header>;
+  const dateLabel = new Intl.DateTimeFormat("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Kolkata" }).format(new Date());
+  return <header className="page-header"><div className="page-header__left"><BrandMark compact /><div className="page-header__meta"><span className="eyebrow">{dateLabel}</span><h1>{title}</h1></div></div><div className="page-header__actions"><span className="prototype-chip"><span className="pulse-dot" />Private workspace</span><button className="icon-button theme-toggle" onClick={onToggleTheme} aria-label={`Switch to ${theme === "light" ? "dark" : "light"} mode`}>{theme === "light" ? <Moon size={17} /> : <Sun size={17} />}</button><button className="button-primary button-primary--compact" onClick={onAdd}><Plus size={17} /><span>Add receivable</span></button></div></header>;
 }
 
 export function Metric({ label, value, accent = "default", sub }: { label: string; value: string; accent?: "default" | "teal" | "amber" | "coral"; sub?: string }) {
@@ -50,7 +52,7 @@ export function QueueCard({ receivable, client, state, selected, onSelect, onFol
 export function Timeline({ receivable, state }: { receivable: Receivable; state: DemoState }) {
   const events = state.activities.filter((activity) => activity.receivableId === receivable.id).sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
   const promiseById = new Map(state.promises.map((promise) => [promise.id, promise]));
-  return <div className="timeline" aria-label="Receivable activity timeline">{events.map((event) => { const promise = event.promiseId ? promiseById.get(event.promiseId) : undefined; return <div key={event.id} className={`timeline-item ${event.type === "broken" ? "timeline-item--critical" : ""}`}><div className="timeline-marker"><span /></div><div className="timeline-content"><div className="timeline-content__top"><span className="timeline-date">{formatDate(event.occurredAt, { day: "numeric", month: "short", year: "numeric" })}</span>{event.type === "payment" && <span className="timeline-amount">{formatINR(event.amountPaise ?? 0)} received</span>}</div><strong>{event.note}</strong>{promise && <span className="timeline-sub">{promise.status === "BROKEN" ? "Original promise preserved in history" : `${promise.source} · ${formatINR(promise.promisedAmountPaise)} promised`}</span>}</div></div>; })}</div>;
+  return <div className="timeline" aria-label="Receivable activity timeline">{events.map((event) => { const promise = event.promiseId ? promiseById.get(event.promiseId) : undefined; return <div key={event.id} className={`timeline-item ${event.type === "broken" ? "timeline-item--critical" : ""}`}><div className="timeline-marker"><span /></div><div className="timeline-content"><div className="timeline-content__top"><span className="timeline-date">{formatDate(event.occurredAt, { day: "numeric", month: "short", year: "numeric" })}</span>{event.type === "payment" && <span className="timeline-amount">{formatINR(event.amountPaise ?? 0)} received</span>}</div><strong>{event.note}</strong>{event.snoozedUntil && <span className="timeline-sub">Returns to Today on {formatDate(event.snoozedUntil, { day: "numeric", month: "short", year: "numeric" })}</span>}{promise && <span className="timeline-sub">{promise.status === "BROKEN" ? "Original promise preserved in history" : `${promise.source} · ${formatINR(promise.promisedAmountPaise)} promised`}</span>}</div></div>; })}</div>;
 }
 
 export function Reliability({ clientId, state }: { clientId: string; state: DemoState }) {
@@ -60,7 +62,28 @@ export function Reliability({ clientId, state }: { clientId: string; state: Demo
 }
 
 export function Sheet({ title, eyebrow, children, onClose, footer }: { title: string; eyebrow?: string; children: ReactNode; onClose: () => void; footer?: ReactNode }) {
-  return <div className="sheet-backdrop" role="presentation" onMouseDown={onClose}><section className="sheet" role="dialog" aria-modal="true" aria-label={title} onMouseDown={(event) => event.stopPropagation()}><div className="sheet-handle" /><header className="sheet-header"><div>{eyebrow && <span className="eyebrow">{eyebrow}</span>}<h2>{title}</h2></div><button className="icon-button" onClick={onClose} aria-label="Close"><X size={18} /></button></header><div className="sheet-body">{children}</div>{footer && <footer className="sheet-footer">{footer}</footer>}</section></div>;
+  const dialogRef = useRef<HTMLElement>(null);
+  const returnFocusRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const focusable = () => Array.from(dialogRef.current?.querySelectorAll<HTMLElement>('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])') ?? []);
+    const focusFirst = window.requestAnimationFrame(() => focusable()[0]?.focus());
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { event.preventDefault(); onClose(); return; }
+      if (event.key !== "Tab") return;
+      const items = focusable();
+      if (!items.length) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => { window.cancelAnimationFrame(focusFirst); window.removeEventListener("keydown", handleKeyDown); returnFocusRef.current?.focus(); };
+  }, [onClose]);
+
+  return <div className="sheet-backdrop" role="presentation" onMouseDown={onClose}><section ref={dialogRef} className="sheet" role="dialog" aria-modal="true" aria-label={title} onMouseDown={(event) => event.stopPropagation()}><div className="sheet-handle" /><header className="sheet-header"><div>{eyebrow && <span className="eyebrow">{eyebrow}</span>}<h2>{title}</h2></div><button className="icon-button" onClick={onClose} aria-label="Close"><X size={18} /></button></header><div className="sheet-body">{children}</div>{footer && <footer className="sheet-footer">{footer}</footer>}</section></div>;
 }
 
 export function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
@@ -76,5 +99,5 @@ export function LoadingState() {
 }
 
 export function ErrorState({ onRetry }: { onRetry: () => void }) {
-  return <div className="state-example error-state"><div className="error-icon"><CircleAlert size={22} /></div><span className="eyebrow">Couldn’t load this view</span><h2>Your saved local data is safe.</h2><p>We hit a temporary prototype error while preparing the queue. Try again, or continue with the other screens.</p><button className="button-secondary" onClick={onRetry}><RefreshCw size={16} />Try again</button></div>;
+  return <div className="state-example error-state"><div className="error-icon"><CircleAlert size={22} /></div><span className="eyebrow">Couldn’t load this view</span><h2>Your private ledger remains protected.</h2><p>We could not refresh this screen. Check your connection and try again; no technical details are shown here.</p><button className="button-secondary" onClick={onRetry}><RefreshCw size={16} />Try again</button></div>;
 }

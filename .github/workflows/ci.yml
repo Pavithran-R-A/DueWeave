@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - stage-4-1-release-hardening
+      - stage-4-2-operator-readiness
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Static verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Type-check
+        run: pnpm check
+
+      - name: Unit and static contracts
+        run: pnpm test
+
+      - name: Independent production build
+        run: pnpm build
+
+      - name: Production dependency audit
+        run: pnpm audit --prod --audit-level=high

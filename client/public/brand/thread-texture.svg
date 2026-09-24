@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" fill="none" role="presentation" aria-hidden="true">
+  <defs>
+    <pattern id="warp" width="88" height="800" patternUnits="userSpaceOnUse">
+      <path d="M22 0C46 140 0 260 22 400s44 260 22 400" stroke="#137B78" stroke-opacity=".34" stroke-width="7" stroke-linecap="round"/>
+      <path d="M62 0C38 160 84 300 62 460S38 660 62 800" stroke="#F4F1EB" stroke-opacity=".3" stroke-width="5" stroke-linecap="round"/>
+    </pattern>
+    <pattern id="weft" width="1200" height="96" patternUnits="userSpaceOnUse">
+      <path d="M0 48C180 22 420 74 600 48s420-26 600 0" stroke="#0B5F5D" stroke-opacity=".2" stroke-width="4"/>
+    </pattern>
+  </defs>
+  <rect width="1200" height="800" fill="url(#warp)"/>
+  <rect width="1200" height="800" fill="url(#weft)"/>
+  <g stroke="#EDB661" stroke-opacity=".62" stroke-width="7" fill="none" stroke-linecap="round">
+    <circle cx="270" cy="238" r="15"/>
+    <circle cx="762" cy="430" r="15"/>
+    <circle cx="1046" cy="166" r="15"/>
+  </g>
+  <g stroke="#DCEFEA" stroke-opacity=".5" stroke-width="6" fill="none" stroke-linecap="round">
+    <circle cx="506" cy="618" r="13"/>
+    <circle cx="944" cy="672" r="13"/>
+  </g>
+</svg>
