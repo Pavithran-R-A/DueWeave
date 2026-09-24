@@ -11,6 +11,10 @@ build/
 *.tsbuildinfo
 coverage/
 
+# Test runner output (Playwright HTML report, failure artifacts, traces, videos)
+playwright-report/
+test-results/
+
 # Package files
 package-lock.json
 pnpm-lock.yaml

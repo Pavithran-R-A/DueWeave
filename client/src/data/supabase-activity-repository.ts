@@ -3,7 +3,7 @@ import { toActivity, userFacingDataError } from "./supabase-adapters";
 
 export class SupabaseActivityRepository {
   async list() {
-    const { data, error } = await supabase.from("activities").select("id, client_id, receivable_id, promise_id, type, occurred_at, note, amount_paise").order("occurred_at", { ascending: false });
+    const { data, error } = await supabase.from("activities").select("id, client_id, receivable_id, promise_id, type, occurred_at, note, amount_paise, metadata").order("occurred_at", { ascending: false });
     if (error) throw new Error(userFacingDataError(error.message));
     return (data ?? []).map((row) => toActivity(row));
   }

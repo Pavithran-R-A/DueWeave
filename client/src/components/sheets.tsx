@@ -1,9 +1,8 @@
-// Quiet Ledger style reminder: sheets reduce the emotional and cognitive cost of action; every form is short, editable, and explicit about local prototype boundaries.
+// Quiet Ledger style reminder: sheets reduce the emotional and cognitive cost of action; every form is short, editable, and explicit about what DueWeave does not do for you.
 
 import { FormEvent, useState } from "react";
 import { ArrowUpRight, Check, Copy, FileText, MessageCircle, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
-import { BRAND } from "@/config/brand";
 import { addIndiaBusinessDays, formatDate, formatINR, getLatestPromise, getOutstanding, getSuggestion, interpolateMessage, messageTemplates, parseINRToPaise, todayInIndia } from "@/lib/finance";
 import type { Client, DemoState, PaymentMethod, PromiseSource, Receivable } from "@/types/domain";
 import { Field, Sheet } from "@/components/finance-ui";
@@ -69,8 +68,4 @@ export function SnoozeSheet({ onClose, onSubmit }: { onClose: () => void; onSubm
   const [until, setUntil] = useState(() => addIndiaBusinessDays(todayInIndia(), 1));
   function submit(event: FormEvent) { event.preventDefault(); if (until < todayInIndia()) { toast.error("Choose today or a future date."); return; } onSubmit(until); }
   return <Sheet title="Snooze follow-up" eyebrow="Keep it out of sight, not out of the story" onClose={onClose} footer={<><button className="button-secondary" onClick={onClose}>Cancel</button><button form="snooze-form" className="button-primary">Save snooze <Check size={16} /></button></>}><form id="snooze-form" className="form-stack" onSubmit={submit}><p className="sheet-intro">DueWeave records the pause in the private timeline. It never sends anything for you.</p><Field label="Bring this back on"><input className={inputClass} type="date" min={todayInIndia()} value={until} onChange={(event) => setUntil(event.target.value)} required /></Field></form></Sheet>;
-}
-
-export function UpgradeSheet({ onClose }: { onClose: () => void }) {
-  return <Sheet title="Founder access" eyebrow="A calm way to keep the whole thread" onClose={onClose} footer={<><button className="button-secondary" onClick={onClose}>Maybe later</button><button className="button-ink" onClick={() => { toast.info("Real UPI activation is intentionally not connected.", { description: "This Stage 1 prototype only validates the upgrade story." }); onClose(); }}>Preview ₹499 access <ArrowUpRight size={15} /></button></>}><div className="founder-sheet"><div className="founder-sheet__price"><span>Founder Lifetime</span><strong>{formatINR(BRAND.founderPricePaise)}</strong><small>one-time · first 50 users</small></div><ul>{["Unlimited active receivables", "Complete promise history", "Advanced queue explanations", "Client reliability after enough history", "Exports and a Founder badge"].map((benefit) => <li key={benefit}><Check size={15} />{benefit}</li>)}</ul><div className="founder-note"><ShieldCheck size={16} /><span>No payment is taken here. Manual UPI activation comes after prototype validation.</span></div></div></Sheet>;
 }
