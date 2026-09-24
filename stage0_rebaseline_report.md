@@ -1,7 +1,7 @@
 # DUEWEAVE STAGE 0 RE-BASELINE REPORT
 
 STATUS:
-PASS — every Stage 0 acceptance criterion is met, with one delivery decision left to the owner: the amended branch was **not** force-pushed (see PUSHED TO GITHUB), and the committer-identity question is unresolved by design.
+PASS — every Stage 0 acceptance criterion is met and the Stage 0 branch publication is complete and verified. The committer-identity question remains open as a documented repository-governance decision; it is not a synchronization blocker.
 
 REPOSITORY:
 Pavithran-R-A/project-ar1 (private, GitHub Free)
@@ -19,16 +19,16 @@ ADVANCED CANDIDATE STARTING SHA:
 `6d99651b9a48933de01cf19ef88e7cd45aa752dc` ("chore: complete stage 4.2A readiness checklist")
 
 STAGE 0 WORKING BRANCH:
-`stage-0-rebaseline` (new, created from `stage-4-2-operator-readiness`; tracks nothing until pushed)
+`stage-0-rebaseline` (new, created from `stage-4-2-operator-readiness`; published to `origin` and now tracked)
 
 ENDING SHA:
-A single amended Stage 0 commit on `stage-0-rebaseline` — resolve it with `git rev-parse HEAD`; it is intentionally not quoted in-body, because amending this report to add that number would invalidate the number it quotes. What is fixed and verifiable: the first Stage 0 commit was `d879d5889e54a07934e575dc03eeb4019876bdc7` (still what `origin/stage-0-rebaseline` points at), it was amended rather than followed by a second commit, and the amendment chain is documented under PUSHED TO GITHUB. `main` remains at `58f0cc76ca560bdac08bdbd19e237aa4a413686b`, and all six historical branches plus all six tags are byte-unchanged on the remote.
+`32144356171d0f9fc3f7b50cc37a0301e4c4c936` — the single amended Stage 0 commit on `stage-0-rebaseline`, identical on the local branch and on `origin/stage-0-rebaseline`. It replaced the first Stage 0 commit `d879d5889e54a07934e575dc03eeb4019876bdc7`, which had been published before the `.prettierignore` fix and the report corrections were folded in by amend rather than by adding a second Stage 0 commit. `main` remains at `58f0cc76ca560bdac08bdbd19e237aa4a413686b`, and all six historical branches plus all six tags are byte-unchanged on the remote. This is the ending SHA of the Stage 0 change set; the documentation-only closure commit recorded under PUSHED TO GITHUB is a normal forward commit made on top of it.
 
 BRANCH ANCESTRY DECISION:
 - Verified remote state directly with `git ls-remote` rather than trusting the briefing's hints; every hinted SHA/branch matched live state, and no newer branch, commit, or PR existed.
 - Remote heads: `main`, `stage-2-backend`, `stage-3-beta-readiness`, `stage-4-founder-monetization`, `stage-4-1-release-hardening`, `stage-4-2-operator-readiness`.
 - The `stage-*` branches form one linear cumulative chain descending from the `stage-1-approved` tag commit, so `stage-4-2-operator-readiness` is a strict superset of every earlier stage branch. It was selected as the single re-baselined candidate; no intermediate ancestor was re-merged.
-- Historical branches, tags, and the default branch were left exactly as found. Nothing was deleted, retagged, or force-pushed.
+- Historical branches, tags, and the default branch were left exactly as found: nothing was deleted or retagged, and no historical ref was ever rewritten. The only non-fast-forward update in this delivery was to the dedicated `stage-0-rebaseline` branch created by Stage 0 itself, scoped by an expected-SHA lease (see PUSHED TO GITHUB).
 - `origin/main` is **not** an ancestor of the candidate (`git merge-base` = `86d387d`); the divergence is a single documentation commit, handled below.
 
 MAIN-ONLY CHANGES RECONCILED:
@@ -129,7 +129,7 @@ SECRET SCAN:
 Clean. No `.env`, `*.pem`, `*.key`, secret/credential-named file, or service-role value is tracked (`git ls-files` filtered). Grepping the committed tree for `service_role|SERVICE_ROLE|eyJ…\.eyJ|BEGIN …PRIVATE KEY|AKIA…|ghp_…|xox[baprs]-|postgres://user:pass@` produced exactly two hits, both benign: prose inside the historical `stage4_2a_final_report.md` and a deliberate negative assertion in `tests/security-contract.test.ts:227`. No hardcoded anon key literal exists. No secret value is reproduced anywhere in this report or in the commit; environment variables are named, never valued. The only files added are three SVGs and two test files.
 
 CI:
-`.github/workflows/ci.yml` is present and coherent: triggers on every `pull_request` plus pushes to `main`, `stage-4-1-release-hardening`, `stage-4-2-operator-readiness`; Node 22; `pnpm install --frozen-lockfile` → `lint` → `check` → `test` → `build` → `audit --prod --audit-level=high`; Playwright deliberately excluded. No CI change was needed for Stage 0 — because the `pull_request` trigger is unfiltered, any review PR from `stage-0-rebaseline` already runs the full gate set. Historical runs on the source branch were green. CI for the new branch executes only once the branch is pushed (and, for the push trigger, only for the three configured branches), so this report's evidence is the local run of those identical commands.
+`.github/workflows/ci.yml` is present and coherent: triggers on every `pull_request` plus pushes to `main`, `stage-4-1-release-hardening`, `stage-4-2-operator-readiness`; Node 22; `pnpm install --frozen-lockfile` → `lint` → `check` → `test` → `build` → `audit --prod --audit-level=high`; Playwright deliberately excluded. No CI change was needed for Stage 0 — because the `pull_request` trigger is unfiltered, any review PR from `stage-0-rebaseline` already runs the full gate set. Historical runs on the source branch were green. The branch is now published, but `stage-0-rebaseline` is not one of the three branches in the workflow's `push` list, so no CI run has yet executed for it — CI will run on it as soon as a review PR is opened. This report's evidence is therefore the local run of those identical commands, not a CI run on this branch.
 
 BROWSER / RUNTIME VERIFICATION ACTUALLY PERFORMED:
 - Loaded the built `dist/` in Chrome via `vite preview` on `127.0.0.1:3000` and captured the full request log for `/auth`: 14 requests, **zero** `/manus-storage/*` requests, and `assets/brand-*.js` plus `/brand/mark.svg` and `/brand/thread-texture.svg` fetched from the local origin.
@@ -211,14 +211,26 @@ WORKING TREE CLEAN:
 YES — `git status --short --ignored` shows only ignored tooling output (`dist/`).
 
 PUSHED TO GITHUB:
-PARTIALLY — and deliberately not finished. `stage-0-rebaseline` **was** pushed once as a new branch and `origin/stage-0-rebaseline` currently holds commit `d879d5889e54a07934e575dc03eeb4019876bdc7`. The subsequent amend (`.prettierignore` fix plus these report corrections) produced a local `HEAD` that differs from it — confirm with `git rev-parse HEAD` versus the remote value above — and `git push --dry-run` proved that publishing it is a **non-fast-forward update requiring a force-push**. Per instruction, no force-push was performed and no `git pull`/rebase/merge was used to paper over the divergence.
-Consequence to be aware of: the remote branch currently carries a report that predates the `.prettierignore` fix and the corrected Playwright interpretation. The complete, corrected Stage 0 delivery exists only locally until the owner resolves the divergence.
-Owner action to publish it (only after deciding the identity question below, since the rewrite is the moment at which authorship is easy to correct):
-`git push --force-with-lease=refs/heads/stage-0-rebaseline:d879d5889e54a07934e575dc03eeb4019876bdc7 origin stage-0-rebaseline`
-`--force-with-lease` is required rather than bare `--force` so the update fails if anyone else has moved that branch meanwhile. This rewrites **only** the dedicated Stage 0 branch: `main`, all five historical stage branches, and all six tags are untouched and were re-verified on the remote (`main` still `58f0cc76ca560bdac08bdbd19e237aa4a413686b`).
+YES — final Stage 0 branch published and verified.
+
+Local and remote `stage-0-rebaseline` both point to:
+
+`32144356171d0f9fc3f7b50cc37a0301e4c4c936`
+
+The previous remote commit `d879d5889e54a07934e575dc03eeb4019876bdc7` was replaced using an explicit expected-SHA `--force-with-lease` (`--force-with-lease=refs/heads/stage-0-rebaseline:d879d58…`) after confirming immediately beforehand that no third party had moved the branch, so the update would have been rejected had it changed. Bare `--force` was never used.
+
+`main` remained:
+`58f0cc76ca560bdac08bdbd19e237aa4a413686b`
+
+`stage-4-2-operator-readiness` remained:
+`6d99651b9a48933de01cf19ef88e7cd45aa752dc`
+
+No historical branch or tag was changed or deleted. Publication was then re-verified after `git fetch`: local `HEAD`, `origin/stage-0-rebaseline`, and `git diff --exit-code HEAD origin/stage-0-rebaseline` all agreed, and the remote branch was confirmed to carry the final `.prettierignore` (including `playwright-report/` and `test-results/`) and the final `stage0_rebaseline_report.md`.
+
+A separate documentation-only forward commit, `docs: close Stage 0 publication state`, was committed on top of the SHA above and pushed normally (no lease, no force) to record the synchronized state in this report.
 
 PR CREATED:
 NO
-PR URL: none. GitHub offered `https://github.com/Pavithran-R-A/project-ar1/pull/new/stage-0-rebaseline` when the branch was pushed, but no PR was opened: opening one against the known-stale remote commit would present the un-corrected report as the review artifact. Recommendation is to publish the amended branch first, then open the review PR — and do not merge it without deciding the committer-identity and branch-protection items above.
+PR URL: none. The final, synchronized Stage 0 branch is now ready for review and PR creation; no PR has been opened yet, and none was opened as part of this closure repair. When one is opened it will trigger the full CI gate set automatically via the unfiltered `pull_request` trigger — and it should not be merged without first deciding the committer-identity and branch-protection items recorded above.
 
 DO NOT START THE NEXT STAGE.
