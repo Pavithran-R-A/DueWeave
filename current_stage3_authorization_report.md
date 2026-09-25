@@ -3,9 +3,10 @@
 This report is the authoritative Stage 3 record. The historical `stage3_final_report.md` is
 left untouched and is not evidence for this qualification.
 
-STATUS: COMPLETE — Phases 0–26 executed, plus one independent-review repair round (defects D10 and D11)
-recorded in "FINAL REVIEW & REPAIR". Verdict in "PHASE 25–26 — VERDICT", gate outputs in
-"PHASE 23–24" (pre-repair) and "FINAL REVIEW & REPAIR" (post-repair, authoritative).
+STATUS: COMPLETE — Phases 0–26 executed, plus two independent-review repair rounds: defects D10 and
+D11 in "FINAL REVIEW & REPAIR", defect D12 in "CLOSURE REPAIR — D12". Verdict in
+"PHASE 25–26 — VERDICT"; the authoritative gate numbers are the last set, in "CLOSURE REPAIR — D12"
+(18 migrations, 127 pgTAP assertions).
 
 STARTING SHA: `8e13dbc0b85cc5907eb1a0b77c660f33fb2557d1`
 BRANCH: `current-stage-3-authorization` (created from the verified Stage 2 commit)
@@ -242,20 +243,23 @@ guards included, return `42501` when called as `authenticated`.
 
 ## PHASE 5 — FORWARD SECURITY MIGRATIONS
 
-Four new migrations, applied forward-only on the local stack. No existing migration was edited,
-renamed or removed, and applied history was not rewritten. The fourth landed in the repair round
-documented at the end of this report.
+Five new migrations, applied forward-only on the local stack. No existing migration was edited,
+renamed or removed, and applied history was not rewritten. The fourth landed in the D10/D11 repair
+round and the fifth in the D12 repair round, both documented at the end of this report.
 
 | migration | class | what it changes |
 | --- | --- | --- |
 | `20260814120000_current_stage3_authorization_hardening.sql` | privileges / policy roles / one index | D1–D7: `TO authenticated` on all 15 policies; `revoke all` then `grant select` (10 tables) + `grant update` (`profiles` only) for `authenticated`, nothing for `anon`; EXECUTE revoked from `public`/`anon` on the founder surface and from everyone but the owner path on 13 internal guards; `alter default privileges … revoke … grant select` so D2–D5 cannot return with the next migration; `purchase_claims_owner_idx`. **The `grant select … to authenticated` half of that default-privileges line was itself defect D10 and is closed forward by `20260814150000`; this file was not edited** |
 | `20260814130000_current_stage3_reviewer_queue_typing.sql` | availability defect | D8: casts `owner_email` in `list_rejected_founder_claims()` so the plpgsql tuple assignment matches the declared `text` column |
 | `20260814140000_current_stage3_policy_initplan.sql` | policy evaluation strategy | D9: rewrites all 15 policies to `(select auth.uid())`, restating both `using` and `with check` on every policy that has them, plus one policy comment |
-| `20260814150000_current_stage3_default_privileges_fail_closed.sql` | future-object privileges | D10: revokes every browser-role and PUBLIC default privilege the migration role installs on future `public` tables, sequences and functions. D11: a `ddl_command_end` event trigger strips the implicit PUBLIC EXECUTE that `ALTER DEFAULT PRIVILEGES` cannot remove from a newly created function |
+| `20260814150000_current_stage3_default_privileges_fail_closed.sql` | future-object privileges | D10: revokes every browser-role and PUBLIC default privilege the migration role installs on future `public` tables, sequences and functions. D11: a `ddl_command_end` event trigger strips the implicit PUBLIC EXECUTE that `ALTER DEFAULT PRIVILEGES` cannot remove from a newly created function. **Its revoke clause was written with `on function` syntax, which is defect D12; this file was not edited and is superseded forward by `20260814160000`** |
+| `20260814160000_current_stage3_routine_hardening.sql` | future-routine privileges | D12: replaces the body of the same preventive trigger so the revoke addresses a function, an aggregate **or** a procedure through `revoke all on routine <regprocedure>`, and widens the watched command tags to include `CREATE/ALTER AGGREGATE` |
 
 Every statement is predicate-preserving: the same owner column is compared to the same
-`auth.uid()` value. `supabase db reset --local --yes` replays all 17 migrations from zero (13
-pre-existing + 4 Stage 3) with no errors and no manual repair step.
+`auth.uid()` value. `supabase db reset --local --yes` replays all 18 migrations from zero (13
+pre-existing + 5 Stage 3) with no errors and no manual repair step. Migration 18 is applied on top
+of a database where migration 17's trigger already exists, so the supersession path itself is
+rehearsed on every replay.
 
 ---
 
@@ -263,10 +267,14 @@ pre-existing + 4 Stage 3) with no errors and no manual repair step.
 
 Two files under `supabase/tests/`, run against the local stack with `pnpm test:db`. pgTAP is
 installed into the `extensions` schema, so `public` and the generated client types are unchanged
-by running the suite. **Result after the repair round: 93 of 93 assertions pass, 0 fail, 0 skip** —
-32 in `stage3_01_rls_structure.sql` + 61 in `stage3_02_privileges.sql`. Before the repair the same
-two files carried 71 (32 + 39); the privileges file was strengthened to 61 first, observed RED at
-`Failed 9/61`, and only then made green by `20260814150000`.
+by running the suite. **Final result after the D10/D11 and D12 repair rounds: 127 of 127 assertions
+pass, 0 fail, 0 skip** — 32 in `stage3_01_rls_structure.sql` + 95 in `stage3_02_privileges.sql`.
+The history of that count is 71 (32 + 39) before any repair, then 93 (32 + 61) once
+`20260814150000` closed D10/D11 — the privileges file was strengthened to 61 first, observed RED at
+`Failed 9/61`, and only then made green — and 127 once the routine contract was added, which was
+likewise observed RED first — against the pre-D12 database with the old trigger body reinstated
+verbatim, `Failed 16/95 subtests` (subtests 65–73, 75, 77, 82–84, 87–88) — before the migration
+existed.
 
 `stage3_01_rls_structure.sql` pins: RLS on for all 13 tables and off for none; no `FORCE`
 (any change becomes a reviewed decision); no views, materialized views or sequences in
@@ -286,11 +294,16 @@ round) that a future `public` table, sequence or function installs **zero** auto
 `anon`, `authenticated` or the PUBLIC pseudo-role — checked both as a recorded default and as the
 ACL of objects actually created during the test run, with a second created table proving that an
 explicit `grant` plus an RLS policy still reaches exactly the policy's own rows, and a final
-section proving the probes cleaned themselves up.
+section proving the probes cleaned themselves up. Section E2, added for D12, extends that same
+contract across every kind of routine — a plain function, two overloads sharing one name, a
+zero-parameter procedure, a parameterized procedure and an aggregate — plus a real `CALL` by an
+`authenticated` principal, the fail-closed behaviour of `ALTER FUNCTION` / `ALTER PROCEDURE`, and
+proof that unrelated `CREATE TABLE` / `CREATE INDEX` / `CREATE VIEW` DDL survives the same
+`ddl_command_end` event untouched.
 
 ---
 
-## DEFECT REGISTER — D1 … D11
+## DEFECT REGISTER — D1 … D12
 
 Every entry below was **observed as a failing assertion or a live error before it was fixed**,
 and the same attack was re-run afterwards. None was found only by reading migration text.
@@ -308,6 +321,7 @@ and the same attack was re-run afterwards. None was found only by reading migrat
 | D9 | policy performance | `supabase db advisors --local --type performance` → **15 `auth_rls_initplan` WARN findings**; measured on a synthetic 20,005-row `clients` scan as an authenticated non-owner with index/bitmap scans off: `Seq Scan … Rows Removed by Filter: 20005`, **Execution Time 21.1–26.3 ms**, filter inlined as the raw `current_setting('request.jwt.claim.sub' …)::jsonb ->> 'sub'` expression tree | wrap in `(select auth.uid())`, restating `using` **and** `with check` | same plan after: **1.513 ms**, `InitPlan 1` and `Filter: (owner_id = (InitPlan 1).col1)`; performance advisor now **No issues found**; full 274-probe ledger totals identical before and after |
 | D10 | future drift, read exposure | found by independent review of D6, then reproduced against the live catalog before any edit: `pg_default_acl` for (`postgres`, `public`, tables) resolved to `authenticated=r/postgres`, and `create table public.d10_red_probe_table (id bigint);` with **no GRANT at all** produced `has_table_privilege('authenticated', …, 'SELECT') = t`. So a future migration that forgets RLS, forgets a policy or forgets a revoke ships a table every signed-in account can read through the Data API | `20260814150000`: revoke all default table/sequence/function privileges from `public`, `anon`, `authenticated` for the migration role in `public` | strengthened pgTAP observed RED first (`Failed 9/61`, assertions 38, 40, 44, 46, 55 for D10); after the migration all 93 pass, the created-probe ACLs are empty of browser and PUBLIC entries, and sections A–C prove the 20 approved RPCs and the 10 tenant reads are untouched |
 | D11 | future drift, anonymous RPC exposure | found *while* reproducing D10, and invisible to any `pg_default_acl` assertion: a function created by the migration role in `public` carries `proacl = {postgres=X/postgres, =X/postgres, service_role=X/postgres}` — the `=X` entry is PostgreSQL's **initial** PUBLIC EXECUTE, merged in *after* the recorded default ACL, and five supported `alter default privileges … revoke` forms were measured not to remove it (including revoking every grantee, which deletes the row and falls back to `acldefault()`, i.e. re-adds it). `anon` inherits from PUBLIC, so `has_function_privilege('anon', <new function>, 'EXECUTE') = t` and PostgREST publishes it as `/rpc/` | a narrow `ddl_command_end` event trigger, `stage3_default_privileges_fail_closed`, that revokes from `public, anon, authenticated` for `CREATE/ALTER FUNCTION/PROCEDURE` only in `public` and only when the executing role owns the new function — the one supported mechanism that can strip an initial privilege | pgTAP RED at assertions 49–52 (anon / authenticated / PUBLIC EXECUTE all `t`, probe ACL count 1) before the migration; all four green after, with 53–54 holding that `postgres` and `service_role` still execute the same function and 56–58 holding that an explicit later `grant execute` still works |
+| D12 | future drift, routine-kind syntax | found by independent review of the D10/D11 trigger, then reproduced against the 17-migration database before any edit. The trigger watched `CREATE/ALTER PROCEDURE` but always emitted `revoke all on function %s`, and PostgreSQL keeps FUNCTION and PROCEDURE apart in privilege syntax: `create procedure public.stage3_d12_red_probe()` with no GRANT at all died inside `ddl_command_end` with `SQLSTATE 42809 — stage3_d12_red_probe() is not a function`, `CONTEXT: SQL statement "revoke all on function stage3_d12_red_probe() from public, anon, authenticated"`, `PL/pgSQL function stage3_default_privileges_fail_closed() line 13 at EXECUTE`, psql exit 3, and `count(*) from pg_proc where proname = 'stage3_d12_red_probe'` = **0** — the procedure never persisted. So the repair that was supposed to cover procedures in fact made the next procedure-creating migration fail, and had the revoke been skipped instead, the procedure's implicit PUBLIC EXECUTE would have stayed. Measured with the *old* body installed verbatim inside a rolled-back transaction: `CREATE AGGREGATE` was never in the tag list either, and a future aggregate came back `prokind = a`, `proacl = {=X/postgres, postgres=X/postgres, service_role=X/postgres}` with `anon`, `authenticated` **and** PUBLIC all `EXECUTE = t` — the D11 hole reopened through a routine kind the trigger did not watch | `20260814160000` replaces the trigger body so the revoke addresses whichever routine kind just appeared — `revoke all on routine <oid>::regprocedure from public, anon, authenticated` — and adds `CREATE/ALTER AGGREGATE` to the watched tags. Forward-only; `20260814150000` was not edited | pgTAP extended to 95 assertions and observed `Failed 16/95` (subtests 65–73, 75, 77, 82–84, 87–88) **with the old trigger body reinstated verbatim**, so the RED is a measurement of the defect rather than of a missing migration; the caught error is printed inside the failure, e.g. `# Failed test 65: "a later migration can create a public procedure (D12)"  have: 42809: stage3_probe_procedure() is not a function  want: ok`, `# Failed test 75: "a future aggregate keeps no PUBLIC or browser-role EXECUTE"  have: 1  want: 0`, `# Failed test 77: "no future routine of any kind carries a browser-role or PUBLIC entry"  have: 1  want: 0`. After the migration all 95 pass: `stage3_probe_procedure()` and `stage3_probe_procedure(integer, text)` are created and start closed to `anon`/`authenticated`/PUBLIC with `prokind` `pp` and owner + `service_role` EXECUTE intact; both `stage3_probe_overload(integer)` and `(text)` exist as two distinct identities and neither keeps PUBLIC; the aggregate and its transition function are created closed; `grant execute on function` and `grant execute on procedure` still work as deliberate opt-ins (an `authenticated` principal then reaches `CALL` — `ok`); unrelated `CREATE TABLE` / `INDEX` / `VIEW` DDL succeeds and is likewise born closed; and every probe is dropped again, proven by the cleanup assertions |
 
 Three notes on process. D9 was written first as **failing pgTAP assertions** (section G observed RED
 at 13 and 5 offending clauses) before the migration existed, per the test-first requirement, and the
@@ -317,6 +331,16 @@ behaviour-preserving only *because* it is paired with actual grant removal (D2/D
 rewrite alone would not have narrowed anything. And D10 is a lesson recorded rather than hidden: the
 D6 repair was accepted because its own assertion permitted `SELECT`, i.e. the test encoded the
 assumption it was meant to check.
+
+A fourth note belongs to D12, because its failure mode is different in kind: **a repair's stated
+coverage is not its coverage.** `20260814150000` named procedures in its tag list and its comments,
+and every assertion then existing passed — because no test in the project had ever created a
+procedure. A keyword appearing in a `command_tag` list proves only that the code intends to handle
+that case. D12 is therefore closed with a created-object probe for each routine kind (plain function,
+two overloads, zero-parameter procedure, parameterized procedure, aggregate) rather than by reading
+the tag list, and the aggregate gap — which the independent review did not name, and which the same
+"stated coverage" habit produced — was found by asking what else is a `pg_proc` row that the old body
+silently ignored.
 
 ---
 
@@ -500,6 +524,14 @@ runs, including one begun immediately after a fresh reset, returned
 the shared local stack (the same stack also hosts the pgTAP and E2E suites), not as a proven
 flaky test, and re-run `pnpm test` twice after any future privilege-bearing migration.
 
+> **Corrected during the D12 round — the two failures above have now been reproduced, with captured
+> logs.** See §"The reproduced `PGRST303 — JWT issued at future` failures" below: the signature is
+> `PGRST303 — JWT issued at future` at the Auth→Data-API boundary, i.e. a token-validation failure,
+> not a permission change — and it is *not* confined to the Stage 2 file, which is what these
+> write-ups got wrong. The instruction this paragraph records (re-run `pnpm test` twice after any
+> privilege-bearing migration) was followed and still stands; what is withdrawn is the "never
+> reproduced" wording. The root cause is narrowed, not proven.
+
 **Post-run database posture.** 13 tables, RLS on for all, `FORCE` off for all, 15 policies. 5
 `auth.users` rows of which 2 are `stage3-%` browser accounts, 5 profiles, 3 clients, 2
 receivables, and **0 rows in `purchase_claims`, `founder_admins` and `founder_audit_events`**.
@@ -657,25 +689,254 @@ navigation of a Chromium context; the immediate re-run passed 5/5 and the same s
 `200` for both `/` and `/auth` throughout. Both are treated the same way as the observation in
 PHASE 23–24: unreproduced, in a stack shared by four suites and restarted just before the run, and
 the reason `pnpm test` is now run more than once after any privilege-bearing migration. Neither was
-answered by weakening an assertion.
+answered by weakening an assertion. *(The `pnpm test` half of this was later reproduced with captured
+logs and carries the `PGRST303 — JWT issued at future` signature — a token-validation failure at the
+Auth→Data-API boundary, not a permission change, and not confined to the Stage 2 file; see §"The
+reproduced PGRST303 … failures". The `ERR_ABORTED` navigation observation stands as recorded.)*
+
+---
+
+## CLOSURE REPAIR — D12 (routine hardening used FUNCTION syntax for PROCEDURE DDL)
+
+A second independent review of the accepted D10/D11 repair read the trigger body rather than its
+prose and asked the obvious question the first round had not answered: **has a procedure ever been
+created on this database?** It had not — not by a migration, not by pgTAP, not by the app. The
+`command_tag` list named `CREATE PROCEDURE` and `ALTER PROCEDURE`, and every assertion in the suite
+passed, because nothing in the project ever exercised those two branches.
+
+### What the review claimed, and what was executed before changing anything
+
+`20260814150000` installs a `ddl_command_end` trigger whose filter matches four tags but whose
+dynamic statement is always `revoke all on function %s from public, anon, authenticated`. PostgreSQL
+does not accept FUNCTION syntax for a procedure object; ROUTINE is the keyword that addresses either
+kind. The claim was therefore that the repair would abort a future `CREATE PROCEDURE`.
+
+Reproduced against the 17-migration database first, with no repair written yet, in the same DDL
+context a migration uses (`psql -v ON_ERROR_STOP=1`, role `postgres`, i.e. the object owner the
+trigger's `proowner = current_role` filter selects):
+
+```
+create procedure public.stage3_d12_red_probe() language plpgsql as $$ begin null; end; $$;
+
+psql:<stdin>:7: ERROR:  stage3_d12_red_probe() is not a function
+CONTEXT:  SQL statement "revoke all on function stage3_d12_red_probe() from public, anon, authenticated"
+PL/pgSQL function stage3_default_privileges_fail_closed() line 13 at EXECUTE
+psql exit code: 3
+```
+
+`SQLSTATE 42809` (`wrong_object_type`), raised from inside the trigger, at `ddl_command_end`, i.e.
+after the procedure's own `CREATE` had parsed fine. Non-persistence confirmed in the same session:
+the catching harness reported `RESULT: CREATE PROCEDURE aborted sqlstate=42809 sqlerrm=stage3_d12_red_probe()
+is not a function`, and `count(*) from pg_proc where proname = 'stage3_d12_red_probe'` was **0**,
+while a control function created in the same batch persisted normally with
+`{postgres=X/postgres,service_role=X/postgres}`. So the defect is not "an aggregate privilege is
+slightly wrong" — it is that the previous repair breaks the next legitimate migration.
+
+### The second half of the finding, which the review did not name
+
+Asking "what else is a `pg_proc` row that this filter silently ignores?" surfaced an aggregate gap.
+Aggregates are created by `CREATE AGGREGATE`, which was never in the tag list, and an aggregate is
+executable. Measured by installing the **old** body verbatim inside a transaction that was then rolled
+back:
+
+```
+proname        | prokind | anon_exec | auth_exec | public_exec | proacl
+d12c_agg       | a       | t         | t         | t           | {=X/postgres,postgres=X/postgres,service_role=X/postgres}
+d12c_agg_sfunc | f       | f         | f         | f           | {postgres=X/postgres,service_role=X/postgres}
+```
+
+The transition function was stripped as usual; the aggregate kept `{=X/postgres}` — PUBLIC EXECUTE —
+which is exactly the D11 hole reopened, and which would also break this suite's own invariant that no
+public routine leaves default or PUBLIC EXECUTE in place. It is recorded as part of D12 rather than as
+a separate defect because the repair is one statement: use ROUTINE, and watch the aggregate tags too.
+
+### Choosing the repair, verified before it was written
+
+`REVOKE … ON ROUTINE <oid>::regprocedure` was tested on this server (PostgreSQL 17.6) against each
+identity form the trigger can be handed, inside `begin; … rollback;`: a normal function, two overloads
+sharing one name, a zero-parameter procedure, a parameterized procedure, and an aggregate with a
+`bigint` state. All five accepted the revoke, and the catalog-derived `objid::regprocedure` was the
+identity used in every case, so the overload ambiguity that a bare name would create cannot occur.
+`prokind` was checked to be `f`, `p` and `a` respectively, confirming the probes exercised three
+different routine kinds rather than three spellings of one. No `prokind`-branching implementation was
+needed, so the simpler single statement is what shipped.
+
+### `20260814160000_current_stage3_routine_hardening.sql`
+
+Forward-only; `20260814150000` is untouched. It replaces the trigger's body —
+`revoke all on routine %s from public, anon, authenticated` — and widens the watched tags to
+`CREATE/ALTER FUNCTION`, `CREATE/ALTER PROCEDURE`, `CREATE/ALTER AGGREGATE`. The namespace filter
+(`public` only), the ownership filter (`proowner = current_role`) and the revoke grantee list are
+unchanged, so nothing about the *existing* surface moves: it changes what happens to objects created
+from here on. It is a `create or replace function` plus `drop event trigger if exists` /
+`create event trigger`, so it replays cleanly onto a database where migration 17 already installed the
+trigger — which is the state every replay from zero passes through.
+
+### ALTER behaviour: known, intentional, and now asserted
+
+The trigger also fires on ALTER, and the revoke it emits strips **explicit** grants, not just the
+implicit default. Measured with the candidate body installed, per routine kind:
+
+| step | function | procedure |
+| --- | --- | --- |
+| after `CREATE` | `anon f / authenticated f / PUBLIC f`, owner `t`, `service_role t` | creation succeeds, same closed posture, `prokind = p` |
+| after `grant execute … to authenticated` | `authenticated t` | `authenticated t`, and an `authenticated` principal reaches `CALL` |
+| after `ALTER FUNCTION … COST 5` / `ALTER PROCEDURE … SET seq_page_cost = 1` | `authenticated f` again, `proacl` back to `{postgres=X/postgres,service_role=X/postgres}` | same — grant stripped |
+| after `CREATE OR REPLACE` | `authenticated f` | `authenticated f` (accepted for procedures too) |
+| execution after stripping | — | owner `CALL` still succeeds; `authenticated` `CALL` fails with **`permission denied for procedure d12p_ap`** (42501) until the grant is re-issued |
+
+Fail-closed on ALTER is the behaviour to keep: an ALTER that changes what a routine returns should not
+leave a browser grant pointing at the new body. The cost is a rule for future migration authors, and it
+is now written in three places — the migration's own header comment, a pgTAP assertion named
+`ALTER FUNCTION deliberately strips the earlier explicit grant (fail-closed)`, and the procedure twin —
+so **a migration that materially ALTERs a browser-exposed routine must re-GRANT `authenticated` EXECUTE
+afterwards** cannot be discovered for the first time in production. It was not weakened for
+convenience.
+
+### The reproduced `PGRST303 — JWT issued at future` failures, and what they are not
+
+The instruction "if a first run hits the previously observed shared-stack startup race, investigate
+before rerunning and record it honestly" was exercised, and this time the failure was caught with its
+assertion text in the log instead of being described after the fact. Two signatures, from three
+captured logs in this round and three more in the final pass:
+
+```
+FAIL  tests/stage2-local-foundation.test.ts > Stage 2 local foundation: auth, profile, and data
+        contracts > auto-provisions a public.profiles row owned by the Auth user
+AssertionError: expected { code: 'PGRST303', …(3) } to be null
+  → "code": "PGRST303",  "message": "JWT issued at future"
+    at tests/stage2-local-foundation.test.ts:52
+FAIL  … > signs back in and retains the same database identity and profile
+  → expected '1e143607-…' to be undefined        (line 161 — downstream of the first)
+
+Test Files  1 failed | 10 passed | 1 skipped (12)
+      Tests  2 failed | 203 passed | 1 skipped (206)
+```
+
+```
+FAIL  tests/stage3-local-rls.test.ts > Stage 3 local authorization: two real accounts
+        against one shared database
+Error: profile row missing for alpha: JWT issued at future
+    at assert (tests/stage3-local-rls.test.ts:120)  ← bootstrap (:276)
+
+Test Files  1 failed | 10 passed | 1 skipped (12)
+      Tests  95 passed | 111 skipped (206)      (whole file aborted in bootstrap)
+```
+
+What was ruled out, and how:
+
+1. **It is not a privilege or authorization change from `20260814160000`.** `PGRST303` is raised by
+   PostgREST while validating the JWT — before the request reaches a table, a policy or a grant — and
+   the second Stage 2 failure is only the downstream `undefined` profile id from the first. The
+   routines these suites call are pre-existing and were re-verified as still browser-executable on the
+   same database (127-assertion pgTAP run, 110-test matrix, and the direct catalog read below).
+2. **It is not confined to one test file.** It appeared in `stage2-local-foundation.test.ts` (two
+   assertions) *and* in `stage3-local-rls.test.ts` (whole file, 111 skipped), so the earlier
+   write-ups were wrong to treat the Stage 2 file as the affected surface. Anything that reads a table
+   with a token minted seconds earlier is exposed.
+3. **It is intermittent, not rare.** Over the five full-suite runs of the committed files at the end:
+   fail, pass, fail, pass, pass — the last two consecutive runs are the mandated pair. Claiming
+   "narrow window, gone after a reset" would have been wrong; an earlier sentence saying that in this
+   round is corrected here rather than left standing.
+
+Mechanism, as far as it is measured: GoTrue stamps `iat` as a whole second, so `iat` is already up to
+~1 s in the past by the time it is read. Eight paired samples in the settled state put `iat`
+274–996 ms behind the host clock at receipt, and 8/8 matching Data API reads returned `200`. That
+leaves very little headroom: if the validating container's clock trails the signing container's by
+anything inside that sub-second margin, `iat > now` and PostgREST rejects the token. Every sample that
+could be taken at second resolution agreed — `auth`, `rest`, `storage` `Date` headers and the host
+agreed within one second across ten samples, and `now()` inside `supabase_db_dueweave` agreed with the
+host — so **the sub-second skew itself was never captured**, and this stays a mechanism consistent with
+the evidence rather than a proven cause. Two limits are recorded as limits: PostgREST's container is
+distroless (no `date`, so its clock is only observable through its response headers, at one-second
+resolution), and a probe run intended to catch a rejection inside a failure window produced 151
+consecutive `400 User does not already exists` responses from GoTrue — its rate limiter after the
+signup traffic of the suites — so that attempt yielded no data and was re-run in the settled state.
+
+Carried forward as an open item, not as a closed finding: reproduce under `pnpm test` and sample the
+two containers' clocks at sub-second resolution *during* the failure window.
+
+**Nothing was changed to make any of this pass.** No assertion, no timeout, no retry and no
+wait-for-settle hack was added to `tests/stage2-local-foundation.test.ts` or
+`tests/stage3-local-rls.test.ts`; the local `supabase/config.toml` JWT leeway was not touched. The two
+mandated final `pnpm test` runs were executed after the diagnosis, not instead of it, and both
+reported `205 passed | 1 skipped | 0 failed`.
+
+So the honest characterization is *intermittent — roughly two failures in five runs in this window —
+and signature-identified as a token-validation failure at the Auth/Data-API boundary*, with the
+sub-second clock margin measured on the issuing side but the validating side never caught out of
+step. Not "fixed", not "proven to be the VM clock", not "an unknown flaky test".
+
+The correction this forces on the earlier record: the two first-attempt failures written up as
+"unexplained" in PHASE 23–24, and the `2 failed | 203 passed` pair in the D10/D11 post-repair notes
+(same file, same two line numbers, described there as unreproduced), carry the same `PGRST303`
+signature and are now reproduced with captured logs — so "never reproduced" is withdrawn. What is
+*not* claimed is a proven root cause; the earlier guess of "ordering-sensitive state" is replaced by
+"JWT validation at the Auth→Data-API boundary, cause narrowed but unconfirmed". What remains genuinely
+unexplained is the separate `net::ERR_ABORTED` on the first E2E navigation, which is a different
+subsystem and did not recur in any of this round's four browser runs.
+
+### Post-repair gate set (every number below re-measured after `pnpm db:reset:local`)
+
+| gate | command | result |
+| --- | --- | --- |
+| replay from zero | `pnpm db:reset:local` | all **18** migrations applied, no errors; `supabase_migrations.schema_migrations` = **18**; exactly one `stage3_default_privileges_fail_closed` event trigger; its body now contains `on routine` and `CREATE AGGREGATE` |
+| database structure | `pnpm test:db` | **127 passed / 0 failed** (32 + 95), up from 93; RED observed first at `Failed 16/95` with the old trigger body reinstated |
+| live authorization matrix | `pnpm test:stage3` | **110 passed / 0 failed / 0 skipped** |
+| attack ledger | same run, `test-results/stage3-ledger.json` | **274 probes**, 178 refused, 79 stored-state re-reads unchanged, **0 unauthorized private-row changes**, 0 accepted attacks |
+| Stage 2 contracts | `pnpm test:stage2` | **12 passed / 0 failed** |
+| Stage 3 browser isolation | `pnpm test:e2e:stage3` | **5 passed / 0 failed** — green on the first attempt this time, no navigation race to record |
+| Stage 2 browser journey | `pnpm test:e2e:stage2` | **1 passed** |
+| schema lint | `pnpm exec supabase db lint --local` | **No schema errors found** |
+| security advisors | `supabase db advisors --local --type security` | **No issues found** |
+| performance advisors | `supabase db advisors --local --type performance` | **No issues found** |
+| generated types | `pnpm db:types` | **UNCHANGED** — `git status` shows no diff to `client/src/types/database.generated.ts`; all 13 probe routines, the probe table/index/view and the catching harness are dropped and proven gone |
+| clean install | `pnpm install --frozen-lockfile` | pass, no lockfile change |
+| lint / typecheck | `pnpm lint`, `pnpm check` | pass (`--max-warnings=0`), pass |
+| unit + integration | `pnpm test`, five runs over the committed files | last two consecutive runs (the mandated pair): **205 passed \| 1 skipped \| 0 failed** each. Sequence across the five: fail, pass, fail, pass, pass — both failures `PGRST303 — JWT issued at future`, diagnosed above and rerun with no test changed |
+| build | `pnpm build` | pass |
+| dependency audit | `pnpm audit --prod --audit-level=high` | **No known vulnerabilities found** |
+
+**Current surface reconfirmed unchanged**, by direct catalog read after the repair: 13 `public`
+tables, all 13 with RLS on, 15 policies, 37 `public` routines of which exactly **20** are
+`authenticated`-executable and **0** are executable by `anon` or by PUBLIC, 0 routines left with
+default-or-PUBLIC EXECUTE, 24 definer routines, 0 privileges on the three admin tables for either
+browser role, and 0 browser-role entries in the migration role's recorded default ACLs. D10 and D11
+stay closed — sections D and E of the privileges suite still pass, and their created-object probes are
+the same ones that now sit next to the procedure probes. No application permission was touched for
+D12's convenience. The stack was then replayed once more from zero as the delivered state: 18
+migrations, `auth.users` = 0 rows (no suite or clock-probe residue left behind), and 0 relations and
+0 routines named `stage3_probe%` in `public`.
+
+**CI observation for this round (read-only; nothing was triggered or changed).** `gh api
+repos/…/actions/permissions` still returns `{"enabled":true,"allowed_actions":"all"}`, and
+`gh run list --branch current-stage-3-authorization` returns an empty list — i.e. this push starts
+nothing, for the same configuration reason recorded in the D10/D11 round: `.github/workflows/ci.yml`
+(unchanged in this round) triggers on `pull_request` and on `push` to `main`,
+`stage-4-1-release-hardening` and `stage-4-2-operator-readiness` only, and this branch is not in that
+filter. Widening it is a shared-workflow change outside this stage's authorisation, so every D12 gate
+above was run locally.
 
 ---
 
 ## PHASE 25–26 — VERDICT
 
-**PASS — qualified by execution, including one repair round after independent review.** One
+**PASS — qualified by execution, including two repair rounds after independent review.** One
 authenticated DueWeave user cannot read, modify, delete, spoof-own, or workflow-reach another user's
 private data, and cannot reach an admin surface, across 274 live browser-role probes (178 refused, 79
-stored-state re-reads unchanged, 0 private rows changed by a non-owner), 93 pgTAP assertions, and 5
-real-browser isolation tests driven through the app's own screens. Eleven executed defects (D1–D11)
+stored-state re-reads unchanged, 0 private rows changed by a non-owner), 127 pgTAP assertions, and 5
+real-browser isolation tests driven through the app's own screens. Twelve executed defects (D1–D12)
 were found, each reproduced failing first, then fixed by forward-only migrations and re-run; the two
 deviations that remain (`FORCE ROW LEVEL SECURITY` off, `delete_my_business_data` closed to browsers)
-are justified by executed experiments and pinned by assertions instead of by prose. The last two
-defects are the ones a review — not a test — caught, and they are the reason the contract now reads
-**default = closed, access = an explicit decision in the migration that makes it**: 17 migrations
-replay from zero, a future `public` table, sequence or function starts with no privilege for `anon`,
-`authenticated` or PUBLIC, and a deliberate grant plus a policy still works and still narrows to the
-policy's own rows.
+are justified by executed experiments and pinned by assertions instead of by prose. The last three
+defects are the ones a review — not a test — caught, and D12 is the uncomfortable one of the three: it
+was a defect *in a repair for review-caught defects*, in a branch (`CREATE/ALTER PROCEDURE`) that no
+test had ever executed. That is the reason the contract now reads
+**default = closed, access = an explicit decision in the migration that makes it**, and — newly, from
+D12 — **a repair's stated coverage must be executed, not read**: 18 migrations replay from zero, a
+future `public` table, sequence, function, overload, procedure, parameterized procedure or aggregate
+starts with no privilege for `anon`, `authenticated` or PUBLIC, and a deliberate grant plus a policy
+still works and still narrows to the policy's own rows.
 
 BOUNDARIES AND CARRIED-FORWARD STATE
 
@@ -683,11 +944,19 @@ BOUNDARIES AND CARRIED-FORWARD STATE
 - HOSTED PROJECT CREATED: **NO**
 - PAYMENT ACTIVATION: **NONE** — placeholder destination, `upi_id` still NULL, all three
   operational statuses still PENDING
+- OPEN, NOT FIXED: `PGRST303 — JWT issued at future` intermittently fails whatever test happens to
+  read a table seconds after minting a token (2 of the last 5 full-suite runs). Ruled out as a
+  permission/authorization change; mechanism narrowed to a sub-second issuer/validator clock margin
+  and left unproven because the validating container's clock cannot be sampled finer than one second.
+  No test, timeout, retry or JWT-leeway setting was changed to get past it. See
+  §"The reproduced `PGRST303 — JWT issued at future` failures"
 - RLS was never disabled to make a test pass; no denial assertion was weakened; no historical
   test was modified except the one Stage 2 assertion made stricter — and, in the repair round, the
   one default-privilege assertion that had been tolerating `SELECT` was made stricter
-- None of the three earlier Stage 3 migrations was edited for D10/D11; the repair is the fourth
-  file, applied forward, and the D1–D9 evidence above stands as originally recorded
+- None of the earlier Stage 3 migrations was edited for D10/D11 or for D12; those repairs are the
+  fourth and fifth files, applied forward, and the D1–D9 evidence above stands as originally recorded.
+  `20260814150000` is superseded in behaviour by `20260814160000` but was not modified, so the history
+  of what was applied to a local database at each point remains readable
 - `main` untouched, no PR opened or merged, PR #1 unmodified, branch
   `current-stage-3-authorization` pushed normally (no force)
 - GitHub Actions: **re-checked during the repair round and the earlier note is corrected.** Actions is
