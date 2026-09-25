@@ -10,6 +10,7 @@ build/
 # Generated files
 *.tsbuildinfo
 coverage/
+client/src/types/database.generated.ts
 
 # Test runner output (Playwright HTML report, failure artifacts, traces, videos)
 playwright-report/

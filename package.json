@@ -11,7 +11,15 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "lint": "eslint client/src tests e2e vite.config.ts --max-warnings=0",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "supabase:start": "supabase start",
+    "supabase:stop": "supabase stop",
+    "supabase:status": "supabase status",
+    "db:reset:local": "supabase db reset --local --yes",
+    "db:types": "supabase gen types typescript --local --schema public > client/src/types/database.generated.ts",
+    "test:stage2": "vitest run tests/stage2-local-foundation.test.ts",
+    "test:e2e:stage2": "playwright test e2e/stage2-local-auth.spec.ts",
+    "verify:stage2": "pnpm db:reset:local && pnpm db:types && pnpm test:stage2"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.3",
@@ -37,6 +45,7 @@
     "jsqr": "^1.4.0",
     "pngjs": "^7.0.0",
     "prettier": "^3.6.2",
+    "supabase": "2.117.0",
     "tailwindcss": "^4.1.14",
     "typescript": "5.9.3",
     "typescript-eslint": "^8.67.0",

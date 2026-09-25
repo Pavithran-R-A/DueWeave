@@ -110,5 +110,9 @@ temp/
 *.sqlite
 *.sqlite3
 
+# Supabase local development stack state (contains generated local credentials)
+supabase/.temp/
+supabase/.branches/
+
 # Webdev artifacts (checkpoint zips, migrations, etc.)
 .webdev/

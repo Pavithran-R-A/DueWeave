@@ -40,12 +40,42 @@ The application is a browser-only React/Vite single-page application. It uses th
 
 ## Run locally
 
-Use Node 22 and pnpm 10. The browser client reads `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` from a local ignored environment only. These are publishable browser configuration values, not a service role. Do not commit `.env` files, service-role keys, database passwords, UPI credentials, or manual-test credentials.
+Use Node 22 (the version CI is pinned to), or Node 24 as used for the Stage 2 local qualification, together with pnpm 10. The browser client reads `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` from a local ignored environment only. These are publishable browser configuration values, not a service role. Do not commit `.env` files, service-role keys, database passwords, UPI credentials, or manual-test credentials.
 
 ```bash
 pnpm install --frozen-lockfile
 pnpm dev
 ```
+
+## Local Supabase development
+
+These commands run Supabase entirely inside Docker on your machine. They provision **no hosted project**, never call `supabase link`, `supabase db push`, or any remote database, and require no Supabase account login.
+
+Requirements: Docker-compatible runtime (Docker Desktop / Colima / OrbStack), Node 22 or newer, pnpm 10. The Supabase CLI is a pinned devDependency, so no global install is needed.
+
+```bash
+pnpm install --frozen-lockfile
+pnpm supabase:start                      # first run pulls the images
+node scripts/local-supabase-env.mjs      # writes browser-safe values into .env.local
+pnpm db:reset:local                      # replay every committed migration from zero
+pnpm db:types                            # regenerate client/src/types/database.generated.ts
+pnpm test:stage2                         # executed auth/profile/data contract tests
+pnpm dev                                 # DueWeave on the Vite dev server
+pnpm supabase:stop
+```
+
+`supabase:status` prints the local URLs and keys. Only `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` belong in `.env.local` or any `VITE_*` variable — the helper refuses a non-loopback URL and never writes a service-role/secret key, because `VITE_*` values ship inside the public bundle.
+
+The browser journey needs the built app served on the port the suite expects, so run it in two terminals:
+
+```bash
+pnpm build && pnpm preview --port 3000 --strictPort --host 127.0.0.1   # terminal one
+STAGE2_LOCAL_E2E=1 pnpm test:e2e:stage2                                # terminal two
+```
+
+`pnpm verify:stage2` chains the database half of that qualification (reset, type generation, executed contract tests) and does not start a server.
+
+Local versus hosted: `supabase/config.toml` is local development configuration. It disables email signup confirmation so automated local tests receive a session without SMTP; a hosted project keeps its own Auth settings, and production email confirmation remains a later deployment decision.
 
 ## Verification
 
@@ -56,17 +86,19 @@ pnpm lint
 pnpm check
 pnpm test
 pnpm build
-pnpm audit --prod
+pnpm audit --prod --audit-level=high
 ```
 
-`pnpm lint` is real ESLint 10 (flat config, typescript-eslint, react-hooks) run with `--max-warnings=0`; `pnpm check` is `tsc --noEmit`. The unit tests cover INR/paise parsing and formatting, outstanding balances after partial payments, paid-state detection, India business-date handling, deterministic queue ordering, promise sequencing, snooze visibility, follow-up interpolation, and the repository/adapter column contract. One live-configuration test skips unless authorized credentials are supplied.
+`pnpm lint` is real ESLint 10 (flat config, typescript-eslint, react-hooks) run with `--max-warnings=0`; `pnpm check` is `tsc --noEmit`. The unit tests cover INR/paise parsing and formatting, outstanding balances after partial payments, paid-state detection, India business-date handling, deterministic queue ordering, promise sequencing, snooze visibility, follow-up interpolation, and the repository/adapter column contract. They also cover the Stage 2 boundary contracts: no production file may import the demo dataset, and no privileged credential may appear in browser source or in the built bundle.
 
-The Playwright suite is intentionally not run in CI because it needs a manually started server and, for the auth-gateway cases, a configured Supabase Auth project:
+`tests/stage2-local-foundation.test.ts` runs against the local Docker stack and skips itself when `.env.local` does not point at a loopback Supabase URL, so a machine without the stack still gets a green `pnpm test`. With the local stack running it executes 12 real auth, profile, RPC, constraint and row-level-security checks. One further test targets a hosted project and always skips unless hosted credentials are supplied.
+
+The Playwright suite is intentionally not run in CI because it needs a manually started server. Against the local stack, the signed-out auth-gateway specs and the Stage 2 signup/signout/sign-in journey run without any supplied credentials; the remaining authenticated journeys still skip until `E2E_EMAIL` and `E2E_PASSWORD` are provided through a local ignored environment, and are not part of Stage 2.
 
 ```bash
 pnpm exec playwright install chromium
 pnpm build
-pnpm preview --port 3000    # serve dist on the port the suite's default baseURL expects
+pnpm preview --port 3000 --strictPort --host 127.0.0.1   # serve dist on the port the suite's default baseURL expects
 pnpm test:e2e               # in a second terminal
 ```
 
@@ -90,6 +122,8 @@ The design targets Supabase Free, GitHub Free, static hosting, and no paid payme
 - `client/src/lib/finance.ts` contains the reusable money/date/priority logic.
 - `client/src/data/supabase-*.ts` are the per-table persistence adapters; `supabase-adapters.ts` maps rows to domain types.
 - `client/src/data/demo.ts` contains fictional example data used only by tests.
+- `client/src/types/database.generated.ts` is committed and regenerated from the live local schema with `pnpm db:types`; it is prettier-ignored so formatting runs cannot churn it.
+- `scripts/local-supabase-env.mjs` reads `supabase status` and writes only the two browser-safe `VITE_*` values.
 - `supabase/migrations/` holds the versioned schema, RLS policies, and protected RPCs.
 
 ## Status and boundaries
