@@ -690,8 +690,14 @@ BOUNDARIES AND CARRIED-FORWARD STATE
   file, applied forward, and the D1–D9 evidence above stands as originally recorded
 - `main` untouched, no PR opened or merged, PR #1 unmodified, branch
   `current-stage-3-authorization` pushed normally (no force)
-- GitHub Actions availability remains an **external blocker** and is not evidence against this
-  stage; every gate above was run locally
+- GitHub Actions: **re-checked during the repair round and the earlier note is corrected.** Actions is
+  enabled for this repository (`/actions/permissions` → `enabled: true`, `allowed_actions: all`), so
+  this is no longer a billing blocker. It still does not cover this branch, for a configuration reason
+  rather than a plan reason: `.github/workflows/ci.yml` triggers on `pull_request` and on `push` to
+  `main`, `stage-4-1-release-hardening` and `stage-4-2-operator-readiness` only, so a push to
+  `current-stage-3-authorization` starts nothing, and widening that filter is a shared-workflow change
+  this stage is not authorised to make. The most recent run in the account is PR #1's, which failed
+  after 3 s with no retrievable log. Every gate in this report was therefore run locally.
 - Stage 4 not started
 
 DO NOT START STAGE 4.
