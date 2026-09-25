@@ -3,7 +3,9 @@
 This report is the authoritative Stage 3 record. The historical `stage3_final_report.md` is
 left untouched and is not evidence for this qualification.
 
-STATUS: COMPLETE — Phases 0–26 executed. Verdict in §13, gate outputs in §11.
+STATUS: COMPLETE — Phases 0–26 executed, plus one independent-review repair round (defects D10 and D11)
+recorded in "FINAL REVIEW & REPAIR". Verdict in "PHASE 25–26 — VERDICT", gate outputs in
+"PHASE 23–24" (pre-repair) and "FINAL REVIEW & REPAIR" (post-repair, authoritative).
 
 STARTING SHA: `8e13dbc0b85cc5907eb1a0b77c660f33fb2557d1`
 BRANCH: `current-stage-3-authorization` (created from the verified Stage 2 commit)
@@ -240,18 +242,20 @@ guards included, return `42501` when called as `authenticated`.
 
 ## PHASE 5 — FORWARD SECURITY MIGRATIONS
 
-Three new migrations, applied forward-only on the local stack. No existing migration was edited,
-renamed or removed, and applied history was not rewritten.
+Four new migrations, applied forward-only on the local stack. No existing migration was edited,
+renamed or removed, and applied history was not rewritten. The fourth landed in the repair round
+documented at the end of this report.
 
 | migration | class | what it changes |
 | --- | --- | --- |
-| `20260814120000_current_stage3_authorization_hardening.sql` | privileges / policy roles / one index | D1–D7: `TO authenticated` on all 15 policies; `revoke all` then `grant select` (10 tables) + `grant update` (`profiles` only) for `authenticated`, nothing for `anon`; EXECUTE revoked from `public`/`anon` on the founder surface and from everyone but the owner path on 13 internal guards; `alter default privileges … revoke … grant select` so D2–D5 cannot return with the next migration; `purchase_claims_owner_idx` |
+| `20260814120000_current_stage3_authorization_hardening.sql` | privileges / policy roles / one index | D1–D7: `TO authenticated` on all 15 policies; `revoke all` then `grant select` (10 tables) + `grant update` (`profiles` only) for `authenticated`, nothing for `anon`; EXECUTE revoked from `public`/`anon` on the founder surface and from everyone but the owner path on 13 internal guards; `alter default privileges … revoke … grant select` so D2–D5 cannot return with the next migration; `purchase_claims_owner_idx`. **The `grant select … to authenticated` half of that default-privileges line was itself defect D10 and is closed forward by `20260814150000`; this file was not edited** |
 | `20260814130000_current_stage3_reviewer_queue_typing.sql` | availability defect | D8: casts `owner_email` in `list_rejected_founder_claims()` so the plpgsql tuple assignment matches the declared `text` column |
 | `20260814140000_current_stage3_policy_initplan.sql` | policy evaluation strategy | D9: rewrites all 15 policies to `(select auth.uid())`, restating both `using` and `with check` on every policy that has them, plus one policy comment |
+| `20260814150000_current_stage3_default_privileges_fail_closed.sql` | future-object privileges | D10: revokes every browser-role and PUBLIC default privilege the migration role installs on future `public` tables, sequences and functions. D11: a `ddl_command_end` event trigger strips the implicit PUBLIC EXECUTE that `ALTER DEFAULT PRIVILEGES` cannot remove from a newly created function |
 
 Every statement is predicate-preserving: the same owner column is compared to the same
-`auth.uid()` value. `supabase db reset --local --yes` replays all 16 migrations from zero (13
-pre-existing + 3 Stage 3) with no errors and no manual repair step.
+`auth.uid()` value. `supabase db reset --local --yes` replays all 17 migrations from zero (13
+pre-existing + 4 Stage 3) with no errors and no manual repair step.
 
 ---
 
@@ -259,8 +263,10 @@ pre-existing + 3 Stage 3) with no errors and no manual repair step.
 
 Two files under `supabase/tests/`, run against the local stack with `pnpm test:db`. pgTAP is
 installed into the `extensions` schema, so `public` and the generated client types are unchanged
-by running the suite. **Result: 71 of 71 assertions pass, 0 fail, 0 skip** — 32 in
-`stage3_01_rls_structure.sql` + 39 in `stage3_02_privileges.sql`.
+by running the suite. **Result after the repair round: 93 of 93 assertions pass, 0 fail, 0 skip** —
+32 in `stage3_01_rls_structure.sql` + 61 in `stage3_02_privileges.sql`. Before the repair the same
+two files carried 71 (32 + 39); the privileges file was strengthened to 61 first, observed RED at
+`Failed 9/61`, and only then made green by `20260814150000`.
 
 `stage3_01_rls_structure.sql` pins: RLS on for all 13 tables and off for none; no `FORCE`
 (any change becomes a reviewed decision); no views, materialized views or sequences in
@@ -275,12 +281,16 @@ deparse to the hoisted `( SELECT auth.uid() AS uid)` form.
 `stage3_02_privileges.sql` pins the grant surface: `anon` holds no table or function privilege
 in `public`; `authenticated` holds `SELECT` on the ten tenant-readable tables and `UPDATE` on
 `profiles` only; the three admin tables hold no grants for either browser role; the 16 internal
-/trigger functions are not executable by `authenticated`; and `ALTER DEFAULT PRIVILEGES` no
-longer grants `anon` anything on future tables, functions or sequences.
+/trigger functions are not executable by `authenticated`; and (sections D–G, added in the repair
+round) that a future `public` table, sequence or function installs **zero** automatic privilege for
+`anon`, `authenticated` or the PUBLIC pseudo-role — checked both as a recorded default and as the
+ACL of objects actually created during the test run, with a second created table proving that an
+explicit `grant` plus an RLS policy still reaches exactly the policy's own rows, and a final
+section proving the probes cleaned themselves up.
 
 ---
 
-## DEFECT REGISTER — D1 … D9
+## DEFECT REGISTER — D1 … D11
 
 Every entry below was **observed as a failing assertion or a live error before it was fixed**,
 and the same attack was re-run afterwards. None was found only by reading migration text.
@@ -292,15 +302,21 @@ and the same attack was re-run afterwards. None was found only by reading migrat
 | D3 | grant | `authenticated` held INSERT/UPDATE/DELETE/TRUNCATE on the 7 owner-scoped tables though the browser writes only via RPC | `revoke all`, then `grant select` (10 tables) + `grant update` on `profiles` only | pgTAP ACL assertions; the 31 cross-update and 20 cross-delete probes still refuse, now for privilege *and* policy reasons |
 | D4 | function privilege | **25 of 36** public functions were EXECUTE-granted to `anon`, including `approve_founder_claim()`, `revoke_founder_entitlement()` and every trigger guard — PostgREST exposes any executable public function as `/rpc/<name>` | revoke from `public`/`anon`, grant `authenticated` on the 20 browser-callable routines | Phase 13/14 anonymous and non-admin probes; pgTAP `has_function_privilege('anon', …)` count 0 |
 | D5 | function privilege | the 11 trigger guards carried a PUBLIC EXECUTE entry | revoked from everyone but the owner path | Phase 15 immutability matrix unchanged at 23/23 refused — firing never depended on EXECUTE |
-| D6 | future drift | `ALTER DEFAULT PRIVILEGES` for `postgres` re-granted `anon = arwdDxtm` on tables and `EXECUTE` on functions to every **future** object in `public`, so D2–D5 would silently return with the next migration | scoped `alter default privileges … revoke … / grant select … to authenticated` | pgTAP inspects `pg_default_acl` directly |
+| D6 | future drift | `ALTER DEFAULT PRIVILEGES` for `postgres` re-granted `anon = arwdDxtm` on tables and `EXECUTE` on functions to every **future** object in `public`, so D2–D5 would silently return with the next migration | scoped `alter default privileges … revoke … / grant select … to authenticated` — **partial: it closed browser writes on future tables but opened a browser read, which is D10** | pgTAP inspects `pg_default_acl` directly |
 | D7 | index / planning | `purchase_claims` had no owner-leading index; its only owner-scoped index is partial (`where status in ('DRAFT','PENDING_REVIEW')`), so an owner-filtered read plans as a sequential scan | `create index … (owner_id)` | performance advisor and `explain` review (§ Phase 21) |
 | D8 | type / availability | live call through `authenticated` failed: `42804 structure of query does not match function result type — Returned type character varying(255) does not match expected type text in column 3`; a real reviewer could not open the rejected queue at all. Also the only error reported by `supabase db lint --local` | cast `owner_email` to `text` | that probe is now `accepted  a reviewer lists the rejected queue` + `unchanged  the rejected queue keeps its declared columns`; `db lint` reports **No schema errors found** |
-| D9 | policy performance | `supabase db advisors --local --type performance` → **15 `auth_rls_initplan` WARN findings**; measured on a synthetic 20,005-row `clients` scan as an authenticated non-owner with index/bitmap scans off: `Seq Scan … Rows Removed by Filter: 20005`, **Execution Time 21.1–26.3 ms**, filter inlined as the raw `current_setting('request.jwt.claim.sub' …)::jsonb ->> 'sub'` expression tree | wrap in `(select auth.uid())`, restating `using` **and** `with check` | same plan after: **1.513 ms**, `InitPlan 1` / `Filter: (owner_id = (InitPlan 1).col1)`; performance advisor now **No issues found**; full 274-probe ledger totals identical before and after |
+| D9 | policy performance | `supabase db advisors --local --type performance` → **15 `auth_rls_initplan` WARN findings**; measured on a synthetic 20,005-row `clients` scan as an authenticated non-owner with index/bitmap scans off: `Seq Scan … Rows Removed by Filter: 20005`, **Execution Time 21.1–26.3 ms**, filter inlined as the raw `current_setting('request.jwt.claim.sub' …)::jsonb ->> 'sub'` expression tree | wrap in `(select auth.uid())`, restating `using` **and** `with check` | same plan after: **1.513 ms**, `InitPlan 1` and `Filter: (owner_id = (InitPlan 1).col1)`; performance advisor now **No issues found**; full 274-probe ledger totals identical before and after |
+| D10 | future drift, read exposure | found by independent review of D6, then reproduced against the live catalog before any edit: `pg_default_acl` for (`postgres`, `public`, tables) resolved to `authenticated=r/postgres`, and `create table public.d10_red_probe_table (id bigint);` with **no GRANT at all** produced `has_table_privilege('authenticated', …, 'SELECT') = t`. So a future migration that forgets RLS, forgets a policy or forgets a revoke ships a table every signed-in account can read through the Data API | `20260814150000`: revoke all default table/sequence/function privileges from `public`, `anon`, `authenticated` for the migration role in `public` | strengthened pgTAP observed RED first (`Failed 9/61`, assertions 38, 40, 44, 46, 55 for D10); after the migration all 93 pass, the created-probe ACLs are empty of browser and PUBLIC entries, and sections A–C prove the 20 approved RPCs and the 10 tenant reads are untouched |
+| D11 | future drift, anonymous RPC exposure | found *while* reproducing D10, and invisible to any `pg_default_acl` assertion: a function created by the migration role in `public` carries `proacl = {postgres=X/postgres, =X/postgres, service_role=X/postgres}` — the `=X` entry is PostgreSQL's **initial** PUBLIC EXECUTE, merged in *after* the recorded default ACL, and five supported `alter default privileges … revoke` forms were measured not to remove it (including revoking every grantee, which deletes the row and falls back to `acldefault()`, i.e. re-adds it). `anon` inherits from PUBLIC, so `has_function_privilege('anon', <new function>, 'EXECUTE') = t` and PostgREST publishes it as `/rpc/` | a narrow `ddl_command_end` event trigger, `stage3_default_privileges_fail_closed`, that revokes from `public, anon, authenticated` for `CREATE/ALTER FUNCTION/PROCEDURE` only in `public` and only when the executing role owns the new function — the one supported mechanism that can strip an initial privilege | pgTAP RED at assertions 49–52 (anon / authenticated / PUBLIC EXECUTE all `t`, probe ACL count 1) before the migration; all four green after, with 53–54 holding that `postgres` and `service_role` still execute the same function and 56–58 holding that an explicit later `grant execute` still works |
 
-Two notes on process. D9 was written first as **failing pgTAP assertions** (section G observed RED
-at 13 and 5 offending clauses) before the migration existed, per the test-first requirement. And
-D1's fix is documented in §4.3 item 2 as behaviour-preserving only *because* it is paired with
-actual grant removal (D2/D3) — the policy rewrite alone would not have narrowed anything.
+Three notes on process. D9 was written first as **failing pgTAP assertions** (section G observed RED
+at 13 and 5 offending clauses) before the migration existed, per the test-first requirement, and the
+same rule held for D10/D11: the assertions were strengthened against the 16-migration database, run,
+and seen failing before `20260814150000` was written. D1's fix is documented in §4.3 item 2 as
+behaviour-preserving only *because* it is paired with actual grant removal (D2/D3) — the policy
+rewrite alone would not have narrowed anything. And D10 is a lesson recorded rather than hidden: the
+D6 repair was accepted because its own assertion permitted `SELECT`, i.e. the test encoded the
+assumption it was meant to check.
 
 ---
 
@@ -494,16 +510,172 @@ payment destination exists or was enabled.
 
 ---
 
+## FINAL REVIEW & REPAIR — D10 / D11 (future access must fail closed)
+
+The numbers in the PHASE 23–24 table above are the pre-repair measurements and are kept as recorded.
+Every gate was re-run after the repair; those results are here, and this section is authoritative.
+
+**What independent review found.** Stage 3 was not rejected: the three forward migrations, the
+274-probe live matrix, the 110 API tests, the pgTAP suites and the 5 browser isolation tests were all
+confirmed present and passing. One fail-open remained, in the D6 block of
+`20260814120000_current_stage3_authorization_hardening.sql`:
+
+```sql
+alter default privileges for role postgres in schema public
+  grant select on tables to authenticated;
+```
+
+and, in the pgTAP file, a default-ACL assertion written as `privilege_type not in ('SELECT','USAGE')`
+— i.e. the test tolerated exactly the privilege that made the migration unsafe.
+
+**Why that is unsafe.** `ALTER DEFAULT PRIVILEGES` governs objects that do not exist yet. With that
+line in place, any table a later migration creates in `public` as the migration role is
+`SELECT`-able by every signed-in account unless the author remembers RLS, a policy *and* a revoke.
+The failure mode is invisible at review time, because the dangerous object is written by someone
+else, later.
+
+**D10 reproduced before it was fixed (executed, not inferred from migration text).** Against the
+16-migration database:
+
+```
+pg_default_acl (defaclrole = postgres, defaclnamespace = public, defaclobjtype = 'r')
+  postgres=<all>, service_role=<all>, authenticated=r/postgres      <- the defect
+
+begin; create table public.d10_red_probe_table (id bigint);
+  has_table_privilege('anon', …, 'SELECT')          = f
+  has_table_privilege('authenticated', …, 'SELECT') = t              <- RED
+rollback;
+```
+
+**D11 found on the way, and not detectable by default-ACL inspection at all.** The same probe on a
+newly created function returned `proacl = {postgres=X/postgres, =X/postgres, service_role=X/postgres}`
+with `anon` and `authenticated` EXECUTE both `t`. The `=X` (PUBLIC) entry is a PostgreSQL *initial*
+privilege for functions, applied after the recorded default ACL; measured forms that failed to remove
+it: `revoke all on functions from public`, `revoke execute on functions from public`, revoking from
+`public, anon, authenticated` with a following owner grant, grant-then-revoke, and revoking every
+remaining grantee (which deletes the `pg_default_acl` row and falls back to `acldefault()`). Since
+PostgREST exposes every EXECUTE-reachable public function as `/rpc/<name>`, a future helper function
+written to be called only from a `SECURITY DEFINER` routine would have been anonymously callable.
+
+**Test strengthened first, then the forward migration.** `supabase/tests/stage3_02_privileges.sql`
+went from 39 to 61 assertions — section D now demands *zero* browser or PUBLIC privilege on any
+future table/function/sequence rather than "no write", section E creates a real table, sequence and
+function with no GRANT and inspects the ACLs they actually carry, section F creates a second table,
+confirms it is unreadable, then exposes it on purpose with `grant select` + RLS + an `auth.uid()`
+policy and resolves that policy as a genuine authenticated principal, and section G drops everything
+and asserts nothing was left behind. Run against the 16-migration database before any new migration
+existed:
+
+```
+# Failed test 38:  "the migration role installs no privilege of any kind on a future public object"   have: 1   want: 0
+# Failed test 40:  "a future public table inherits no browser-role privilege"                          have: {authenticated}   want: {}
+# Failed test 44:  "authenticated cannot read a table created by a later migration"                    have: true  want: false
+# Failed test 46:  "a future table carries no browser-role or PUBLIC entry in its own ACL"              have: 1     want: 0
+# Failed test 49:  "a future function is not anonymously callable"                                     have: true  want: false
+# Failed test 50:  "a future function is not callable by an ordinary account"                          have: true  want: false
+# Failed test 51:  "a future function does not inherit the implicit PUBLIC EXECUTE"                     have: true  want: false
+# Failed test 52:  "a future function carries no browser-role or PUBLIC entry in its own ACL"           have: 1     want: 0
+# Failed test 55:  "a new table is unreadable before the deliberate grant"                             have: true  want: false
+Failed 9/61 subtests
+```
+
+Test 55 is the defect in one line: a fresh table was readable **before anybody granted anything**.
+
+**The repair** is `supabase/migrations/20260814150000_current_stage3_default_privileges_fail_closed.sql`
+— forward-only, and none of the three earlier Stage 3 migrations was touched:
+
+```sql
+alter default privileges for role postgres in schema public revoke all on tables   from public, anon, authenticated;
+alter default privileges for role postgres in schema public revoke all on sequences from public, anon, authenticated;
+alter default privileges for role postgres in schema public revoke all on functions from public, anon, authenticated;
+```
+
+plus the `ddl_command_end` event trigger described under D11, which is the only supported way to strip
+an initial privilege, narrowed to `CREATE/ALTER FUNCTION|PROCEDURE` in `public` and guarded so it only
+acts when the role running the DDL owns the function — so no session can use it to strip another
+owner's grants, and unrelated DDL cannot be aborted by it. `ALTER DEFAULT PRIVILEGES` was sufficient
+for tables and sequences; the trigger exists only because functions are not covered by it.
+
+**Executed posture after the repair.** The same disposable probe, replayed as the migration role:
+
+```
+anon_tab=f  auth_tab=f  auth_seq=f  anon_fn=f  auth_fn=f  public_fn=f  owner_fn=t  srvc_fn=t
+grant execute on function <probe> to authenticated  ->  auth_fn=t        (explicit opt-in works)
+```
+
+`pg_default_acl` for (`postgres`, `public`) now resolves to `postgres` and `service_role` only for
+tables, sequences and functions alike — no `anon`, no `authenticated`, no PUBLIC entry. The event
+trigger is registered (`evtevent = ddl_command_end`, `evtenabled = O`) and its own function carries
+`{postgres=X/postgres,service_role=X/postgres}` rather than the PUBLIC entry it was created with.
+
+**Current application access is unchanged**, which was the risk of over-revoking: 20 browser-executable
+RPCs and 0 anonymous ones, `authenticated` `SELECT` on exactly the 10 tenant-readable tables and
+nothing on the three admin tables, `UPDATE` on `profiles` only — asserted by pgTAP sections A–C, and
+again by the live suites below.
+
+**One residual, disclosed rather than smoothed over.** This repair closes defaults for role
+`postgres`, which is the role that applies this repository's migrations and owns all 13 tables and all
+37 functions. `supabase_admin` keeps its own `pg_default_acl` rows that grant browser roles wide
+access to objects *that role* creates; `postgres` cannot change them — measured, `alter default
+privileges for role supabase_admin …` fails with `ERROR: permission denied to change default
+privileges` because that role is a superuser and `postgres` is not. No application object is owned by
+`supabase_admin`, so nothing in DueWeave's surface depends on it today; if a future migration is ever
+applied by a different role, its defaults must be closed by whoever holds that role. This is the
+Stage 3 boundary, not a silent pass.
+
+### Post-repair gate set (all re-run after `pnpm db:reset:local`)
+
+| gate | command | result |
+| --- | --- | --- |
+| replay from zero | `pnpm db:reset:local` | all **17** migrations applied, no errors; `supabase_migrations.schema_migrations` = **17** rows |
+| database structure | `pnpm test:db` | **93 passed / 0 failed** (32 + 61), strictly greater than the previous 71 |
+| live authorization matrix | `pnpm test:stage3` | **110 passed / 0 failed**, 274 probes: 178 refused, 17 accepted owner controls, 79 stored-state re-reads unchanged, **0 private rows changed by a non-owner** |
+| Stage 2 contracts | `pnpm test:stage2` | 12 passed / 0 failed |
+| Stage 2 browser journey | `pnpm test:e2e:stage2` | 1 passed |
+| Stage 3 browser isolation | `pnpm test:e2e:stage3` | **5 passed / 0 failed** (after one non-reproducing first attempt, below) |
+| schema lint | `pnpm exec supabase db lint --local` | **No schema errors found** |
+| security advisors | `pnpm exec supabase db advisors --local --type security` | **No issues found** — the new fail-closed default produced no finding |
+| performance advisors | `pnpm exec supabase db advisors --local --type performance` | **No issues found** |
+| generated types | `pnpm db:types` | **byte-identical** — `git status` shows no change to `client/src/types/database.generated.ts`; the probe objects and the event-trigger function leave nothing in `public` that reaches the client |
+| clean install | `pnpm install --frozen-lockfile` | pass, no lockfile change |
+| lint / typecheck | `pnpm lint`, `pnpm check` | pass (`--max-warnings=0`), pass |
+| unit + integration | `pnpm test` | **205 passed \| 1 skipped \| 0 failed**, reproduced identically on the last **4 consecutive** runs |
+| build | `pnpm build` | pass |
+| dependency audit | `pnpm audit --prod --audit-level=high` | **No known vulnerabilities found** |
+
+**Two first-attempt failures, recorded with what was and was not ruled out.** The first `pnpm test`
+run after this repair's reset reported `2 failed | 203 passed | 1 skipped`; both failures were in
+`tests/stage2-local-foundation.test.ts`, and the second was the downstream consequence of the first
+(`fixture.profileId` was still `undefined` at the assertion on line 161, so the earlier
+profile-provisioning read had returned nothing). The same file passes standalone against the
+post-repair schema (12/12) and four consecutive full runs afterwards returned 205/206 green. The
+failing path is the Auth signup trigger plus a `profiles` read — code this migration does not touch,
+since it changes only defaults for objects created *afterwards* and only for functions newly defined.
+The first `pnpm test:e2e:stage3` attempt failed in `beforeAll` with
+`page.goto: net::ERR_ABORTED at http://127.0.0.1:3000/auth` and a 30 s hook timeout on the very first
+navigation of a Chromium context; the immediate re-run passed 5/5 and the same server answered
+`200` for both `/` and `/auth` throughout. Both are treated the same way as the observation in
+PHASE 23–24: unreproduced, in a stack shared by four suites and restarted just before the run, and
+the reason `pnpm test` is now run more than once after any privilege-bearing migration. Neither was
+answered by weakening an assertion.
+
+---
+
 ## PHASE 25–26 — VERDICT
 
-**PASS — qualified by execution.** One authenticated DueWeave user cannot read, modify, delete,
-spoof-own, or workflow-reach another user's private data, and cannot reach an admin surface,
-across 274 live browser-role probes (178 refused, 79 stored-state re-reads unchanged, 0 private
-rows changed by a non-owner), 71 pgTAP structure assertions, and 5 real-browser isolation tests
-driven through the app's own screens. Nine executed defects (D1–D9) were found, each reproduced
-failing first, then fixed by forward-only migrations and re-run; the two deviations that remain
-(`FORCE ROW LEVEL SECURITY` off, `delete_my_business_data` closed to browsers) are now justified
-by executed experiments and pinned by assertions instead of by prose.
+**PASS — qualified by execution, including one repair round after independent review.** One
+authenticated DueWeave user cannot read, modify, delete, spoof-own, or workflow-reach another user's
+private data, and cannot reach an admin surface, across 274 live browser-role probes (178 refused, 79
+stored-state re-reads unchanged, 0 private rows changed by a non-owner), 93 pgTAP assertions, and 5
+real-browser isolation tests driven through the app's own screens. Eleven executed defects (D1–D11)
+were found, each reproduced failing first, then fixed by forward-only migrations and re-run; the two
+deviations that remain (`FORCE ROW LEVEL SECURITY` off, `delete_my_business_data` closed to browsers)
+are justified by executed experiments and pinned by assertions instead of by prose. The last two
+defects are the ones a review — not a test — caught, and they are the reason the contract now reads
+**default = closed, access = an explicit decision in the migration that makes it**: 17 migrations
+replay from zero, a future `public` table, sequence or function starts with no privilege for `anon`,
+`authenticated` or PUBLIC, and a deliberate grant plus a policy still works and still narrows to the
+policy's own rows.
 
 BOUNDARIES AND CARRIED-FORWARD STATE
 
@@ -512,7 +684,10 @@ BOUNDARIES AND CARRIED-FORWARD STATE
 - PAYMENT ACTIVATION: **NONE** — placeholder destination, `upi_id` still NULL, all three
   operational statuses still PENDING
 - RLS was never disabled to make a test pass; no denial assertion was weakened; no historical
-  test was modified except the one Stage 2 assertion made stricter
+  test was modified except the one Stage 2 assertion made stricter — and, in the repair round, the
+  one default-privilege assertion that had been tolerating `SELECT` was made stricter
+- None of the three earlier Stage 3 migrations was edited for D10/D11; the repair is the fourth
+  file, applied forward, and the D1–D9 evidence above stands as originally recorded
 - `main` untouched, no PR opened or merged, PR #1 unmodified, branch
   `current-stage-3-authorization` pushed normally (no force)
 - GitHub Actions availability remains an **external blocker** and is not evidence against this
