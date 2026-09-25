@@ -18,7 +18,10 @@
     "db:reset:local": "supabase db reset --local --yes",
     "db:types": "supabase gen types typescript --local --schema public > client/src/types/database.generated.ts",
     "test:stage2": "vitest run tests/stage2-local-foundation.test.ts",
+    "test:db": "supabase test db",
+    "test:stage3": "vitest run tests/stage3-local-rls.test.ts",
     "test:e2e:stage2": "playwright test e2e/stage2-local-auth.spec.ts",
+    "test:e2e:stage3": "playwright test e2e/stage3-local-isolation.spec.ts",
     "verify:stage2": "pnpm db:reset:local && pnpm db:types && pnpm test:stage2"
   },
   "dependencies": {

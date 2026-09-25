@@ -129,8 +129,14 @@ describeLocalStack("Stage 2 local foundation: auth, profile, and data contracts"
   it("keeps the ledger closed to unauthenticated readers", async () => {
     const anonymous = newClient();
     const { data, error } = await anonymous.from("clients").select("id").eq("owner_id", fixture.userId!);
-    expect(error).toBeNull();
-    expect(data).toEqual([]);
+    // Stage 3 tightened this boundary from one layer to two: `anon` now holds no table
+    // privileges at all, so the request is refused before row security is consulted. The
+    // assertion got stricter rather than looser — it still requires zero rows and now also
+    // names the privilege denial, so a future migration that quietly re-grants SELECT to
+    // `anon` fails here instead of passing on an empty RLS-filtered result.
+    expect(data ?? []).toEqual([]);
+    expect(error?.code).toBe("42501");
+    expect(error?.message).toMatch(/permission denied for table clients/i);
   });
 
   it("drops the session on sign-out", async () => {
