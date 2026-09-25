@@ -1,7 +1,7 @@
 // Quiet Ledger style reminder: these tests protect the money and date rules the ledger is judged by, independent of any seeded example data.
 
 import { describe, expect, it } from "vitest";
-import type { Activity, Client, DemoState, Payment, PromiseRecord, Receivable } from "@/types/domain";
+import type { Activity, Client, LedgerState, Payment, PromiseRecord, Receivable } from "@/types/domain";
 import {
   addIndiaBusinessDays,
   formatINR,
@@ -14,8 +14,8 @@ import {
   getSuggestion,
   isBusinessDate,
   parseINRToPaise,
-  todayInIndia,
 } from "@/lib/finance";
+import { todayInIndia } from "@/lib/business-clock";
 
 const TODAY = todayInIndia();
 
@@ -27,6 +27,7 @@ function receivable(overrides: Partial<Receivable> = {}): Receivable {
     amountDuePaise: 500000,
     dueDate: TODAY,
     createdAt: "2026-01-01T00:00:00Z",
+    updatedAt: "2026-01-01T00:00:00Z",
     status: "OPEN",
     ...overrides,
   };
@@ -40,8 +41,8 @@ function promise(sequenceNo: number, status: PromiseRecord["status"], overrides:
   return { id: `promise-${sequenceNo}`, receivableId: "recv-1", sequenceNo, promisedAmountPaise: 500000, promisedDate: TODAY, source: "WhatsApp", status, createdAt: `2026-01-0${sequenceNo}T00:00:00Z`, ...overrides };
 }
 
-function state(overrides: Partial<DemoState> = {}): DemoState {
-  const client: Client = { id: "client-1", name: "Arjun Mehta", company: "Nova Media", createdAt: "2026-01-01T00:00:00Z" };
+function state(overrides: Partial<LedgerState> = {}): LedgerState {
+  const client: Client = { id: "client-1", name: "Arjun Mehta", company: "Nova Media", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" };
   return { clients: [client], receivables: [receivable()], promises: [], payments: [], activities: [], ...overrides };
 }
 
@@ -173,7 +174,7 @@ describe("promise history and renegotiation", () => {
 });
 
 describe("snooze visibility", () => {
-  function snoozedState(until: string): DemoState {
+  function snoozedState(until: string): LedgerState {
     const activity: Activity = { id: "act-snooze", clientId: "client-1", receivableId: "recv-1", type: "follow_up", occurredAt: TODAY, note: "Follow-up snoozed", snoozedUntil: until };
     return state({ activities: [activity] });
   }

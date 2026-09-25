@@ -14,10 +14,20 @@ function assertBusinessDate(value: string) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new Error("Choose a valid business date.");
 }
 
+export interface UpdateReceivableDetailsInput {
+  id: string;
+  label: string;
+  invoiceRef?: string;
+  notes?: string;
+  // Read this row with its `updatedAt`, and send that value back unchanged: the
+  // database refuses the edit if the row has moved on since.
+  expectedUpdatedAt: string;
+}
+
 export class SupabaseReceivableRepository {
   async list() {
-    const { data, error } = await supabase.from("receivables").select("id, client_id, label, invoice_ref, amount_due_paise, outstanding_paise, due_date, notes, status, created_at").order("due_date", { ascending: true });
-    if (error) throw new Error(userFacingDataError(error.message));
+    const { data, error } = await supabase.from("receivables").select("id, client_id, label, invoice_ref, amount_due_paise, outstanding_paise, due_date, notes, status, created_at, updated_at").order("due_date", { ascending: true });
+    if (error) throw new Error(userFacingDataError(error.message, error.code));
     return (data ?? []).map((row) => toReceivable(row));
   }
 
@@ -47,6 +57,24 @@ export class SupabaseReceivableRepository {
       p_notes: input.notes?.trim() ?? "",
     });
     if (error) throw new Error(userFacingDataError(error.message));
+    return toReceivable(data);
+  }
+
+  // Only the descriptive columns travel; the amount, outstanding balance, status
+  // and owning client are refused by the database itself, so an edit can clarify
+  // what an invoice was for but never what is owed.
+  async updateDetails(input: UpdateReceivableDetailsInput): Promise<Receivable> {
+    if (!input.id) throw new Error("Choose the receivable you want to edit.");
+    if (!input.expectedUpdatedAt) throw new Error("Reopen this receivable and save again with the latest version.");
+    if (!input.label.trim()) throw new Error("Add a short label for this receivable.");
+    const { data, error } = await supabase.rpc("update_receivable_details", {
+      p_receivable_id: input.id,
+      p_label: input.label.trim(),
+      p_invoice_ref: input.invoiceRef?.trim() ?? "",
+      p_notes: input.notes?.trim() ?? "",
+      p_expected_updated_at: input.expectedUpdatedAt,
+    });
+    if (error) throw new Error(userFacingDataError(error.message, error.code));
     return toReceivable(data);
   }
 }

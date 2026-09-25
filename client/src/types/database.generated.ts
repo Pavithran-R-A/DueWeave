@@ -1079,6 +1079,64 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      update_client: {
+        Args: {
+          p_client_id: string
+          p_company?: string
+          p_email?: string
+          p_expected_updated_at?: string
+          p_name: string
+          p_notes?: string
+          p_phone?: string
+        }
+        Returns: {
+          archived_at: string | null
+          company: string
+          created_at: string
+          email: string | null
+          id: string
+          name: string
+          notes: string | null
+          owner_id: string
+          phone: string | null
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "clients"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      update_receivable_details: {
+        Args: {
+          p_expected_updated_at?: string
+          p_invoice_ref?: string
+          p_label: string
+          p_notes?: string
+          p_receivable_id: string
+        }
+        Returns: {
+          amount_due_paise: number
+          client_id: string
+          created_at: string
+          due_date: string
+          id: string
+          invoice_ref: string | null
+          label: string
+          notes: string | null
+          outstanding_paise: number
+          owner_id: string
+          status: string
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "receivables"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
     }
     Enums: {
       [_ in never]: never

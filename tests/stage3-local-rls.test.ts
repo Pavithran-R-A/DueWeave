@@ -534,6 +534,11 @@ describeLocalStack(
       delete from public.entitlements where user_id in (select id from auth.users where email like 'stage3-%@dueweave.local');
       delete from public.profiles where id in (select id from auth.users where email like 'stage3-%@dueweave.local');
       delete from auth.users where email like 'stage3-%@dueweave.local';
+      alter table public.activities enable trigger activities_immutable;
+      alter table public.payments enable trigger payments_immutable;
+      alter table public.promise_events enable trigger promise_events_immutable;
+      alter table public.promises enable trigger promises_guard_history;
+      alter table public.purchase_claims enable trigger purchase_claims_protect_workflow;
       commit;`);
     });
 

@@ -1,12 +1,7 @@
 // Quiet Ledger style reminder: deterministic scoring and state transitions stay pure, explainable, and testable.
 
-import type { Activity, Client, DemoState, Payment, PromiseRecord, PromiseStatus, Receivable } from "@/types/domain";
-
-export function todayInIndia() {
-  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
-  const part = (kind: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === kind)?.value ?? "";
-  return `${part("year")}-${part("month")}-${part("day")}`;
-}
+import type { Activity, Client, LedgerState, Payment, PromiseRecord, PromiseStatus, Receivable } from "@/types/domain";
+import { systemClock, todayInIndia, type BusinessClock } from "@/lib/business-clock";
 
 export function isBusinessDate(value: string) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
@@ -14,8 +9,8 @@ export function isBusinessDate(value: string) {
   return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 }
 
-export function addIndiaBusinessDays(value: string, days: number) {
-  if (!isBusinessDate(value) || !Number.isInteger(days)) return todayInIndia();
+export function addIndiaBusinessDays(value: string, days: number, clock: BusinessClock = systemClock) {
+  if (!isBusinessDate(value) || !Number.isInteger(days)) return todayInIndia(clock);
   const parsed = new Date(`${value}T12:00:00Z`);
   parsed.setUTCDate(parsed.getUTCDate() + days);
   return parsed.toISOString().slice(0, 10);
@@ -90,8 +85,7 @@ export interface PriorityBreakdown {
   total: number;
 }
 
-export function priorityBreakdown(receivable: Receivable, state: DemoState): PriorityBreakdown {
-  const today = todayInIndia();
+function breakdownFor(receivable: Receivable, state: LedgerState, today: string): PriorityBreakdown {
   const openReceivables = state.receivables.filter((item) => getOutstanding(item, state.payments) > 0);
   const outstanding = getOutstanding(receivable, state.payments);
   const maxOutstanding = Math.max(...openReceivables.map((item) => getOutstanding(item, state.payments)), 1);
@@ -114,9 +108,13 @@ export function priorityBreakdown(receivable: Receivable, state: DemoState): Pri
   return { brokenPromises, promiseUrgency, daysOverdue, outstanding: outstandingPoints, contactStaleness, recentPartialAdjustment, total };
 }
 
-export function priorityReasons(receivable: Receivable, state: DemoState) {
-  const today = todayInIndia();
-  const breakdown = priorityBreakdown(receivable, state);
+export function priorityBreakdown(receivable: Receivable, state: LedgerState, clock: BusinessClock = systemClock): PriorityBreakdown {
+  return breakdownFor(receivable, state, todayInIndia(clock));
+}
+
+export function priorityReasons(receivable: Receivable, state: LedgerState, clock: BusinessClock = systemClock) {
+  const today = todayInIndia(clock);
+  const breakdown = breakdownFor(receivable, state, today);
   const reasons: { label: string; value: number }[] = [];
   const brokenCount = getPromisesFor(receivable.id, state.promises).filter((promise) => promise.status === "BROKEN").length;
   const overdueDays = Math.max(0, daysBetween(receivable.dueDate, today));
@@ -131,12 +129,12 @@ export function priorityReasons(receivable: Receivable, state: DemoState) {
   return reasons.sort((a, b) => b.value - a.value).slice(0, 2);
 }
 
-export function getQueue(state: DemoState) {
-  const today = todayInIndia();
-  return state.receivables.filter((receivable) => getOutstanding(receivable, state.payments) > 0 && (getSnoozedUntil(receivable.id, state.activities) ?? today) <= today).map((receivable) => ({ receivable, score: priorityBreakdown(receivable, state).total })).sort((a, b) => b.score - a.score || getOutstanding(b.receivable, state.payments) - getOutstanding(a.receivable, state.payments));
+export function getQueue(state: LedgerState, clock: BusinessClock = systemClock) {
+  const today = todayInIndia(clock);
+  return state.receivables.filter((receivable) => getOutstanding(receivable, state.payments) > 0 && (getSnoozedUntil(receivable.id, state.activities) ?? today) <= today).map((receivable) => ({ receivable, score: breakdownFor(receivable, state, today).total })).sort((a, b) => b.score - a.score || getOutstanding(b.receivable, state.payments) - getOutstanding(a.receivable, state.payments));
 }
 
-export function getReliability(clientId: string, state: DemoState) {
+export function getReliability(clientId: string, state: LedgerState) {
   const clientReceivables = state.receivables.filter((receivable) => receivable.clientId === clientId);
   const resolved = state.promises.filter((promise) => clientReceivables.some((receivable) => receivable.id === promise.receivableId) && promise.status !== "ACTIVE");
   if (resolved.length < 3) return { enoughHistory: false, total: resolved.length, kept: 0, broken: 0, partial: 0, averageDelay: null as number | null };
@@ -148,14 +146,14 @@ export function getReliability(clientId: string, state: DemoState) {
   return { enoughHistory: true, total: resolved.length, kept, broken, partial, averageDelay };
 }
 
-export function getSuggestion(receivable: Receivable, state: DemoState) {
+export function getSuggestion(receivable: Receivable, state: LedgerState, clock: BusinessClock = systemClock) {
   const related = getPromisesFor(receivable.id, state.promises);
   const latest = related.at(-1);
   const brokenCount = related.filter((promise) => promise.status === "BROKEN").length;
   if (latest?.status === "PARTIALLY_KEPT") return "partial" as const;
   if (brokenCount >= 2) return "repeated" as const;
   if (latest?.status === "BROKEN") return "broken" as const;
-  if (Math.max(0, daysBetween(receivable.dueDate, todayInIndia())) > 0) return "overdue" as const;
+  if (Math.max(0, daysBetween(receivable.dueDate, todayInIndia(clock))) > 0) return "overdue" as const;
   return "friendly" as const;
 }
 

@@ -4,7 +4,7 @@ import { useEffect, useRef, type ReactNode } from "react";
 import { CalendarClock, Check, ChevronRight, CircleAlert, Info, MessageCircle, Moon, MoreHorizontal, Plus, RefreshCw, ShieldCheck, Sparkles, Sun, Users, WalletCards, X } from "lucide-react";
 import { BRAND } from "@/config/brand";
 import { formatDate, formatINR, getLatestPromise, getOutstanding, getReliability, priorityBreakdown, priorityReasons } from "@/lib/finance";
-import type { AppSection, Client, DemoState, PromiseStatus, Receivable } from "@/types/domain";
+import type { AppSection, Client, LedgerState, PromiseStatus, Receivable } from "@/types/domain";
 
 export const iconMap = { today: Sparkles, receivables: WalletCards, clients: Users, more: MoreHorizontal } as const;
 
@@ -38,7 +38,7 @@ export function Metric({ label, value, accent = "default", sub }: { label: strin
   return <div className={`metric metric--${accent}`}><span>{label}</span><strong>{value}</strong>{sub && <small>{sub}</small>}</div>;
 }
 
-export function QueueCard({ receivable, client, state, selected, onSelect, onFollowUp }: { receivable: Receivable; client: Client; state: DemoState; selected: boolean; onSelect: () => void; onFollowUp: () => void }) {
+export function QueueCard({ receivable, client, state, selected, onSelect, onFollowUp }: { receivable: Receivable; client: Client; state: LedgerState; selected: boolean; onSelect: () => void; onFollowUp: () => void }) {
   const outstanding = getOutstanding(receivable, state.payments);
   const reasons = priorityReasons(receivable, state);
   const latest = getLatestPromise(receivable.id, state.promises);
@@ -49,13 +49,13 @@ export function QueueCard({ receivable, client, state, selected, onSelect, onFol
   return <article className={`queue-card queue-card--${tone} ${selected ? "queue-card--selected" : ""}`} onClick={onSelect} tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter") onSelect(); }} aria-label={`${client.company}, ${formatINR(outstanding)} outstanding, ${primaryReason}`}><div className="queue-card__accent" /><div className="queue-card__main"><div className="queue-card__top"><div className="client-avatar">{client.company.split(" ").map((word) => word[0]).join("").slice(0, 2)}</div><div className="queue-card__identity"><strong>{client.company}</strong><span>{client.name}</span></div><span className="priority-score">Score {priority}</span></div><div className="queue-card__amount"><strong>{formatINR(outstanding)}</strong><span>{receivable.title}</span></div><div className="queue-card__why"><strong>{primaryReason}</strong><span>{reasons.map((reason) => reason.label).join(" · ")}</span></div></div><div className="queue-card__actions"><button className="button-primary button-primary--small" onClick={(event) => { event.stopPropagation(); onFollowUp(); }}><MessageCircle size={15} />Follow up</button><button className="text-button" onClick={(event) => { event.stopPropagation(); onSelect(); }}>Details <ChevronRight size={14} /></button></div>{latest?.status === "ACTIVE" && <span className="queue-card__promise"><CalendarClock size={13} /> Promised {formatDate(latest.promisedDate)}</span>}</article>;
 }
 
-export function Timeline({ receivable, state }: { receivable: Receivable; state: DemoState }) {
+export function Timeline({ receivable, state }: { receivable: Receivable; state: LedgerState }) {
   const events = state.activities.filter((activity) => activity.receivableId === receivable.id).sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
   const promiseById = new Map(state.promises.map((promise) => [promise.id, promise]));
   return <div className="timeline" aria-label="Receivable activity timeline">{events.map((event) => { const promise = event.promiseId ? promiseById.get(event.promiseId) : undefined; return <div key={event.id} className={`timeline-item ${event.type === "broken" ? "timeline-item--critical" : ""}`}><div className="timeline-marker"><span /></div><div className="timeline-content"><div className="timeline-content__top"><span className="timeline-date">{formatDate(event.occurredAt, { day: "numeric", month: "short", year: "numeric" })}</span>{event.type === "payment" && <span className="timeline-amount">{formatINR(event.amountPaise ?? 0)} received</span>}</div><strong>{event.note}</strong>{event.snoozedUntil && <span className="timeline-sub">Returns to Today on {formatDate(event.snoozedUntil, { day: "numeric", month: "short", year: "numeric" })}</span>}{promise && <span className="timeline-sub">{promise.status === "BROKEN" ? "Original promise preserved in history" : `${promise.source} · ${formatINR(promise.promisedAmountPaise)} promised`}</span>}</div></div>; })}</div>;
 }
 
-export function Reliability({ clientId, state }: { clientId: string; state: DemoState }) {
+export function Reliability({ clientId, state }: { clientId: string; state: LedgerState }) {
   const reliability = getReliability(clientId, state);
   if (!reliability.enoughHistory) return <div className="reliability reliability--muted"><Info size={15} /><div><strong>Not enough history</strong><span>Reliability appears after 3 resolved promises.</span></div></div>;
   return <div className="reliability"><div className="reliability__ring"><strong>{Math.round((reliability.kept / reliability.total) * 100)}%</strong><span>kept</span></div><div><strong>{reliability.kept} of {reliability.total} promises kept</strong><span>Average delay {reliability.averageDelay ?? 0} days · {reliability.broken} broken · {reliability.partial} partial</span></div></div>;

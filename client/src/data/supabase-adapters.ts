@@ -33,11 +33,11 @@ function paise(value: unknown) { const result = Number(value); return Number.isS
 function calendarDate(value: unknown) { const raw = string(value); return raw.includes("T") ? raw.slice(0, 10) : raw; }
 
 export function toClient(row: Row): Client {
-  return { id: string(row.id), name: string(row.name), company: string(row.company), phone: optionalString(row.phone), email: optionalString(row.email), notes: optionalString(row.notes), createdAt: string(row.created_at) };
+  return { id: string(row.id), name: string(row.name), company: string(row.company), phone: optionalString(row.phone), email: optionalString(row.email), notes: optionalString(row.notes), createdAt: string(row.created_at), updatedAt: string(row.updated_at) };
 }
 
 export function toReceivable(row: Row): Receivable {
-  return { id: string(row.id), clientId: string(row.client_id), title: string(row.label), invoiceRef: optionalString(row.invoice_ref), amountDuePaise: paise(row.amount_due_paise), outstandingPaise: paise(row.outstanding_paise), dueDate: string(row.due_date), createdAt: string(row.created_at), notes: optionalString(row.notes), status: string(row.status) as ReceivableStatus };
+  return { id: string(row.id), clientId: string(row.client_id), title: string(row.label), invoiceRef: optionalString(row.invoice_ref), amountDuePaise: paise(row.amount_due_paise), outstandingPaise: paise(row.outstanding_paise), dueDate: string(row.due_date), createdAt: string(row.created_at), updatedAt: string(row.updated_at), notes: optionalString(row.notes), status: string(row.status) as ReceivableStatus };
 }
 
 export function toPromise(row: Row): PromiseRecord {
@@ -64,8 +64,10 @@ export function paymentMethodToDatabase(method: PaymentMethod) {
   return method === "Bank transfer" ? "BANK_TRANSFER" : method.toUpperCase();
 }
 
-export function userFacingDataError(message?: string) {
+export function userFacingDataError(message?: string, code?: string) {
   const normalized = (message ?? "").toLowerCase();
+  if (code === "40001" || normalized.includes("changed in another session")) return "This record changed while you were editing. Reopen it and save again with the latest version.";
+  if (normalized.includes("private ledger")) return "That record is no longer available in your ledger.";
   if (normalized.includes("founder review access")) return "Founder review access is not available for this account.";
   if (normalized.includes("already active")) return "Founder access is already active for this account.";
   if (normalized.includes("offer is currently full")) return "The verified Founder offer is currently full.";

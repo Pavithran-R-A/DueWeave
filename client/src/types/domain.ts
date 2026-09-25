@@ -21,6 +21,9 @@ export interface Client {
   email?: string;
   notes?: string;
   createdAt: string;
+  // Optimistic-concurrency token, kept as the database's own string because
+  // re-parsing through a Date would round away the microseconds it compares on.
+  updatedAt: string;
 }
 
 export interface Receivable {
@@ -32,6 +35,7 @@ export interface Receivable {
   outstandingPaise?: number;
   dueDate: string;
   createdAt: string;
+  updatedAt: string;
   notes?: string;
   status: ReceivableStatus;
 }
@@ -71,7 +75,7 @@ export interface Activity {
   snoozedUntil?: string;
 }
 
-export interface DemoState {
+export interface LedgerState {
   clients: Client[];
   receivables: Receivable[];
   promises: PromiseRecord[];

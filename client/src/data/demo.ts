@@ -1,10 +1,10 @@
 // Quiet Ledger style reminder: seeded data should feel like a real service-business workday, not a generic finance demo.
 
-import type { Activity, Client, DemoState, Payment, PromiseRecord, Receivable } from "@/types/domain";
+import type { Activity, Client, LedgerState, Payment, PromiseRecord, Receivable } from "@/types/domain";
 
 export const DEMO_TODAY = "2026-08-12";
 
-const clients: Client[] = [
+const demoClients: Omit<Client, "updatedAt">[] = [
   { id: "client-nova", name: "Arjun Mehta", company: "Nova Media", phone: "919876543210", email: "arjun@novamedia.example", notes: "Retainer client. Usually pays after a short nudge.", createdAt: "2026-01-10" },
   { id: "client-rajesh", name: "Rajesh Malhotra", company: "Rajesh Studio", phone: "919810112233", email: "rajesh@rajeshstudio.example", notes: "Project photography and post-production.", createdAt: "2026-02-03" },
   { id: "client-pixel", name: "Ishita Rao", company: "PixelMint Studio", phone: "919811223344", email: "ishita@pixelmint.example", notes: "Small design studio. Newer relationship.", createdAt: "2026-06-15" },
@@ -13,7 +13,11 @@ const clients: Client[] = [
   { id: "client-kite", name: "Neel Bhatia", company: "Kite Labs", phone: "919844556677", email: "neel@kitelabs.example", notes: "Paid on time after one reminder.", createdAt: "2026-04-11" },
 ];
 
-const receivables: Receivable[] = [
+// Demo rows are drawn, never saved, so their concurrency token mirrors the date
+// they were created with.
+const clients: Client[] = demoClients.map((row) => ({ ...row, updatedAt: row.createdAt }));
+
+const demoReceivables: Omit<Receivable, "updatedAt">[] = [
   { id: "recv-nova", clientId: "client-nova", title: "Brand film — final milestone", invoiceRef: "NM-042", amountDuePaise: 9500000, dueDate: "2026-07-24", createdAt: "2026-07-10", notes: "Final cut and social cut-downs delivered.", status: "OPEN" },
   { id: "recv-rajesh", clientId: "client-rajesh", title: "Monsoon campaign photography", invoiceRef: "RS-118", amountDuePaise: 2800000, dueDate: "2026-07-18", createdAt: "2026-07-03", notes: "Gallery delivered. Two revised payment dates.", status: "OPEN" },
   { id: "recv-pixel", clientId: "client-pixel", title: "Packaging system — round 2", invoiceRef: "PM-019", amountDuePaise: 1800000, dueDate: "2026-08-13", createdAt: "2026-08-01", notes: "Client promised payment after internal sign-off.", status: "OPEN" },
@@ -21,6 +25,8 @@ const receivables: Receivable[] = [
   { id: "recv-orbit", clientId: "client-orbit", title: "Apartment styling consultation", invoiceRef: "OI-033", amountDuePaise: 5540000, dueDate: "2026-07-31", createdAt: "2026-07-17", notes: "Scope completed and walkthrough shared.", status: "PARTIALLY_PAID" },
   { id: "recv-kite", clientId: "client-kite", title: "Product launch landing page", invoiceRef: "KL-054", amountDuePaise: 3600000, dueDate: "2026-08-07", createdAt: "2026-07-27", notes: "Paid in full after a single follow-up.", status: "PAID" },
 ];
+
+const receivables: Receivable[] = demoReceivables.map((row) => ({ ...row, updatedAt: row.createdAt }));
 
 const promises: PromiseRecord[] = [
   { id: "promise-nova-1", receivableId: "recv-nova", sequenceNo: 1, promisedAmountPaise: 500000, promisedDate: "2026-03-18", source: "Email", note: "Small deposit received after the first cut.", status: "KEPT", createdAt: "2026-03-15", resolvedAt: "2026-03-18" },
@@ -62,6 +68,6 @@ const activities: Activity[] = [
   { id: "act-kite-paid", clientId: "client-kite", receivableId: "recv-kite", type: "payment", occurredAt: "2026-08-07", note: "₹36,000 collected in full by UPI.", amountPaise: 3600000 },
 ];
 
-export function createDemoState(): DemoState {
+export function createDemoState(): LedgerState {
   return { clients: structuredClone(clients), receivables: structuredClone(receivables), promises: structuredClone(promises), payments: structuredClone(payments), activities: structuredClone(activities) };
 }

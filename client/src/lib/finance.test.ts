@@ -2,7 +2,8 @@
 
 import { describe, expect, it } from "vitest";
 import { createDemoState, DEMO_TODAY } from "@/data/demo";
-import { addIndiaBusinessDays, daysBetween, formatINR, getOutstanding, getQueue, getReliability, interpolateMessage, parseINRToPaise, priorityBreakdown, todayInIndia } from "@/lib/finance";
+import { addIndiaBusinessDays, daysBetween, formatINR, getOutstanding, getQueue, getReliability, interpolateMessage, parseINRToPaise, priorityBreakdown } from "@/lib/finance";
+import { todayInIndia } from "@/lib/business-clock";
 
 describe("finance helpers", () => {
   it("formats paise as Indian rupee amounts", () => {

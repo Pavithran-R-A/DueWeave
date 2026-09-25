@@ -117,8 +117,10 @@ select is((select coalesce(array_agg(p.proname::text order by p.proname), array[
            join pg_namespace n on n.oid = p.pronamespace
            where n.nspname = 'public' and has_function_privilege('authenticated', p.oid, 'EXECUTE')),
     -- The approved RPC set, in name order: the eight core workflow routines,
-    -- five self-scoped founder purchase routines, and seven founder review
-    -- routines that each re-check assert_founder_admin() internally.
+    -- five self-scoped founder purchase routines, seven founder review
+    -- routines that each re-check assert_founder_admin() internally, and the
+    -- two Stage 4 edit routines. The list stays an exact set on purpose: a
+    -- future migration that grants one more RPC has to be approved here first.
     array[
         'approve_founder_claim', 'cancel_founder_claim', 'create_client',
         'create_client_and_receivable', 'create_founder_claim', 'create_promise',
@@ -126,9 +128,10 @@ select is((select coalesce(array_agg(p.proname::text order by p.proname), array[
         'list_pending_founder_claims', 'list_rejected_founder_claims',
         'mark_due_promises_broken', 'reconsider_founder_claim', 'record_contacted',
         'record_founder_upgrade_view', 'record_payment', 'reject_founder_claim',
-        'revoke_founder_entitlement', 'snooze_receivable', 'submit_founder_payment'
+        'revoke_founder_entitlement', 'snooze_receivable', 'submit_founder_payment',
+        'update_client', 'update_receivable_details'
     ]::text[],
-    'authenticated can execute exactly the 20 RPCs the application calls');
+    'authenticated can execute exactly the 22 RPCs the application calls');
 
 select is(has_function_privilege('authenticated', 'public.is_founder_admin()', 'EXECUTE'), false,
     'is_founder_admin() is internal and not callable over RPC');

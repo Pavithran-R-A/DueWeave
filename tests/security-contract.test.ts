@@ -116,9 +116,10 @@ describe("Stage 2 Supabase security contract", () => {
     expect(homePage).toMatch(/new SupabaseReceivableRepository\(\)/);
   });
 
-  it("reads live ledger entities after lazily settling overdue promises for the Today briefing", () => {
-    expect(dashboardRepository).toMatch(/await this\.promises\.markDuePromisesBroken\(\)/);
+  it("reads live ledger entities after settling overdue promises as a named write", () => {
+    expect(dashboardRepository).toMatch(/async settleDuePromises\(\)[\s\S]*await this\.promises\.markDuePromisesBroken\(\)/);
     expect(dashboardRepository).toMatch(/Promise\.all\(\[this\.clients\.list\(\), this\.receivables\.list\(\), this\.promises\.list\(\), this\.payments\.list\(\), this\.activities\.list\(\)\]\)/);
+    expect(homePage).toMatch(/await dashboardRepository\.settleDuePromises\(\);\s*const next = await dashboardRepository\.read\(\);/);
     expect(homePage).toMatch(/Recovered this month/);
     expect(homePage).toMatch(/Expected this week/);
     expect(homePage).toMatch(/Broken promises/);
