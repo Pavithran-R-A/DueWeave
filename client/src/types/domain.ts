@@ -48,6 +48,9 @@ export interface PromiseRecord {
   receivableId: string;
   sequenceNo: number;
   promisedAmountPaise: number;
+  /** Business date the customer made the commitment. */
+  madeOn: string;
+  /** Business date the customer committed to pay by. */
   promisedDate: string;
   source: PromiseSource;
   note?: string;

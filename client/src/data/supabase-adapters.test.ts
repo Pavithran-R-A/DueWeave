@@ -21,11 +21,33 @@ describe("Supabase domain adapters", () => {
   it("preserves integer paise amounts and normalizes database enum values", () => {
     const receivable = toReceivable({ id: "r1", client_id: "c1", label: "Invoice", invoice_ref: null, amount_due_paise: "125050", outstanding_paise: "25050", due_date: "2026-08-12", notes: null, status: "PARTIALLY_PAID" });
     const payment = toPayment({ id: "p1", receivable_id: "r1", amount_paise: "100000", paid_on: "2026-08-12", method: "BANK_TRANSFER", reference: null });
-    const promise = toPromise({ id: "pr1", receivable_id: "r1", promised_amount_paise: "25050", promised_date: "2026-08-15", source: "WHATSAPP", note: null, status: "ACTIVE", created_at: "2026-08-12T10:00:00Z" });
+    const promise = toPromise({ id: "pr1", receivable_id: "r1", promised_amount_paise: "25050", made_on: "2026-08-11", promised_date: "2026-08-15", source: "WHATSAPP", note: null, status: "ACTIVE", created_at: "2026-08-12T10:00:00Z" });
 
     expect(receivable).toMatchObject({ amountDuePaise: 125050, outstandingPaise: 25050, status: "PARTIALLY_PAID" });
     expect(payment).toMatchObject({ amountPaise: 100000, method: "Bank transfer" });
     expect(promise).toMatchObject({ promisedAmountPaise: 25050, source: "WhatsApp", status: "ACTIVE" });
+  });
+
+  // A promise now carries three dates and they answer three different questions:
+  // when the customer said it (made_on), when they said it would arrive
+  // (promised_date), and when DueWeave happened to store the row (created_at).
+  // Only the first two decide attribution, so the adapter must not blend any of
+  // them into another — the repair this replaces was exactly a blend of the
+  // third into the first.
+  it("keeps the day a promise was made apart from its deadline and its recording instant", () => {
+    const promise = toPromise({ id: "pr1", receivable_id: "r1", sequence_no: 1, promised_amount_paise: "500000", made_on: "2026-09-20", promised_date: "2026-09-25", source: "CALL", note: null, status: "KEPT", created_at: TOKEN, resolved_at: TOKEN });
+
+    expect(promise.madeOn).toBe("2026-09-20");
+    expect(promise.promisedDate).toBe("2026-09-25");
+    expect(promise.createdAt).toBe(TOKEN);
+    expect(promise.madeOn).not.toBe(promise.promisedDate);
+  });
+
+  // The form must show the customer's date, not a date the client invented, so a
+  // row that arrives without one reads as missing rather than as its deadline.
+  it("never derives a missing origin from the promised date or the recording instant", () => {
+    const row = { id: "pr2", receivable_id: "r1", sequence_no: 1, promised_amount_paise: "500000", promised_date: "2026-09-25", source: "CALL", note: null, status: "ACTIVE", created_at: TOKEN };
+    expect(toPromise(row).madeOn).toBe("");
   });
 
   it("converts activity timestamps into the date-only format consumed by the approved timeline", () => {
@@ -85,6 +107,9 @@ describe("Supabase domain adapters", () => {
       ["This receivable is already settled", /fully paid/i],
       ["A settled receivable cannot be cancelled — cancel the promise instead, or record a correction", /fully paid/i],
       ["This promise needs a request id so a retry cannot record it twice", /could not be recorded safely/i],
+      ["Choose the date the customer made this promise", /date the customer made/i],
+      ["The promise date cannot be earlier than the day the promise was made", /cannot be earlier than the day the promise was made/i],
+      ["A new promise cannot be dated as made before the promise it replaces", /on or after|promise it replaces/i],
       ["DueWeave keeps one business calendar for the ledger, so the working day cannot be moved", /single working calendar/i],
       ["DueWeave records money in INR only", /rupees/i],
       ["Financial fields require a protected workflow", /could not be recorded safely/i],
@@ -95,6 +120,18 @@ describe("Supabase domain adapters", () => {
       expect(message, `the database said "${raw}"`).toMatch(expected);
       expect(message, `the database said "${raw}"`).not.toMatch(/SQLSTATE|permission denied|constraint|function|public\.|raise_exception/i);
     }
+  });
+
+  // Both a payment and a promise can be dated wrongly, and the advice differs:
+  // one says the receipt is from tomorrow, the other that nobody can commit on
+  // the customer's behalf in advance. Sharing the sentence would send the reader
+  // to the wrong field of the wrong form.
+  it("answers a future-dated promise origin as a promise, not as a payment", () => {
+    const message = userFacingDataError("A promise cannot be dated as made in the future");
+    expect(message).toMatch(/promise/i);
+    expect(message).toMatch(/future/i);
+    expect(message).not.toMatch(/payment|receipt/i);
+    expect(userFacingDataError("A payment cannot be dated in the future")).toMatch(/payment/i);
   });
 
   it("keeps a server-side refusal in the calm fallback instead of quoting it", () => {

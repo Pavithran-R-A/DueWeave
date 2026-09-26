@@ -87,9 +87,23 @@ async function addReceivable(page: Page, account: Account, label: string, amount
   await clearToasts(page);
 }
 
-async function recordPromise(page: Page, input: { amountRupees: string; promisedDate: string; source: string; note: string }) {
+/**
+ * Record a promise through the sheet. `madeOn` is left out of most calls on
+ * purpose: the form has to open on the day the ledger is standing in, and the
+ * only origin a normal entry can have is the one the person sees and accepts.
+ * Where a date IS passed, the field is typed into — a historical entry, the case
+ * the whole repair exists to make possible.
+ */
+async function recordPromise(page: Page, input: { amountRupees: string; promisedDate: string; source: string; note: string; madeOn?: string }) {
   await page.getByRole("button", { name: /Record new promise/ }).click();
   const sheet = page.getByRole("dialog", { name: "Record a new promise" });
+  const origin = sheet.getByLabel("Promise made on");
+  if (input.madeOn === undefined) {
+    await expect(origin, "the form pre-fills an origin the customer never stated").toHaveValue(today);
+  } else {
+    await origin.fill(input.madeOn);
+    await expect(origin).toHaveValue(input.madeOn);
+  }
   await sheet.getByLabel("Promised amount").fill(input.amountRupees);
   await sheet.getByLabel("Promised date").fill(input.promisedDate);
   await sheet.getByLabel("Source").selectOption(input.source);
@@ -252,6 +266,88 @@ test.describe("Stage 5 settles money against a promise without erasing either", 
   });
 });
 
+test.describe("Stage 5 keeps a promise's own dates in charge of its outcome", () => {
+  // The journey above shows a promise being kept. This one shows the case that
+  // used to be decided wrongly: money that arrived BEFORE the customer ever made
+  // a commitment, typed into the app afterwards. Recording order is not a fact
+  // about the customer, so the ledger must not treat it as one — and the only way
+  // to see that from the browser is to enter the two in the awkward order and
+  // watch the promise stay open.
+  test.describe.configure({ mode: "serial", timeout: 90_000 });
+  test.skip(!localStackEnabled, "Set STAGE5_LOCAL_E2E=1 to run against the local Supabase stack.");
+
+  const account = newAccount("chronology");
+  const label = `Stage5 chronology invoice ${account.token}`;
+  let context: BrowserContext;
+  let page: Page;
+
+  test.beforeAll(async ({ browser }) => {
+    context = await browser.newContext();
+    page = await context.newPage();
+    await signUp(page, account);
+    await addClient(page, account);
+    await addReceivable(page, account, label, "10000", businessDate(10));
+  });
+
+  test.afterAll(async () => {
+    await context?.close();
+  });
+
+  test("yesterday's receipt is entered first and changes nothing about tomorrow's promise", async () => {
+    await recordPayment(page, { amountRupees: "5000", paidDate: yesterday, method: "UPI", reference: `S5C-${account.token.slice(0, 6)}` });
+    await expect(outstanding(page)).toHaveText("₹5,000");
+
+    // The origin is typed as today, so the money dated yesterday sits outside the
+    // window by a full day — the exact shape of the mistake this stage repairs.
+    await recordPromise(page, { amountRupees: "5000", madeOn: today, promisedDate: businessDate(1), source: "Call", note: "Will pay tomorrow, said today." });
+    await expect(promiseStatus(page)).toHaveText("Active promise");
+    await expect(outstanding(page)).toHaveText("₹5,000");
+  });
+
+  test("a reload re-reads the same uncredited promise, so the state was never a recording accident", async () => {
+    await page.reload();
+    await expect(page.getByLabel("Primary navigation")).toBeVisible();
+    await expect(promiseStatus(page)).toHaveText("Active promise");
+    await expect(outstanding(page)).toHaveText("₹5,000");
+  });
+
+  test("money dated inside the window keeps the promise and settles the invoice", async () => {
+    await recordPayment(page, { amountRupees: "5000", paidDate: today, method: "UPI" });
+    await expect(promiseStatus(page)).toHaveText("Kept");
+    await expect(outstanding(page)).toHaveText("₹0");
+    const { pill, back } = await receivablePill(page, label, "paid");
+    await expect(pill).toHaveText("Paid");
+    await back();
+  });
+
+  test("an older promise entered late still keeps the day it was actually made", async () => {
+    // Catching up on paperwork is the normal case: a commitment made three days
+    // ago for two days ago, typed in today. Its origin has to survive the form,
+    // the request and the reload, because the window it opens is what decides
+    // whether later money counts toward it.
+    await addReceivable(page, account, `Stage5 late entry ${account.token}`, "4000", businessDate(8));
+    const madeThreeDaysAgo = businessDate(-3);
+    const promisedTwoDaysAgo = businessDate(-2);
+    await recordPromise(page, { amountRupees: "2000", madeOn: madeThreeDaysAgo, promisedDate: promisedTwoDaysAgo, source: "Meeting", note: "Said it three days ago; typed it now." });
+    await expect(promiseStatus(page)).toHaveText("Promise broken");
+
+    // A receipt dated the day before the promise was made cannot be its evidence,
+    // however recently it was entered.
+    await recordPayment(page, { amountRupees: "2000", paidDate: businessDate(-4), method: "Cash" });
+    await expect(promiseStatus(page), "money from before the promise was made did not keep it").toHaveText("Promise broken");
+
+    await page.reload();
+    await expect(page.getByLabel("Primary navigation")).toBeVisible();
+    await expect(promiseStatus(page)).toHaveText("Promise broken");
+
+    // The same money, moved into the window, is what rescues it — and the outcome
+    // is recorded as a correction rather than a rewritten history.
+    await recordPayment(page, { amountRupees: "2000", paidDate: promisedTwoDaysAgo, method: "Bank transfer" });
+    await expect(promiseStatus(page)).toHaveText("Kept");
+    await expect(outstanding(page)).toHaveText("₹0");
+  });
+});
+
 test.describe("Stage 5 tells the truth about a deadline that passed", () => {
   // Each step is a real write through a real sheet, acknowledged by a toast that
   // then has to leave the screen; 30 s is not enough for a whole journey.
@@ -260,6 +356,10 @@ test.describe("Stage 5 tells the truth about a deadline that passed", () => {
 
   const account = newAccount("deadline");
   const label = `Stage5 deadline invoice ${account.token}`;
+  // A receipt that falls inside two promises' windows credits both: there is no
+  // payment-allocation engine. So each commitment here gets a day of its own.
+  const threeDaysAgo = businessDate(-3);
+  const twoDaysAgo = businessDate(-2);
   let context: BrowserContext;
   let page: Page;
 
@@ -288,14 +388,14 @@ test.describe("Stage 5 tells the truth about a deadline that passed", () => {
 
   test("a promise whose day passed is broken, and the queue states it as a fact", async () => {
     await gotoToday(page);
-    await recordPromise(page, { amountRupees: "5000", promisedDate: yesterday, source: "Call", note: "Yesterday, and nothing arrived." });
+    await recordPromise(page, { amountRupees: "5000", madeOn: threeDaysAgo, promisedDate: threeDaysAgo, source: "Call", note: "Three days ago, and nothing arrived." });
     await expect(promiseStatus(page)).toHaveText("Promise broken");
     await expect(outstanding(page)).toHaveText("₹20,000");
     await expect(page.getByRole("article").filter({ hasText: account.company }).first().locator(".queue-card__why")).toContainText("1 promise broken");
   });
 
   test("money recorded later against the passed date is partially kept, not rewritten", async () => {
-    await recordPayment(page, { amountRupees: "2000", paidDate: yesterday, method: "Cash" });
+    await recordPayment(page, { amountRupees: "2000", paidDate: threeDaysAgo, method: "Cash" });
     await expect(promiseStatus(page)).toHaveText("Partially kept");
     await expect(outstanding(page)).toHaveText("₹18,000");
     await page.reload();
@@ -305,10 +405,10 @@ test.describe("Stage 5 tells the truth about a deadline that passed", () => {
 
   test("reliability counts only the promises the customer answered", async () => {
     await gotoToday(page);
-    await recordPromise(page, { amountRupees: "3000", promisedDate: yesterday, source: "WhatsApp", note: "A second date was missed too." });
+    await recordPromise(page, { amountRupees: "3000", madeOn: twoDaysAgo, promisedDate: twoDaysAgo, source: "WhatsApp", note: "A second date was missed too." });
     await expect(promiseStatus(page)).toHaveText("Promise broken");
-    await recordPromise(page, { amountRupees: "4000", promisedDate: today, source: "Email", note: "Third attempt, kept." });
-    await recordPayment(page, { amountRupees: "4000", paidDate: today, method: "UPI" });
+    await recordPromise(page, { amountRupees: "4000", madeOn: yesterday, promisedDate: yesterday, source: "Email", note: "Third attempt, kept." });
+    await recordPayment(page, { amountRupees: "4000", paidDate: yesterday, method: "UPI" });
     await expect(promiseStatus(page)).toHaveText("Kept");
 
     await gotoClients(page);

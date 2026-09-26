@@ -1,10 +1,12 @@
 # DUEWEAVE CURRENT ROADMAP — STAGE 5: FINANCIAL + PROMISE LIFECYCLE CORRECTNESS
 
-Brief id: (attached brief, `DUEWEAVE — CURRENT ROADMAP STAGE 5`)
+Brief id: (attached brief, `DUEWEAVE — CURRENT ROADMAP STAGE 5`, plus the attached
+`FINAL PROMISE-CHRONOLOGY + EVIDENCE CLOSURE` continuation brief)
 Branch: `current-stage-5-lifecycle-correctness` (base `d51df278ae08d3d7c06fe33d84da0a876b9e7e7a`)
-STARTING SHA: `d51df278ae08d3d7c06fe33d84da0a876b9e7e7a`
-ENDING SHA: _(filled at Phase 46)_
-Status: **IN PROGRESS** — §1–§3 are the measured Phase 2 baseline and the Phase 3 current-state map; §4 is the ratified Stage 5 design that the migrations implement. Gate results are appended as they are measured.
+STARTING SHA (Stage 5 as a whole): `d51df278ae08d3d7c06fe33d84da0a876b9e7e7a`
+STARTING SHA (this closure pass): `ee4a5894e8ca0938e1b5589c84ee6b0a88121ae9` — the pushed Stage 5 HEAD, continued, never restarted or amended
+ENDING SHA: the single forward commit this pass pushes on top of `ee4a589`. A commit cannot contain its own hash, and Stage 5 history was not rewritten to embed one, so the closing hash is read from the push output and reported in the final closure block rather than back-poked into this line.
+Status: **CLOSED — PASS ON ATTRIBUTION + EVIDENCE, WITH DISCLOSED CAVEATS** — §1–§3 are the measured Phase 2 baseline and the Phase 3 current-state map; §4 is the ratified Stage 5 design; §5–§7 are the original Stage 5 pass; §8 is the chronology/evidence closure. §4.2 was **wrong as first written** and has been corrected in place, with the wrong rule quoted below it so the error remains auditable; §7's verdict is marked superseded by §8 rather than erased.
 
 ---
 
@@ -148,6 +150,9 @@ promise:     ACTIVE ──any payment on the receivable──▶ KEPT   (only if
 | D-S5-13 | Today queue includes non-actionable future work. | `getQueue` |
 | D-S5-14 | Priority reasons can state a history that never happened (`30` days on a fresh invoice). | `breakdownFor`, `priorityReasons` |
 | D-S5-15 | Reliability denominator includes non-outcomes and `averageDelay` is `NaN`. | `getReliability` |
+| D-S5-16 | **Found in the closure pass.** Attribution used *database recording chronology* (`payment.created_at > promise.created_at`) instead of *business chronology* (`payment.paid_on >= promise.made_on`), and `promises` had no field recording when a commitment was actually made — so the row's insert timestamp stood in for a fact about the world. | executed §4.2 as shipped in migration 20 |
+| D-S5-17 | **Found in the closure pass.** A correction event carried only free text in `promise_events.reason`; no column durably identified *which payments* caused a `BROKEN → KEPT`/`PARTIALLY_KEPT` change, so the evidence could not be re-checked after the text was read. | column inventory of `promise_events` before this pass (no `metadata` column existed; provenance was `reason text` alone) |
+| D-S5-18 | **Found in the closure pass.** This report's header declared Stage 5 `IN PROGRESS` with an `ENDING SHA: _(filled at Phase 46)_` placeholder — the authoritative artifact of a delivered stage still said the stage was open, and pointed at a phase number that does not exist in any brief. | lines 5–7 of this file as committed at `ee4a589` |
 
 ## 4. Stage 5 authoritative design (ratified before implementation)
 
@@ -177,39 +182,74 @@ Two facts stay separate, by construction: **promise fulfilled** (about `QA` vs
 partially paid invoice can contain a fully kept promise (case E), and a fully
 paid invoice can contain a broken promise (case G).
 
-### 4.2 PAYMENT ATTRIBUTION RULE
+### 4.2 PAYMENT ATTRIBUTION RULE — CORRECTED IN THE CLOSURE PASS
 
 A payment counts toward promise `P` iff all of:
 
 1. `payment.receivable_id = P.receivable_id`;
-2. `payment.created_at > P.created_at` — the money was **recorded after the
-   commitment existed**;
-3. `payment.paid_on <= P.promised_date` — the money **arrived on or before the
+2. `payment.paid_on >= P.made_on` — the money is dated **on or after the business
+   day the customer made the commitment**;
+3. `payment.paid_on <= P.promised_date` — the money is dated **on or before the
    promised business date**.
+
+`P.made_on` is a column on the promise, added by migration 21, supplied
+explicitly by `create_promise(p_made_on)`, frozen by the history guard, and
+checked `made_on <= promised_date` and not-in-the-future. Both bounds are
+business dates, so the rule is a closed interval `[made_on, promised_date]` over
+days. **`created_at` appears nowhere in attribution** — neither the payment's nor
+the promise's. Recording order is not a fact about money or promises; it is a
+fact about when a keyboard was used.
 
 Consequences, stated because they are deliberate and each is tested:
 
-* *Payment recorded before the promise existed* → **never counts.** Money from
-  last month cannot retroactively discharge a commitment made today; counting it
-  would mark a promise `KEPT` the moment it was created.
+* *Payment dated before the commitment was made* → **never counts**, no matter
+  when it was typed. Money from last month cannot discharge a commitment made
+  this week, and re-typing an old receipt after a promise is created does not
+  make the promise `KEPT`.
+* *Payment dated after `promised_date`* → reduces the balance and settles the
+  invoice, but the promise stays `BROKEN`/`PARTIALLY_KEPT` (case G, and "full
+  invoice payment after a promise deadline").
+* *Payment dated on either bound* → counts. Days are inclusive. When
+  `paid_on = made_on` the ledger genuinely cannot know the intra-day order, and
+  no time-of-day column was invented for this repair; the ledger reads the
+  customer's own date as saying "this is for that commitment". This is a stated
+  tie-break, not a leftover ambiguity.
 * *Multiple payments toward one promise* → summed, so `₹2,000 + ₹3,000` against a
   `₹5,000` promise is `KEPT` (case B).
-* *Payment after the deadline* → reduces the balance and settles the invoice, but
-  does not count toward the promise: the promise stays `BROKEN`/`PARTIALLY_KEPT`
-  (case G, and "full invoice payment after a promise deadline" is exactly this).
-* *Payment recorded on the deadline* → counts (`<=` on `paid_on`, business dates
-  are inclusive days).
-* *Same-day promise/payment ambiguity* → resolved by `created_at`, which is a
-  persisted microsecond timestamp, not by the calendar day. Recorded before the
-  promise in the same calendar day still does not count; that is the
-  deterministic reading of rule 2, and it is documented in the migration.
+* *Two promises whose intervals overlap* → a receipt inside both windows is
+  credited to **both**. There is still no payment-allocation engine (§6), and the
+  browser journey now uses non-overlapping days rather than relying on the
+  accident of insert order.
+* *A promise entered later, about a commitment made earlier* → graded from its
+  own `made_on`, so back-dating a promise is impossible without the customer's
+  actual date, and a late data-entry session cannot manufacture a `KEPT` from
+  money that predates the commitment.
 * No proxy on "receivable became `PAID`", no ratio, no first-in-first-out guess,
   no allocation of a payment across promises: the receivable's payments are the
-  pool, and `paid_on`/`created_at` decide membership.
+  pool, and `paid_on` against `[made_on, promised_date]` decides membership.
 
-`promised_date` is the promise's own fact; `QA` is computed, never stored, and
-the reconciliation helper recomputes it on every pass so no cached outcome can go
-stale (D-S5-2).
+`promised_date` and `made_on` are the promise's own facts; `QA` is computed,
+never stored, and the reconciliation helper recomputes it on every pass so no
+cached outcome can go stale (D-S5-2).
+
+> **RETIRED — what this section said before the closure pass, and why it was
+> wrong.** The rule as ratified and shipped in migration 20 was:
+> `payment.created_at > P.created_at` **and** `payment.paid_on <= P.promised_date`,
+> and same-day cases were said to be "resolved by `created_at`, which is a
+> persisted microsecond timestamp, not by the calendar day". That made database
+> recording chronology decide a business outcome (D-S5-16): the promise's
+> `created_at` is the instant DueWeave happened to write the row, not the day the
+> customer promised. Measured on the live 20-migration database, an ₹5,000
+> receipt dated `2026-09-25` and recorded first, followed by a promise *made
+> today* promising that same day, came back
+> `EVIDENCE D-S5-16 yesterday: promise made today KEPT credit=500000 paid_on=2026-09-25`
+> — a promise `KEPT` by money that existed before it was promised — and two
+> promises created after one receipt both read
+> `1:KEPT:credit=500000 2:KEPT:credit=500000`. Migration 20's file text is
+> unmodified (historical migrations are never edited); migration 21 replaces the
+> definitions, and the live/browser suites that had pinned the old reading were
+> corrected alongside the SQL rather than left pinning a false rule.
+
 
 ### 4.3 ONE AUTHORITATIVE RECONCILIATION MECHANISM (browser surface stays narrow)
 
@@ -550,10 +590,45 @@ Stage 5. Run-by-run on the final tree:
 | A | `pnpm test` (full) | `2 failed \| 325 passed \| 1 skipped (328)`, `Test Files 1 failed \| 16 passed \| 1 skipped (18)` | `PGRST303 — JWT issued at future` at `tests/stage2-local-foundation.test.ts:52`; `:161` (`expected '0672319b-…' to be undefined`) is downstream of it | **PGRST303 — infrastructure, not a Stage 5 lifecycle defect.** Pre-existing since Stage 4; PostgREST rejects a freshly minted GoTrue token whose `iat` is ahead of the container clock, before any table, policy or grant is consulted. |
 | B | `pnpm test`, unchanged tree | `327 passed \| 1 skipped (328)`, `17 passed \| 1 skipped (18)` | none | clean |
 | C | `pnpm test`, unchanged tree | `327 passed \| 1 skipped (328)`, `17 passed \| 1 skipped (18)` | none | clean — **two consecutive full-suite clean runs with no code or config change between them** |
+| D | `pnpm test`, closure-pass tree | `352 passed \| 1 skipped (353)`, `17 passed \| 1 skipped (18)`, 49.17 s | none | clean |
+| E | `pnpm test`, tree unchanged since D | `352 passed \| 1 skipped (353)`, `17 passed \| 1 skipped (18)`, 51.26 s | none | clean — **two consecutive full-suite clean runs on the final tree, no code or config change between them** |
+| F | `pnpm test:e2e:eval e2e/stage3-local-isolation.spec.ts` (first attempt) | 3 of 5 failed: `stage3-local-isolation.spec.ts:114`, and `stage4-local-persistence.spec.ts:152` in the same battery | not PGRST303-from-the-API-client: the browser's `POST /rest/v1/rpc/mark_due_promises_broken` returned **401 `invalid_token`, `JWT issued at future`** from `postgrest/16.2`, 0.73 s after its own `POST /auth/v1/signup` → 200 | **Same infrastructure class as run A, observed through the browser path.** See the reconstruction below. |
+| G | re-runs of the affected specs and the whole battery, unchanged tree | `stage3` 5 passed; battery `30 passed \| 2 skipped \| 0 failed` | none | clean — no retry, sleep, leeway or suppression was added between F and G beyond simply re-running |
+| H | four Stage-family live files in one `vitest run`, immediately after the §8.6 zero replay | `2 failed \| 93 passed \| 110 skipped (205)` | `PGRST303 — JWT issued at future` at `tests/stage2-local-foundation.test.ts:52` (`:161` downstream), and `profile row missing for alpha: JWT issued at future` aborting Stage 3's bootstrap | **same class as A**, provoked by the container restart the replay required; Stage 4's and Stage 5's suites passed in this run (14 and 69) |
+| I | `pnpm test` (full), post-replay, run 1 | `338 passed \| 15 skipped (353)`, `1 failed \| 16 passed \| 1 skipped (18)` | `AssertionError: alpha create_client failed: expected { code: 'PGRST303' … } to be null` at `tests/stage4-local-edit-workflows.test.ts:153` (the file's 14 tests then report as skipped) | **same class as A** — the first REST call after a minted token is rejected before any policy is consulted |
+| J | `pnpm test` (full), post-replay, run 2, tree unchanged | `352 passed \| 1 skipped (353)`, `17 passed \| 1 skipped (18)`, exit 0 | none | clean |
 
-Nothing in the Stage 5 lifecycle families (cases A–G2, correction, payment
-matrix, cancellation, idempotency, parallel attacks, audit, browser journeys)
-ever failed for a reason other than a genuine in-flight defect listed in §5.2.
+Run F was investigated rather than re-run-and-forgotten, because "it passed the
+second time" is not evidence. From the Playwright `trace.zip`, whose
+`*.network` file was parsed by `_resourceType ∈ {fetch, xhr}`: the failing
+request carried a token decoding to `iat = 1790414238` (`09:17:18` UTC),
+`exp = iat + 3600`, `role = authenticated`, ES256. Kong logged the 401 at
+`09:17:19.118`, and a *second* browser context's byte-identical POST at
+`09:17:19.217` returned 200. Clocks measured immediately afterwards: host
+`1790414394.49`, auth container `1790414395`, database container `1790414395`
+(agreeing within `docker exec` latency), while `pg now()` read `1790414374.76`.
+So this is sub-second jitter between the token-issuing and token-validating
+clocks inside the local Docker VM — the identical rejection reason already
+classified in run A — not a Stage 5 attribution, lifecycle or authorization
+fault. It **fails closed**: the ledger never saw the request, no row moved, and
+the RLS/authorization assertions were not exercised by it. Per this stage's
+standing instruction, nothing was retried inside the test, no JWT leeway was
+changed, no sleep or retry loop was added, and no production code masks it.
+
+Nothing in the Stage 5 lifecycle families (cases A–G2, attribution and
+chronology matrix, correction and its evidence, payment matrix, cancellation,
+idempotency, parallel attacks, audit, browser journeys) ever failed for a reason
+other than a genuine in-flight defect listed in §5.2 — including in runs H and I,
+where the neighbouring Stage 2/3/4 files were the ones the token clock rejected
+and Stage 5's 69 assertions still all passed.
+
+Frequency, stated plainly because the last four rows might otherwise read as one
+long clean streak: the class appeared in run A and again in runs F, H and I —
+four occurrences across the stage. Every one of them coincided with an execution
+that performs many signups within seconds (a full-suite run, a four-file live
+run, or a multi-context browser battery), and the two most recent (H and I) were
+taken immediately after the stack had been restarted for the §8.6 replay.
+Nothing in a single-file, single-signup Stage 5 execution ever hit it.
 
 ### 5.7 Deviations from §4, and environment disclosures
 
@@ -577,10 +652,13 @@ ever failed for a reason other than a genuine in-flight defect listed in §5.2.
    it. The token's purpose (never clobber a row someone else moved) is therefore
    met by the lock plus the state machine. Stage 4's edit RPCs keep their token
    because they write free text, where two simultaneous edits genuinely conflict
-   and the later one must be refused rather than serialised. The one gap this
-   leaves is unmeasured: no test in this stage races a cancellation against a
-   payment, so the claim above rests on the lock and the executed refusals, and
-   is listed under §6 rather than presented as proven.
+   and the later one must be refused rather than serialised. The gap this left
+   **was measured in the closure pass**: four live two-request races now exist —
+   `cancel_receivable` against `record_payment` fired together (exactly one
+   lands), money-first then cancellation, cancellation-first then money, and
+   `cancel_promise` against `record_payment` — so the claim above rests on the
+   lock, the executed refusals **and** those races, and §6 no longer lists the
+   race as untested.
 3. **Test teardown no longer runs DDL.** Fixtures are purged with a
    transaction-scoped `set local session_replication_role = replica`,
    explicit child→parent deletes, `delete from auth.users`, and a read-back
@@ -619,6 +697,45 @@ ever failed for a reason other than a genuine in-flight defect listed in §5.2.
    `git ls-files --eol` shows `i/lf w/lf` and `git diff --check` exits 0, so
    these are warnings from the local Git configuration, not line-ending churn
    introduced by this stage.
+11. **`supabase db advisors --local` ran and its result is vacuous, so it is
+    reported as "ran, nothing proven" rather than as a clean pass.** The command
+    printed "No issues found", but `pg_extension` in this stack lists only
+    `pg_stat_statements, pgcrypto, plpgsql, supabase_vault, uuid-ossp` — no
+    advisor extension is installed — and every one of the 21 catalog matches for
+    `%advisor%` is a `pg_catalog.pg_advisory_*` lock builtin. `-o json` emitted no
+    JSON at all. There is therefore no local advisor engine to disagree with the
+    "no issues" line, and no performance or security advice was actually
+    collected. `supabase db lint --local`, which does inspect the schema,
+    reported "No schema errors found" on the 21-migration database.
+12. **The Stage 5 deadline browser journey was re-dated to non-overlapping
+    business days (‑3, ‑2, ‑1) instead of stacking commitments on one day.**
+    Root cause first: the spec failed with `Expected: "Promise broken" Received:
+    "Partially kept"`, and the ledger was right — a ₹2,000 receipt dated the same
+    day as a second promise sits inside that promise's `[made_on, promised_date]`
+    window and is legitimately credited to it (§4.2). The SQL was not bent and no
+    allocation heuristic was invented; the test's expectation encoded the retired
+    recording-order rule, so the test was fixed. The brief for this pass asked
+    for exactly that ("fix the implementation **and** the tests").
+13. **Two live assertions and one browser assertion changed their expected
+    values, and each changed toward less credit, not more.** `money paid before
+    B was made cannot be credited to B` and `money dated before the promise was
+    made is not that promise's money` now demand `0` where the old rule returned
+    `500000`; the browser now expects `Promise broken` where the old rule said
+    `Partially kept`. No denial, no status and no assertion was loosened to
+    reach green, and Stage 3's isolation assertions were not touched.
+14. **D-S5-17 has no captured live RED assertion, and is not presented as if it
+    did.** Its evidence is structural and catalog-measured: before this pass
+    `promise_events` had no `metadata` column at all (the only provenance on a
+    correction was free text in `reason`), which is not something a behavioural
+    test can assert against a database that lacks the column. The pgTAP file for
+    the chronology contract did fail while being authored (`Failed test 19` in a
+    229-assertion run, then a `Bad plan`, then `function is(information_schema.
+    yes_or_no, text, unknown) does not exist` — all three are test-authoring
+    errors against `information_schema` domain types, fixed by `::text` casts,
+    not defects in the ledger). The green evidence for D-S5-17 is the executed
+    metadata read-back in `phase 11: a correction event names the in-window
+    receipts and nothing outside the window` plus its pgTAP column/constraint
+    pins.
 
 ## 6. KNOWN LIMITATIONS
 
@@ -630,7 +747,30 @@ ever failed for a reason other than a genuine in-flight defect listed in §5.2.
   specific promise row) means a customer who pays across two promises on one
   invoice cannot have those two promises graded against separate pots of money.
   §4.2's rule is honest about that and the alternative — inventing a per-promise
-  split — was rejected as an untestable heuristic.
+  split — was rejected as an untestable heuristic. The closure pass made the
+  consequence of that choice explicit rather than accidental: **when two
+  promises' `[made_on, promised_date]` windows overlap, one receipt inside both
+  is credited to both**, and both can reach `KEPT` on the same money. That is
+  why the browser journey dates its commitments on separate days, and why an
+  owner who wants two promises graded independently must make them date
+  independently. A payment-allocation engine remains out of scope for this
+  stage.
+* Every `promises.made_on` on a pre-closure row was backfilled as
+  `least((created_at at time zone 'Asia/Kolkata')::date, promised_date)`. That
+  is **compatibility metadata, not proof**: it is the day the row happened to be
+  typed, clipped so no legacy promise's window starts after its own deadline
+  (which would have silently turned old `KEPT` rows into `BROKEN`). New promises
+  carry a customer-stated date. Anyone reading reliability on a ledger that
+  mixes both must treat the pre-closure rows' windows as recorded dates, not as
+  asserted history.
+* Cancellation carries no client-supplied concurrency token (§5.7 item 2). Its
+  safety rests on the receivable row lock, the executed state refusals, and — as
+  of the closure pass — four measured two-request races against
+  `record_payment` and `cancel_promise`, each ending in exactly one recorded
+  outcome. What is *not* claimed is a client-visible conflict prompt: a losing
+  caller receives a refusal, not a merge dialog.
+* Reliability needs at least one outcome-bearing promise. The empty case reads
+  "Not enough history" instead of `0 of 0`.
 * The §4.4 correction only narrows `BROKEN → KEPT`/`PARTIALLY_KEPT` on later
   evidence. A promise that reached `CANCELLED` or `RENEGOTIATED` is never
   reopened, by design; money that arrives after a withdrawal is recorded and
@@ -654,14 +794,6 @@ ever failed for a reason other than a genuine in-flight defect listed in §5.2.
   responsibilities and a status-valued index would make every honest
   reconciliation a constraint-touching write. Recorded as a deliberate
   limitation, not as work that was claimed.
-* Cancellation carries no client-supplied concurrency token (§5.7 item 2). Its
-  safety rests on the receivable row lock and the executed state refusals,
-  which were tested singly (double cancel, cancel after payment, cancel after
-  settlement) but never as a two-client race against `record_payment`. If a
-  future stage makes cancellation reachable from two devices at once, that race
-  is the first thing to measure.
-* Reliability needs at least one outcome-bearing promise. The empty case reads
-  "Not enough history" instead of `0 of 0`.
 * pgTAP's `plan(37)` covers catalog facts plus a bounded executed sample; the
   exhaustive behaviour matrix lives in the live suite, which requires the local
   stack. `pnpm test:db` alone does not prove §4.1's table.
@@ -669,8 +801,29 @@ ever failed for a reason other than a genuine in-flight defect listed in §5.2.
   They pin lock order and outcome determinism; they are not a claim about
   multi-region or connection-pool-retry behaviour, which this project does not
   have.
+* `created_at` was removed from the money rule, not from the product: it is still
+  written, still frozen with the rest of a promise's history, and still the
+  honest answer to "when did I type this in". What it can no longer answer is
+  "when did the customer promise" and "was this receipt that promise's money" —
+  which is what D-S5-16 was.
+* No Supabase performance or security advisor engine exists in the local stack
+  (§5.7 item 11), so this stage has **no** advisor-derived evidence in either
+  direction. `db lint` is the only static schema check that actually ran with
+  something to inspect; a hosted-project advisor pass, if one is ever wanted, is
+  a remote action this stage was explicitly forbidden from taking.
 
 ## 7. FINAL CURRENT-ROADMAP STAGE 5 VERDICT
+
+> **SUPERSEDED by §8 — kept in place because it is the record of what was
+> believed at `ee4a589`, not evidence.** Three of this section's claims did not
+> survive the closure pass. (a) "attribution … removed with a measured
+> RED→GREEN" was **premature**: the rule that replaced Stage 4's was itself wrong
+> (D-S5-16, §4.2 as-retired), so Stage 5's attribution is only true as of §8.
+> (b) "advisors are clean" overstates a command that ran against a stack with no
+> advisor engine (§5.7 item 11). (c) "replays from zero through 20 migrations"
+> and the Stage 4 live count "(12 / 110 / 16 browser)" are the counts of the
+> previous tree; §8 carries the current ones (21 migrations, and a larger
+> browser set). Everything else in this section still reads true.
 
 **PASS.**
 
@@ -701,3 +854,154 @@ runs are clean with only the pre-existing PGRST303 infrastructure failure
 classified separately.
 
 **NEXT RECOMMENDED ROADMAP STAGE: Stage 6 — Production UX ONLY IF PASS.**
+
+## 8. CLOSURE PASS — PROMISE CHRONOLOGY + EVIDENCE (continuation of Stage 5, from `ee4a589`)
+
+This section is the record of the closure pass, which continued from the pushed
+Stage 5 HEAD `ee4a5894e8ca0938e1b5589c84ee6b0a88121ae9` instead of restarting the
+stage. Nothing in §1–§7 was rewritten except where a claim was demonstrably
+false (§4.2, §5.7 item 2's unmeasured gap, §7's superseded verdict), and no
+earlier RED evidence was erased.
+
+### 8.1 What was actually wrong, and what replaced it
+
+| id | Reproduced before fixing | Replacement |
+| --- | --- | --- |
+| D-S5-16 | Attribution keyed on `payment.created_at > promise.created_at`, and `promises` had **no** column for the day the commitment was made. Two live tests failed on the 20-migration database with `AssertionError: money paid before B was made cannot be credited to B: expected 500000 to be +0` and `money dated before the promise was made is not that promise's money: expected 500000 to be +0`, printed as `EVIDENCE D-S5-16 cross: 1:KEPT:credit=500000 2:KEPT:credit=500000` and `EVIDENCE D-S5-16 yesterday: promise made today KEPT credit=500000 paid_on=2026-09-25` (`Tests 2 failed \| 48 skipped (50)`). | `promises.made_on date not null` + CHECK `made_on <= promised_date`, an explicit `p_made_on` parameter on a 7-argument `create_promise`, and `promise_settled_amount` / every reconciliation branch reading `payment.paid_on between promise.made_on and promise.promised_date`. `created_at` is used nowhere for attribution. |
+| D-S5-17 | `promise_events` had no column that could name the evidence; a correction's entire provenance was one free-text `reason`. (Structural evidence — see §5.7 item 14, which is explicit that no live RED assertion exists for this id.) | `promise_events.metadata jsonb` (CHECK `jsonb_typeof = 'object'`) written only by the correction path as `{reason_type: 'historical_payment_evidence', payment_ids: […], payments: [{id, paid_on}, …]}`, frozen by the same history guard that freezes status, and read back by a live test that asserts the named ids are exactly the in-window receipts and excludes the out-of-window one. |
+| D-S5-18 | This file's own header: `Status: **IN PROGRESS**` and `ENDING SHA: _(filled at Phase 46)_`, pointing at a phase number no brief contains. | Header rewritten with both starting SHAs (stage base and this pass), a status line, and an honest ENDING-SHA treatment (§8.5). |
+
+Two further defects the closure pass found while it was in the file, and closed:
+
+* `cancel_receivable` / `cancel_promise` were never raced against
+  `record_payment` (§5.7 item 2's admitted gap). Four live races now exist and
+  all end in exactly one recorded outcome: fired simultaneously (one lands, the
+  other is refused), money-first, cancellation-first, and promise-withdrawal
+  against a payment.
+* Tests that had pinned the retired recording-order rule. Two live assertions and
+  one browser journey expectation were corrected (§5.7 items 12–13). The
+  browser's deadline story now dates its three commitments on days ‑3, ‑2 and
+  ‑1, because overlapping windows legitimately double-credit one receipt and the
+  story is about dates, not about allocation.
+
+### 8.2 Gate results on the final tree
+
+| Gate | Measured |
+| --- | --- |
+| Zero replay `supabase stop` → `start` → `pnpm db:reset:local` | 21 × `Applying migration`, zero error lines — full detail in §8.6 |
+| Migration count on the executed database | **21** files in `supabase/migrations/`, last one `20260815100000_current_stage5_promise_chronology.sql`; **0 historical migrations modified** |
+| `pnpm test:db` | `Files=5, Tests=229 … Result: PASS` — up from `Files=3, Tests=143` at the §1 baseline; the new file is `supabase/tests/stage5_02_promise_chronology.sql` |
+| Stage 5 live (`tests/stage5-local-lifecycle.test.ts`) | **69 passed** (1 file, 48.12 s) — 50 before this pass |
+| Stage 2 / Stage 3 / Stage 4 live | **12** / **110** / **21** passed (Stage 4 is 2 files) — Stage 4 went 16 → 21 as its fixtures followed the new `create_promise` signature |
+| `pnpm test` (full), run 1 | `17 passed \| 1 skipped (18 files)`, **352 passed \| 1 skipped (353)**, 49.17 s |
+| `pnpm test` (full), run 2, tree unchanged | same counts, 51.26 s — **two consecutive clean full-suite runs with no change between them** |
+| `pnpm test` (full), re-run after the §8.6 replay | run 1 `338 passed \| 15 skipped (353)` with one `PGRST303` bootstrap failure (§5.6 run I); run 2 on the unchanged tree **`352 passed \| 1 skipped (353)`**, exit 0. The two clean runs above were measured before the replay; after it the suite is one-failed-then-clean, and the failure is the token-clock class, not a lifecycle assertion. |
+| Stage 5 browser | **14 passed** (2.3 m) |
+| Browser battery Stage 2 / 3 / 4 / 4.1 / 5 | **30 passed, 2 skipped, 0 failed** (2.9 m); the 2 skips are Stage 4.1's fixture-gated spec |
+| Generated types | `pnpm db:types` twice → identical `sha1 2bbc574a55156be08d1649a2f74fce6c1643e362`, and the file differs from HEAD only by the new `made_on` / `metadata` / 7-arg `create_promise` surface |
+| `pnpm install --frozen-lockfile` | clean, lockfile untouched |
+| `pnpm lint` / `pnpm check` | clean, `--max-warnings=0` |
+| `pnpm build` | built (5.01 s, 4.48 s) |
+| `pnpm audit --prod --audit-level=high` | `No known vulnerabilities found` |
+| `supabase db lint --local` | `No schema errors found` |
+| `supabase db advisors --local` | **ran, result vacuous** — no advisor extension installed; see §5.7 item 11 |
+| Secret / artifact audit | only `.env.example` is tracked; `.env.local`, `dist/`, `node_modules/`, `supabase/.branches/`, `supabase/.temp/`, `test-results/` are ignored; no secret patterns in the diff; the two new files are clean |
+
+Measurement order, so no row reads as stronger than it is: the browser rows and
+the first two full-suite rows were taken on the pre-replay database, which was
+built from the same 21 migrations and the same tree (only this file changed
+afterwards); §8.6 re-measured types, pgTAP, the four live families and the full
+suite on a from-zero database.
+
+### 8.3 RPC and security posture delta
+
+`create_promise` went from six arguments to seven (`p_made_on date` added). It
+keeps `SECURITY DEFINER`, `SET search_path = public, auth, pg_temp` on the
+browser-facing routines and `search_path = ''` on the internals, and the
+`authenticated`/`anon` EXECUTE grants are unchanged in kind: the browser can call
+the same lifecycle surface it could before, and `reconcile_promise_outcome`,
+`settle_owner_promises`, `apply_promise_outcome` and
+`promise_settled_amount` remain ungranted and unreachable from PostgREST. pgTAP
+pins the signatures, the definer/transform-flags shape and the absence of
+grants rather than trusting the migration text, so a silent widening of any of
+these fails `pnpm test:db`. Stage 3 isolation was not touched and still passes
+(5 browser journeys, 110 live assertions).
+
+### 8.4 What this pass deliberately did not do
+
+No Stage 6 work, no new product feature, no hosted Supabase project, no
+`supabase link`, no `db push`, no `--linked`, no deployment, no payment
+activation, no PR created, no merge, no change to `main`, no edit to any
+historical migration, no `service_role` in any browser test, no weakened
+denial, no PGRST303 masking (no retry, sleep, leeway or suppression), no amend
+of `ee4a589`, no force-push.
+
+### 8.5 On the ENDING SHA
+
+The closing commit is one forward commit on top of `ee4a589` containing the 16
+paths this pass touched. A commit cannot record its own hash, and Stage 5
+history was not rewritten to embed one, so the ending SHA is reported from the
+push output in the final block and is the value of `git rev-parse HEAD` on
+`current-stage-5-lifecycle-correctness` at delivery.
+
+### 8.6 Zero replay, measured for this section
+
+`pnpm supabase:stop` → `pnpm supabase:start` → `pnpm db:reset:local` on the final
+tree printed `Applying migration` exactly **21** times, the last one
+`20260815100000_current_stage5_promise_chronology.sql`, with **no** error or
+failure line in the reset log. Against that freshly built database:
+
+* `pnpm db:types` produced `sha1 2bbc574a55156be08d1649a2f74fce6c1643e362` —
+  identical to the value recorded in §8.2, which was taken before the replay, so
+  the generated types are reproducible across a from-zero build and not just
+  within one container lifetime;
+* `pnpm test:db` re-ran as `Files=5, Tests=229 … Result: PASS`;
+* each Stage-family live suite re-ran individually green: **12** (Stage 2),
+  **110** (Stage 3), **14** (`tests/stage4-local-edit-workflows.test.ts`; Stage
+  4's second live file, `stage4-local-repository-edit.test.ts`, carries the
+  other 7 of the 21 in §8.2) and **69** (Stage 5).
+
+Re-running the four live files *together* in one `vitest run` immediately
+afterwards failed with `2 failed | 93 passed | 110 skipped (205)` — and the two
+failures were the documented infrastructure class, verbatim:
+`AssertionError: expected { code: 'PGRST303', …(3) } to be null` /
+`"message": "JWT issued at future"` at `tests/stage2-local-foundation.test.ts:52`
+with `:161` downstream of it, and `Error: profile row missing for alpha: JWT
+issued at future` aborting Stage 3's bootstrap (which is why its 110 tests
+report as skipped rather than failed). Stage 4's and Stage 5's suites — the ones
+this pass exists for — passed in that same run, 14 and 69. This is §5.6's
+recurring local-VM token-clock skew, newly provoked by the container restart the
+replay required, and it is reported rather than re-run away: §8.7 records the
+full-suite re-runs performed after it.
+
+### 8.7 VERDICT — CURRENT ROADMAP STAGE 5, AFTER THE CLOSURE PASS
+
+**PASS, with the caveats below stated as part of the verdict rather than after
+it.** Every defect §3 lists — D-S5-1 … D-S5-15 from the original pass, and
+D-S5-16/17/18 from this one — is closed against the executed 21-migration
+database, with a measured before/after where a behavioural reproduction was
+possible (D-S5-16) and a catalog/structural proof where it was not (D-S5-17).
+Money is now attributed by what the customer said with dates — the receipt's
+`paid_on` against the commitment's own `[made_on, promised_date]` interval — and
+never by the accident of when a row was typed; a correction carries the ids of
+the receipts that caused it; and both are pinned at the database, in the live
+suite, in the domain layer and in the browser.
+
+This is a **stronger** claim than §7's, in one respect and a weaker claim in
+another, and both directions are disclosed: stronger because §7's "attribution"
+bullet was resting on a rule this pass proved false; weaker because §7 said
+"advisors are clean" on the strength of a command that had no engine behind it
+(§5.7 item 11), and nothing in this pass gave that claim an engine.
+
+Caveats that travel with the PASS, all of them in §6 or §5.7: overlapping
+promise windows double-credit one receipt (no allocation engine, by design);
+legacy `made_on` values are compatibility metadata, not asserted history;
+`supabase db advisors` is vacuous locally; the local Docker VM's token-clock skew
+is **not** cured — it rejected freshly minted tokens four times across the stage
+(§5.6 runs A, F, H, I), twice in the executions taken straight after the §8.6
+replay, and in every one of those runs the ledger never saw the request, no row
+moved, and nothing was retried, slept, leewayed or masked to get past it; and one
+real UI defect (sonner's toast stack covering the header's primary action) was
+found and deliberately left for Stage 6.
+
+**NEXT RECOMMENDED ROADMAP STAGE: Stage 6 — Production UX. Not started.**

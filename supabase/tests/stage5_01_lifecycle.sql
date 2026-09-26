@@ -20,7 +20,7 @@
 set search_path = public, extensions, tap, core;
 create extension if not exists pgtap with schema extensions;
 
-select plan(37);
+select plan(38);
 
 -- ---------------------------------------------------------------------------
 -- A. The lifecycle's routines exist, and only the browser-facing ones are
@@ -32,8 +32,10 @@ select has_function('public', 'cancel_promise', array['uuid', 'text']::name[],
     'cancel_promise exists: withdrawing a commitment is a named, auditable act');
 select has_function('public', 'record_payment', array['uuid', 'bigint', 'date', 'text', 'text', 'uuid', 'text']::name[],
     'record_payment takes a request id — the sixth parameter, ahead of the optional note');
-select has_function('public', 'create_promise', array['uuid', 'bigint', 'date', 'text', 'text', 'uuid']::name[],
-    'create_promise takes a request id');
+-- create_promise gained p_made_on between the amount and the promised date; the
+-- chronology file stage5_02_promise_chronology.sql pins what that date is for.
+select has_function('public', 'create_promise', array['uuid', 'bigint', 'date', 'date', 'text', 'text', 'uuid']::name[],
+    'create_promise takes both business dates: the day the promise was made and the day it is due');
 
 -- The request id has NO default on purpose: a money write that cannot identify
 -- itself is refused rather than accepted as non-idempotent. One overload only,
@@ -42,6 +44,11 @@ select is((select count(*) from pg_proc p join pg_namespace n on n.oid = p.prona
            where n.nspname = 'public' and p.proname = 'record_payment'
              and p.pronargs = 7 and p.pronargdefaults = 1), 1::bigint,
           'exactly one record_payment exists, taking seven parameters of which only the note is optional');
+
+select is((select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+           where n.nspname = 'public' and p.proname = 'create_promise'
+             and p.pronargs = 7 and p.pronargdefaults = 0), 1::bigint,
+          'exactly one create_promise exists, taking seven parameters none of which is optional');
 
 select ok(has_function_privilege('authenticated', 'public.cancel_receivable(uuid, text)', 'EXECUTE')
           and has_function_privilege('authenticated', 'public.cancel_promise(uuid, text)', 'EXECUTE'),

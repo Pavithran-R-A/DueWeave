@@ -42,6 +42,16 @@ describe("repository projection contracts", () => {
     expect(missing, `${repository} must select ${missing.join(", ")} for ${adapter} to work`).toEqual([]);
   });
 
+  // Attribution is decided by the promise's own window, so both of its business
+  // dates have to survive the trip into the client. A projection that quietly
+  // dropped made_on would leave the form showing a promise whose origin the
+  // ledger never saw, which is the ambiguity this stage removed.
+  it("keeps both of a promise's business dates in the projection its list reads", () => {
+    const selected = columnsSelectedBy("client/src/data/supabase-promise-repository.ts");
+    expect([...selected]).toEqual(expect.arrayContaining(["made_on", "promised_date", "created_at"]));
+    expect([...columnsReadBy("toPromise")]).toContain("made_on");
+  });
+
   it("carries a snooze date from the activity row into the queue rule", () => {
     const snoozed = toActivity({ id: "a1", client_id: "c1", receivable_id: "r1", type: "SNOOZED", occurred_at: "2026-08-14T00:00:00Z", note: "Follow-up snoozed", metadata: { snoozed_until: "2026-08-20", surface: "today" } });
     expect(snoozed.snoozedUntil).toBe("2026-08-20");

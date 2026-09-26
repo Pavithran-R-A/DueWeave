@@ -57,6 +57,7 @@ export function EditReceivableSheet({ receivable, client, busy, onClose, onSubmi
 
 export interface PromiseSubmitInput {
   amountPaise: number;
+  madeOn: string;
   promisedDate: string;
   source: PromiseSource;
   note: string;
@@ -64,13 +65,33 @@ export interface PromiseSubmitInput {
 }
 
 export function AddPromiseSheet({ receivable, client, busy, onClose, onSubmit }: { receivable: Receivable; client?: Client; busy: boolean; onClose: () => void; onSubmit: (input: PromiseSubmitInput) => void }) {
-  const [form, setForm] = useState({ amount: String(getOutstanding(receivable) / 100), promisedDate: todayInIndia(), source: "WhatsApp" as PromiseSource, note: "" });
+  const today = todayInIndia();
+  const [form, setForm] = useState({ amount: String(getOutstanding(receivable) / 100), madeOn: today, promisedDate: today, source: "WhatsApp" as PromiseSource, note: "" });
   // One identity for this opened form: if the save is retried the database
   // replays the first result instead of writing a second promise.
   const [requestId] = useState(newRequestId);
   const outstanding = getOutstanding(receivable);
-  function submit(event: FormEvent) { event.preventDefault(); if (busy) return; const amountPaise = parseINRToPaise(form.amount); if (!amountPaise || amountPaise > outstanding || !form.promisedDate) { toast.error("Add a valid promise amount within the remaining balance and a date."); return; } onSubmit({ amountPaise, promisedDate: form.promisedDate, source: form.source, note: form.note, requestId }); }
-  return <Sheet title="Record a new promise" eyebrow={client?.company} onClose={onClose} footer={<><button className="button-secondary" onClick={onClose}>Cancel</button><button form="promise-form" className="button-primary" disabled={busy}>Keep this promise <Check size={16} /></button></>}><form id="promise-form" className="form-stack" onSubmit={submit}><div className="context-band"><div><span>Still outside</span><strong>{formatINR(outstanding)}</strong></div><FileText size={18} /></div><p className="sheet-intro">A new promise adds to the story. It never overwrites what happened before.</p><div className="form-grid form-grid--two"><Field label="Promised amount"><div className="input-prefix"><span>₹</span><input className={inputClass} inputMode="decimal" value={form.amount} onChange={(event) => setForm({ ...form, amount: event.target.value })} required /></div></Field><Field label="Promised date"><input className={inputClass} type="date" value={form.promisedDate} onChange={(event) => setForm({ ...form, promisedDate: event.target.value })} required /></Field></div><Field label="Source"><select className={inputClass} value={form.source} onChange={(event) => setForm({ ...form, source: event.target.value as PromiseSource })}>{["WhatsApp", "Call", "Email", "Meeting", "Other"].map((source) => <option key={source} value={source}>{source}</option>)}</select></Field><Field label="Note" hint="Optional"><textarea className={`${inputClass} textarea`} value={form.note} onChange={(event) => setForm({ ...form, note: event.target.value })} placeholder="What did they say?" rows={3} /></Field></form></Sheet>;
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    if (busy) return;
+    const amountPaise = parseINRToPaise(form.amount);
+    if (!amountPaise || amountPaise > outstanding || !form.promisedDate || !form.madeOn) {
+      toast.error("Add a valid promise amount within the remaining balance and both dates.");
+      return;
+    }
+    // The two dates are the customer's own chronology, so the form asks for both
+    // and never derives one from the other.
+    if (form.promisedDate < form.madeOn) {
+      toast.error("Promise date cannot be earlier than when the promise was made.");
+      return;
+    }
+    if (form.madeOn > today) {
+      toast.error("A promise cannot be dated as made in the future.");
+      return;
+    }
+    onSubmit({ amountPaise, madeOn: form.madeOn, promisedDate: form.promisedDate, source: form.source, note: form.note, requestId });
+  }
+  return <Sheet title="Record a new promise" eyebrow={client?.company} onClose={onClose} footer={<><button className="button-secondary" onClick={onClose}>Cancel</button><button form="promise-form" className="button-primary" disabled={busy}>Keep this promise <Check size={16} /></button></>}><form id="promise-form" className="form-stack" onSubmit={submit}><div className="context-band"><div><span>Still outside</span><strong>{formatINR(outstanding)}</strong></div><FileText size={18} /></div><p className="sheet-intro">A new promise adds to the story. It never overwrites what happened before.</p><Field label="Promised amount"><div className="input-prefix"><span>₹</span><input className={inputClass} inputMode="decimal" value={form.amount} onChange={(event) => setForm({ ...form, amount: event.target.value })} required /></div></Field><div className="form-grid form-grid--two"><Field label="Promise made on" hint="The day the customer actually committed. Change it only when entering an older promise."><input className={inputClass} type="date" max={today} value={form.madeOn} onChange={(event) => setForm({ ...form, madeOn: event.target.value })} required /></Field><Field label="Promised date"><input className={inputClass} type="date" min={form.madeOn} value={form.promisedDate} onChange={(event) => setForm({ ...form, promisedDate: event.target.value })} required /></Field></div><Field label="Source"><select className={inputClass} value={form.source} onChange={(event) => setForm({ ...form, source: event.target.value as PromiseSource })}>{["WhatsApp", "Call", "Email", "Meeting", "Other"].map((source) => <option key={source} value={source}>{source}</option>)}</select></Field><Field label="Note" hint="Optional"><textarea className={`${inputClass} textarea`} value={form.note} onChange={(event) => setForm({ ...form, note: event.target.value })} placeholder="What did they say?" rows={3} /></Field></form></Sheet>;
 }
 
 export interface PaymentSubmitInput {

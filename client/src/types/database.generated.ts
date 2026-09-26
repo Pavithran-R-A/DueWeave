@@ -412,6 +412,7 @@ export type Database = {
           created_at: string
           from_status: string | null
           id: string
+          metadata: Json | null
           occurred_at: string
           owner_id: string
           promise_id: string
@@ -424,6 +425,7 @@ export type Database = {
           created_at?: string
           from_status?: string | null
           id?: string
+          metadata?: Json | null
           occurred_at?: string
           owner_id: string
           promise_id: string
@@ -436,6 +438,7 @@ export type Database = {
           created_at?: string
           from_status?: string | null
           id?: string
+          metadata?: Json | null
           occurred_at?: string
           owner_id?: string
           promise_id?: string
@@ -471,6 +474,7 @@ export type Database = {
         Row: {
           created_at: string
           id: string
+          made_on: string
           note: string | null
           owner_id: string
           promised_amount_paise: number
@@ -486,6 +490,7 @@ export type Database = {
         Insert: {
           created_at?: string
           id?: string
+          made_on: string
           note?: string | null
           owner_id: string
           promised_amount_paise: number
@@ -501,6 +506,7 @@ export type Database = {
         Update: {
           created_at?: string
           id?: string
+          made_on?: string
           note?: string | null
           owner_id?: string
           promised_amount_paise?: number
@@ -738,6 +744,7 @@ export type Database = {
         Returns: {
           created_at: string
           id: string
+          made_on: string
           note: string | null
           owner_id: string
           promised_amount_paise: number
@@ -869,6 +876,7 @@ export type Database = {
       }
       create_promise: {
         Args: {
+          p_made_on: string
           p_note: string
           p_promised_amount_paise: number
           p_promised_date: string
@@ -879,6 +887,7 @@ export type Database = {
         Returns: {
           created_at: string
           id: string
+          made_on: string
           note: string | null
           owner_id: string
           promised_amount_paise: number

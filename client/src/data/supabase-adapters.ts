@@ -46,7 +46,7 @@ export function toReceivable(row: Row): Receivable {
 
 export function toPromise(row: Row): PromiseRecord {
   const source = string(row.source).toUpperCase();
-  return { id: string(row.id), receivableId: string(row.receivable_id), sequenceNo: Number(row.sequence_no) || 1, promisedAmountPaise: paise(row.promised_amount_paise), promisedDate: string(row.promised_date), source: promiseSourceByDatabaseValue[source] ?? "Other", note: optionalString(row.note), status: string(row.status) as PromiseRecord["status"], createdAt: string(row.created_at), resolvedAt: optionalString(row.resolved_at) };
+  return { id: string(row.id), receivableId: string(row.receivable_id), sequenceNo: Number(row.sequence_no) || 1, promisedAmountPaise: paise(row.promised_amount_paise), madeOn: string(row.made_on), promisedDate: string(row.promised_date), source: promiseSourceByDatabaseValue[source] ?? "Other", note: optionalString(row.note), status: string(row.status) as PromiseRecord["status"], createdAt: string(row.created_at), resolvedAt: optionalString(row.resolved_at) };
 }
 
 export function toPayment(row: Row): Payment {
@@ -75,6 +75,13 @@ export function userFacingDataError(message?: string, code?: string) {
   // mismatch here means two genuinely different writes were attempted.
   if (normalized.includes("already recorded a different")) return "That change does not match what was already saved. Reload to see the current state before trying again.";
   if (normalized.includes("larger than dueweave can record")) return "That amount is larger than DueWeave can record. Split it into smaller entries.";
+  // A promise's own dates come before the payment wording below: both can be
+  // refused for being dated wrongly, and the reader has to be sent to the field
+  // they actually filled in.
+  if (normalized.includes("date the customer made")) return "Choose the date the customer made the promise.";
+  if (normalized.includes("promise date cannot be earlier")) return "The promised date cannot be earlier than the day the promise was made. Choose a date on or after it.";
+  if (normalized.includes("made before the promise it replaces")) return "That date is earlier than the promise it replaces. Enter the new promise on or after the day the current one was made.";
+  if (normalized.includes("dated as made in the future")) return "A promise cannot be dated as made in the future. Choose the day the customer actually made it.";
   if (normalized.includes("dated in the future")) return "A payment cannot be dated in the future. Choose today or an earlier date.";
   if (normalized.includes("how the money arrived")) return "Choose how the money arrived.";
   if (normalized.includes("how the promise was made")) return "Choose how the promise was made.";

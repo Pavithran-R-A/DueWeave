@@ -127,7 +127,7 @@ function App() {
   async function addPromise(input: PromiseSubmitInput) {
     if (!selectedReceivable || !beginWrite()) return;
     try {
-      await promiseRepository.create({ receivableId: selectedReceivable.id, amountPaise: input.amountPaise, promisedDate: input.promisedDate, source: input.source, note: input.note, requestId: input.requestId });
+      await promiseRepository.create({ receivableId: selectedReceivable.id, amountPaise: input.amountPaise, madeOn: input.madeOn, promisedDate: input.promisedDate, source: input.source, note: input.note, requestId: input.requestId });
       await refresh(); setSheet(null); toast.success("Promise added", { description: "The previous commitment remains in the timeline." });
     } catch (error) {
       toast.error("Could not record promise", { description: error instanceof Error ? error.message : "Please try again." });

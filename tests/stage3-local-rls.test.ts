@@ -23,6 +23,13 @@ const runTag = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 
 const emailFor = (label: string) => `stage3-${label}-${runTag}@dueweave.local`;
 const newPassword = () => `Stage3!${Math.random().toString(36).slice(2, 12)}aA`;
 
+// create_promise takes the business day the customer actually made the
+// commitment, so every probe below states it: a probe that omitted it would be
+// refused for a missing parameter and booked as proof of isolation. The fixtures
+// promise dates from 2026-09-28 onward, so this origin is earlier than every one
+// of them and never later than today — the two rules the database checks.
+const originDate = "2026-09-01";
+
 function newClient(accessToken?: string): SupabaseClient {
   return createClient(url, anonKey, {
     global: accessToken
@@ -329,6 +336,7 @@ async function seedOwnedBusiness(account: Account, tag: string) {
     {
       p_receivable_id: account.receivableId,
       p_promised_amount_paise: 300000,
+      p_made_on: originDate,
       p_promised_date: "2026-10-05",
       p_source: "WHATSAPP",
       p_note: `${tag} promised part payment`,
@@ -867,6 +875,7 @@ describeLocalStack(
           receivable_id: ids.victimReceivable,
           sequence_no: 9,
           promised_amount_paise: 100,
+          made_on: originDate,
           promised_date: "2026-09-30",
           source: "CALL",
         }),
@@ -1010,6 +1019,7 @@ describeLocalStack(
             receivable_id: b.receivableId,
             sequence_no: 1,
             promised_amount_paise: 100,
+            made_on: originDate,
             promised_date: "2026-09-30",
             source: "CALL",
           })
@@ -1088,6 +1098,7 @@ describeLocalStack(
           await a.client.rpc("create_promise", {
             p_receivable_id: b.receivableId,
             p_promised_amount_paise: 100,
+            p_made_on: originDate,
             p_promised_date: "2026-09-28",
             p_source: "CALL",
             p_note: "attack",
@@ -1245,6 +1256,7 @@ describeLocalStack(
         await a.client.rpc("create_promise", {
           p_receivable_id: receivableId,
           p_promised_amount_paise: 250000,
+          p_made_on: originDate,
           p_promised_date: "2026-10-10",
           p_source: "CALL",
           p_note: "",
@@ -1796,6 +1808,7 @@ describeLocalStack(
         args: {
           p_receivable_id: "00000000-0000-0000-0000-000000000000",
           p_promised_amount_paise: 100,
+          p_made_on: originDate,
           p_promised_date: "2026-09-30",
           p_source: "CALL",
           p_note: "",

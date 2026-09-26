@@ -339,7 +339,11 @@ describeLocalStack("Stage 4 local edit workflows: owner edits, foreign accounts,
 
   it("leaves promise, payment and activity history byte-identical across a details edit", async () => {
     const a = state.a!;
-    const promise = await a.client.rpc("create_promise", { p_receivable_id: a.receivableId, p_promised_amount_paise: 1000000, p_promised_date: "2026-09-20", p_source: "WHATSAPP", p_note: "Stage 4 history probe.", p_request_id: crypto.randomUUID() });
+    // create_promise states the business day the commitment was made, so the
+    // origin is dated ahead of this probe's promised day and of the receipt
+    // below — the window is [2026-09-10 .. 2026-09-20] and the money on
+    // 2026-09-15 falls inside it, exactly as it did before the origin existed.
+    const promise = await a.client.rpc("create_promise", { p_receivable_id: a.receivableId, p_promised_amount_paise: 1000000, p_made_on: "2026-09-10", p_promised_date: "2026-09-20", p_source: "WHATSAPP", p_note: "Stage 4 history probe.", p_request_id: crypto.randomUUID() });
     expect(promise.error ?? null, "create_promise failed for the history probe").toBeNull();
     const payment = await a.client.rpc("record_payment", { p_receivable_id: a.receivableId, p_amount_paise: 500000, p_paid_on: "2026-09-15", p_method: "UPI", p_reference: `S4HIST${runTag.slice(0, 6).toUpperCase()}`, p_note: "Stage 4 history probe.", p_request_id: crypto.randomUUID() });
     expect(payment.error ?? null, "record_payment failed for the history probe").toBeNull();

@@ -128,8 +128,17 @@ async function seedInvoice(invoiceRef: string, amountDuePaise: number, dueDate: 
 // a retry instead of writing twice. Each line below is a genuinely distinct
 // request, so each gets a fresh id — the idempotency cases in Phase 16 hand the
 // same id over on purpose.
-const promiseFor = (receivableId: string, amountPaise: number, promisedDate: string, source: PromiseSource, note: string) =>
-  promises.create({ receivableId, amountPaise, promisedDate, source, note, requestId: crypto.randomUUID() });
+//
+// The promise-origin date a fixture states is a fact about the customer, so the
+// cases that need a particular window pass `madeOn` explicitly. The default is
+// the same conservative choice the legacy backfill makes: a promise whose day
+// has already gone by gets its origin on that day (the fixture is not claiming
+// to know an earlier one), and a promise still ahead of us was made today. This
+// is a test-fixture convention, not product behaviour — the product form makes
+// the user state the date.
+const defaultMadeOn = (promisedDate: string) => (promisedDate < todayInIndia() ? promisedDate : todayInIndia());
+const promiseFor = (receivableId: string, amountPaise: number, promisedDate: string, source: PromiseSource, note: string, madeOn = defaultMadeOn(promisedDate)) =>
+  promises.create({ receivableId, amountPaise, madeOn, promisedDate, source, note, requestId: crypto.randomUUID() });
 const paymentFor = (receivableId: string, amountPaise: number, paidOn: string, method: PaymentMethod, reference: string) =>
   payments.record({ receivableId, amountPaise, paidOn, method, reference, requestId: crypto.randomUUID() });
 
@@ -147,8 +156,8 @@ async function rpcRaw(functionName: string, args: Record<string, unknown>) {
 const paymentRpc = (receivableId: string, amountPaise: number | null, paidOn: string | null, method: string, reference: string, requestId: string | null, note = "") =>
   rpcRaw("record_payment", { p_receivable_id: receivableId, p_amount_paise: amountPaise, p_paid_on: paidOn, p_method: method, p_reference: reference, p_request_id: requestId, p_note: note });
 
-const promiseRpc = (receivableId: string, amountPaise: number | null, promisedDate: string | null, source: string, note: string, requestId: string | null) =>
-  rpcRaw("create_promise", { p_receivable_id: receivableId, p_promised_amount_paise: amountPaise, p_promised_date: promisedDate, p_source: source, p_note: note, p_request_id: requestId });
+const promiseRpc = (receivableId: string, amountPaise: number | null, promisedDate: string | null, source: string, note: string, requestId: string | null, madeOn: string | null = defaultMadeOn(promisedDate ?? todayInIndia())) =>
+  rpcRaw("create_promise", { p_receivable_id: receivableId, p_promised_amount_paise: amountPaise, p_made_on: madeOn, p_promised_date: promisedDate, p_source: source, p_note: note, p_request_id: requestId });
 
 async function currentOwnerId() {
   const { data } = await supabase.auth.getUser();
@@ -165,7 +174,7 @@ async function currentOwnerId() {
 async function promiseEvents(promiseId: string) {
   const { data, error } = await supabase
     .from("promise_events")
-    .select("id, from_status, to_status, reason, actor_type, created_at")
+    .select("id, from_status, to_status, reason, actor_type, created_at, metadata")
     .eq("promise_id", promiseId)
     .order("created_at", { ascending: true });
   expect(error ?? null, `an owner must be able to read their own promise history (${promiseId})`).toBeNull();
@@ -758,6 +767,7 @@ describeLocalStack("Stage 5 cancellation and renegotiation stay inside what is t
 
 describeLocalStack("Stage 5 replays a retried money write instead of writing it twice", () => {
   const today = todayInIndia();
+  const yesterday = addIndiaBusinessDays(today, -1);
   const inThreeDays = addIndiaBusinessDays(today, 3);
   const dueInMonth = addIndiaBusinessDays(today, 30);
 
@@ -813,6 +823,16 @@ describeLocalStack("Stage 5 replays a retried money write instead of writing it 
     expect(changed.code).toBe("40901");
     expect(changed.message).toContain("That request id already recorded a different promise");
     expect(await storedPromise(receivableId)).toHaveLength(1);
+
+    // The origin date is part of the payload a replay is compared against: a
+    // retry that quietly moves when the promise was made would move the window
+    // every payment is judged by, so it is a different act and is refused.
+    const movedOrigin = await promiseRpc(receivableId, rupees(3_000), inThreeDays, "WHATSAPP", "By Wednesday.", requestId, yesterday);
+    expect(movedOrigin.code, "a retry cannot re-date when the promise was made").toBe("40901");
+    expect(movedOrigin.message).toContain("That request id already recorded a different promise");
+    const stillOne = await storedPromise(receivableId);
+    expect(stillOne).toHaveLength(1);
+    expect((stillOne[0] as { madeOn: string }).madeOn, "and the stored origin must be the one first recorded").toBe(today);
   }, 90_000);
 
   it("carries the idempotency through the repository the browser actually uses (phase 16)", async () => {
@@ -825,7 +845,7 @@ describeLocalStack("Stage 5 replays a retried money write instead of writing it 
     expect(retry.id, "the double-click path the SPA takes must replay too").toBe(first.id);
     expect(await storedPayments(receivableId)).toHaveLength(1);
     const promiseId = crypto.randomUUID();
-    const promiseInput = { receivableId, amountPaise: rupees(1_000), promisedDate: inThreeDays, source: "Call" as const, note: "", requestId: promiseId };
+    const promiseInput = { receivableId, amountPaise: rupees(1_000), madeOn: today, promisedDate: inThreeDays, source: "Call" as const, note: "", requestId: promiseId };
     const promiseFirst = await new SupabasePromiseRepository().create(promiseInput);
     const promiseRetry = await new SupabasePromiseRepository().create(promiseInput);
     expect(promiseRetry.id).toBe(promiseFirst.id);
@@ -949,6 +969,7 @@ describeLocalStack("Stage 5 holds under two money writes at the same time", () =
       clientA.rpc("create_promise" as never, {
         p_receivable_id: receivableId,
         p_promised_amount_paise: amountPaise,
+        p_made_on: today,
         p_promised_date: inThreeDays,
         p_source: "CALL",
         p_note: "",
@@ -1040,6 +1061,7 @@ describeLocalStack("Stage 5 honours a promise to the last paisa", () => {
   const today = todayInIndia();
   const inThreeDays = addIndiaBusinessDays(today, 3);
   const yesterday = addIndiaBusinessDays(today, -1);
+  const twoDaysAgo = addIndiaBusinessDays(today, -2);
   const dueInMonth = addIndiaBusinessDays(today, 30);
 
   let receivableId = "";
@@ -1066,7 +1088,7 @@ describeLocalStack("Stage 5 honours a promise to the last paisa", () => {
     { label: "two payments that add up to it", promisedDate: inThreeDays, money: [rupees(2_500), rupees(2_500)], expected: "KEPT" },
     { label: "one paisa and then the rest", promisedDate: inThreeDays, money: [1, rupees(4_999) + 99], expected: "KEPT" },
     { label: "more money than was promised", promisedDate: inThreeDays, money: [rupees(6_000)], expected: "KEPT" },
-    { label: "one paisa short, once its day has gone by", promisedDate: yesterday, money: [rupees(4_999) + 99], expected: "PARTIALLY_KEPT" },
+    { label: "one paisa short, once its day has gone by", promisedDate: twoDaysAgo, money: [rupees(4_999) + 99], expected: "PARTIALLY_KEPT" },
     { label: "one paisa toward it, once its day has gone by", promisedDate: yesterday, money: [1], expected: "PARTIALLY_KEPT" },
   ];
 
@@ -1074,8 +1096,9 @@ describeLocalStack("Stage 5 honours a promise to the last paisa", () => {
     const promisedPaise = rupees(5_000);
     const input = `promised ₹${(promisedPaise / 100).toFixed(2)} by ${testCase.promisedDate}, received ${testCase.money.map((paise) => `${(paise / 100).toFixed(2)}p`).join(" + ")}`;
     const created = await promiseFor(receivableId, promisedPaise, testCase.promisedDate, "Call", "Settlement boundary matrix.");
-    // The money always arrives today; only the promise's own date moves, which
-    // is what decides whether the arrival counted as on time.
+    // The money arrives on the day the promise itself names, which is inside its
+    // window; only the promise's date moves, which is what decides whether the
+    // arrival counted as on time.
     const paidOn = testCase.promisedDate < today ? testCase.promisedDate : today;
     for (const amountPaise of testCase.money) {
       await paymentFor(receivableId, amountPaise, paidOn, "UPI", "");
@@ -1187,4 +1210,454 @@ describeLocalStack("Stage 5 shows the customer only what the ledger actually hol
     expect(forwards).toEqual(["S5T:24", "S5U:20"]);
     expect(getQueue(ledger, clock).map(asRow), "and the answer must not drift between runs at one instant").toEqual(forwards);
   });
+});
+
+// ---------------------------------------------------------------------------
+// D-S5-16. Attribution has to follow the customer's chronology, not the order
+// in which DueWeave happened to store rows. These cases are written against
+// what the ledger ought to be able to say, run against the SQL exactly as it
+// stands today, and the failure they record is the defect evidence.
+// ---------------------------------------------------------------------------
+
+/** What the database's own attribution helper says one promise was paid, read
+ *  as administrative inspection rather than through a repository: the assertion
+ *  must be about the rule, not about a client's interpretation of it. */
+function settledCreditOf(promiseId: string) {
+  expect(promiseId).toMatch(/^[0-9a-f-]{36}$/);
+  return Number(localAdmin(`select coalesce(public.promise_settled_amount(p), 0) from public.promises p where p.id = '${promiseId}';`));
+}
+
+describeLocalStack("Stage 5 attributes money by business chronology, not by recording order (D-S5-16)", () => {
+  const today = todayInIndia();
+  const dueInMonth = addIndiaBusinessDays(today, 30);
+
+  afterAll(async () => {
+    await supabase.auth.signOut();
+    const purge = (() => {
+      try {
+        return purgeLocalFixtures("stage5life-%@dueweave.local");
+      } catch (error) {
+        return `purge failed: ${String(error)}`;
+      }
+    })();
+    if (!/residue=0/.test(purge) || !/guards=4\/4/.test(purge)) console.warn(`Stage 5 chronology fixtures were not fully purged: ${purge}`);
+  }, 120_000);
+
+  it("D-S5-16: money that arrived before the newer promise was made gives that promise no credit", async () => {
+    await signInAs("chrono-cross");
+    const { receivableId } = await seedInvoice("S5C1", rupees(10_000), dueInMonth);
+
+    // Promise A names a day that has already gone by, so on its own facts it is
+    // broken.
+    const promiseADue = addIndiaBusinessDays(today, -10);
+    const a = await promiseFor(receivableId, rupees(5_000), promiseADue, "WhatsApp", "Promised ten days ago, nothing received.");
+    await promises.markDuePromisesBroken();
+    expect((await storedPromise(receivableId))[0].status, "the older promise must begin broken").toBe("BROKEN");
+
+    // Promise B is a new commitment made after it, for a day that has not come.
+    const b = await promiseFor(receivableId, rupees(5_000), addIndiaBusinessDays(today, 5), "WhatsApp", "Promises the same sum again, next week.");
+
+    // Only now does the owner enter the money that actually arrived on A's day.
+    await paymentFor(receivableId, rupees(5_000), promiseADue, "UPI", "S5C1-ON-AS-DAY");
+
+    const rows = await storedPromise(receivableId);
+    const storedA = rows.find((row) => row.id === a.id)!;
+    const storedB = rows.find((row) => row.id === b.id)!;
+
+    // A may be corrected: the money is dated inside A's own promise period.
+    expect(storedA.status, "evidence dated on A's promised day may correct A").toBe("KEPT");
+
+    // B may not. That money physically existed before B was made, so B has
+    // received nothing at all.
+    expect(settledCreditOf(b.id), "money paid before B was made cannot be credited to B").toBe(0);
+    expect(storedB.status, "a promise that has received nothing is still an open commitment").toBe("ACTIVE");
+    expect(rows.filter((row) => row.status === "KEPT"), "one payment must satisfy at most one promise").toHaveLength(1);
+  }, 60_000);
+
+  it("D-S5-16: a payment dated before today's promise cannot satisfy that promise", async () => {
+    await signInAs("chrono-yesterday");
+    const { receivableId } = await seedInvoice("S5C2", rupees(10_000), dueInMonth);
+    const b = await promiseFor(receivableId, rupees(5_000), addIndiaBusinessDays(today, 3), "WhatsApp", "Promised today, payable this week.");
+
+    await paymentFor(receivableId, rupees(5_000), addIndiaBusinessDays(today, -1), "UPI", "S5C2-YESTERDAY");
+
+    const [stored] = await storedPromise(receivableId);
+    expect(settledCreditOf(b.id), "money dated before the promise was made is not that promise's money").toBe(0);
+    expect(stored.status, "a promise nobody has paid stays open").toBe("ACTIVE");
+  }, 60_000);
+});
+
+// ---------------------------------------------------------------------------
+// Phases 9-15. With made_on stored, the attribution rule stops being a theory
+// about boundaries and becomes something a schedule can be checked against: two
+// promises in sequence, the evidence a correction has to carry, the shapes one
+// window can take, and the two moments where a cancellation and a receipt reach
+// the same invoice at once.
+// ---------------------------------------------------------------------------
+
+/** The provenance a correction event must carry, exactly as stored. */
+type CorrectionEvidence = { reason_type: string; payment_ids: string[]; payments: Array<{ id: string; paid_on: string }> };
+
+describeLocalStack("Stage 5 keeps two sequential promises in business order (phases 9-10)", () => {
+  const today = todayInIndia();
+  const dueInMonth = addIndiaBusinessDays(today, 30);
+  const inFiveDays = addIndiaBusinessDays(today, 5);
+  const inEightDays = addIndiaBusinessDays(today, 8);
+  // Promise A: made ten business days ago, for a day six business days ago.
+  const aMadeOn = addIndiaBusinessDays(today, -10);
+  const aDueOn = addIndiaBusinessDays(today, -6);
+  // Promise B: the same sum, promised again five business days ago for yesterday.
+  const bMadeOn = addIndiaBusinessDays(today, -5);
+  const bDueOn = addIndiaBusinessDays(today, -1);
+  // X is A's money, on the closing day of A's window. Y is B's, mid-window.
+  const xPaidOn = aDueOn;
+  const yPaidOn = addIndiaBusinessDays(bMadeOn, 1);
+
+  afterAll(async () => {
+    await supabase.auth.signOut();
+    const purge = (() => {
+      try {
+        return purgeLocalFixtures("stage5life-%@dueweave.local");
+      } catch (error) {
+        return `purge failed: ${String(error)}`;
+      }
+    })();
+    if (!/residue=0/.test(purge) || !/guards=4\/4/.test(purge)) console.warn(`Stage 5 sequence fixtures were not fully purged: ${purge}`);
+  }, 120_000);
+
+  it("phase 9: each window answers only to the money dated inside it, in any typing order", async () => {
+    await signInAs("seq-chronology");
+    const { receivableId } = await seedInvoice("S5S1", rupees(20_000), dueInMonth);
+    const a = await promiseFor(receivableId, rupees(5_000), aDueOn, "WhatsApp", "The first commitment, now overdue.", aMadeOn);
+    await promises.markDuePromisesBroken();
+    const b = await promiseFor(receivableId, rupees(5_000), bDueOn, "WhatsApp", "The same sum, promised again.", bMadeOn);
+
+    expect(a.madeOn, "the origin the form was given is the origin the ledger stores").toBe(aMadeOn);
+    expect(b.madeOn).toBe(bMadeOn);
+    // The premise, stated where it can fail: these windows must not overlap and
+    // each receipt must sit in exactly one of them, or the test proves nothing.
+    expect(xPaidOn < bMadeOn, "X predates B entirely").toBe(true);
+    expect(yPaidOn > bMadeOn && yPaidOn < bDueOn, "Y sits inside B").toBe(true);
+    expect(yPaidOn > aDueOn, "Y is after A's deadline").toBe(true);
+
+    // B's money is entered FIRST. Crediting by recording order is the defect
+    // being closed, so the later-dated receipt deliberately goes in first.
+    await paymentFor(receivableId, rupees(5_000), yPaidOn, "UPI", "S5S1-IN-B");
+    expect(settledCreditOf(b.id), "money dated inside B's own window is B's").toBe(rupees(5_000));
+    expect(settledCreditOf(a.id), "and is not also A's money").toBe(0);
+
+    await paymentFor(receivableId, rupees(5_000), xPaidOn, "UPI", "S5S1-IN-A");
+    expect(settledCreditOf(a.id), "money dated on A's promised day is A's, although it was typed after B's receipt").toBe(rupees(5_000));
+    expect(settledCreditOf(b.id), "and A's receipt does not move into B's window because it was entered later").toBe(rupees(5_000));
+
+    const rows = await storedPromise(receivableId);
+    expect(rows.map((row) => `${row.sequenceNo}:${row.status}`).join(" "), "each promise is graded against its own window").toBe("1:KEPT 2:KEPT");
+    const paidPaise = (await storedPayments(receivableId)).reduce((sum, row) => sum + row.amountPaise, 0);
+    expect(settledCreditOf(a.id) + settledCreditOf(b.id), "no rupee may be counted toward two promises").toBe(paidPaise);
+    expect((await storedReceivable(receivableId))!.outstandingPaise, "₹10,000 of a ₹20,000 invoice is still owed").toBe(rupees(10_000));
+  }, 90_000);
+
+  it("phase 10: refuses a replacement promise dated before the promise it replaces", async () => {
+    await signInAs("renegotiation-order");
+    const { receivableId } = await seedInvoice("S5S2", rupees(10_000), dueInMonth);
+    const a = await promiseFor(receivableId, rupees(4_000), inFiveDays, "Call", "An open commitment made today.");
+    expect(a.madeOn).toBe(today);
+
+    const tooEarly = await promiseRpc(receivableId, rupees(4_500), inEightDays, "WhatsApp", "Typed today, claiming to have been made last week.", crypto.randomUUID(), addIndiaBusinessDays(today, -1));
+    expect(tooEarly.message, "the refusal has to say why, in the ledger's own words").toContain("A new promise cannot be dated as made before the promise it replaces");
+    const untouched = await storedPromise(receivableId);
+    expect(untouched, "a refused write leaves no half-recorded promise").toHaveLength(1);
+    expect(untouched[0].status).toBe("ACTIVE");
+
+    const replacement = await promiseRpc(receivableId, rupees(4_500), inEightDays, "WhatsApp", "Renegotiated today, for next week.", crypto.randomUUID(), today);
+    expect(replacement.message).toBe("");
+    const rows = await storedPromise(receivableId);
+    expect(rows.map((row) => `${row.sequenceNo}:${row.status}`).join(" "), "a same-day replacement supersedes the open promise").toBe("1:RENEGOTIATED 2:ACTIVE");
+    const events = await promiseEvents(a.id);
+    expect(events.map((event) => event.to_status).join(" ")).toBe("ACTIVE RENEGOTIATED");
+    expect(events.filter((event) => event.from_status === "ACTIVE" && event.to_status === "RENEGOTIATED"), "one event records the supersession").toHaveLength(1);
+    expect(events.every((event) => event.metadata == null), "an ordinary transition is not a correction, so it cites no evidence").toBe(true);
+  }, 90_000);
+
+  it("phase 10: grades the open promise on its own facts before anything replaces it", async () => {
+    await signInAs("reconcile-first");
+    const { receivableId } = await seedInvoice("S5S3", rupees(10_000), dueInMonth);
+    const a = await promiseFor(receivableId, rupees(4_000), inFiveDays, "Call", "Honoured in full, then a new date was typed.");
+    await paymentFor(receivableId, rupees(4_000), today, "UPI", "S5S3-PAID");
+    expect((await storedPromise(receivableId))[0].status, "the money settled the promise before any renegotiation").toBe("KEPT");
+
+    await promiseFor(receivableId, rupees(2_000), inEightDays, "WhatsApp", "A further commitment beside a promise already kept.");
+    const rows = await storedPromise(receivableId);
+    expect(rows.map((row) => `${row.sequenceNo}:${row.status}`).join(" "), "a kept promise is never restyled as renegotiated").toBe("1:KEPT 2:ACTIVE");
+    expect((await promiseEvents(a.id)).some((event) => event.to_status === "RENEGOTIATED"), "and no event claims it was replaced").toBe(false);
+  }, 90_000);
+});
+
+describeLocalStack("Stage 5 says which payments a correction stands on (phases 11-12)", () => {
+  const today = todayInIndia();
+  const dueInMonth = addIndiaBusinessDays(today, 30);
+  const madeOn = addIndiaBusinessDays(today, -5);
+  const promisedDate = addIndiaBusinessDays(today, -2);
+  const afterDeadline = addIndiaBusinessDays(promisedDate, 1);
+
+  afterAll(async () => {
+    await supabase.auth.signOut();
+    const purge = (() => {
+      try {
+        return purgeLocalFixtures("stage5life-%@dueweave.local");
+      } catch (error) {
+        return `purge failed: ${String(error)}`;
+      }
+    })();
+    if (!/residue=0/.test(purge) || !/guards=4\/4/.test(purge)) console.warn(`Stage 5 provenance fixtures were not fully purged: ${purge}`);
+  }, 120_000);
+
+  it("phase 11: a correction event names the in-window receipts and nothing outside the window", async () => {
+    await signInAs("correction-provenance");
+    const { receivableId } = await seedInvoice("S5P1", rupees(10_000), dueInMonth);
+    const created = await promiseFor(receivableId, rupees(5_000), promisedDate, "WhatsApp", "Missed, then receipts surfaced days later.", madeOn);
+    await promises.markDuePromisesBroken();
+
+    // ₹2,000 dated after the promised day. Real money, but no evidence for this
+    // promise, so it must neither correct the record nor appear beside it.
+    const outside = await paymentRpc(receivableId, rupees(2_000), afterDeadline, "UPI", "S5P1-LATE", crypto.randomUUID());
+    expect(outside.message).toBe("");
+    const afterOutside = await promiseEvents(created.id);
+    expect(afterOutside.map((event) => event.to_status).join(" "), "late money does not touch a broken promise").toBe("ACTIVE BROKEN");
+    expect(afterOutside.every((event) => event.metadata == null), "a promise nothing corrected has nothing to cite").toBe(true);
+
+    // ₹3,000 dated on the promised day: that is evidence, and the event has to
+    // carry it durably.
+    const requestId = crypto.randomUUID();
+    const inside = await paymentRpc(receivableId, rupees(3_000), promisedDate, "UPI", "S5P1-ONTIME", requestId);
+    const insideId = String((inside.data as { id?: string }).id ?? "");
+    expect(insideId).toMatch(/^[0-9a-f-]{36}$/);
+    const outsideId = String((outside.data as { id?: string }).id ?? "");
+
+    const [promise] = await storedPromise(receivableId);
+    expect(promise.status, "part of the sum was dated in time").toBe("PARTIALLY_KEPT");
+    const events = await promiseEvents(created.id);
+    expect(events.map((event) => `${event.from_status ?? "∅"}->${event.to_status}`).join(" ")).toBe("∅->ACTIVE ACTIVE->BROKEN BROKEN->PARTIALLY_KEPT");
+    const evidence = events[2].metadata as unknown as CorrectionEvidence;
+    expect(evidence, "the correction states its kind and its exact evidence").toEqual({
+      reason_type: "historical_payment_evidence",
+      payment_ids: [insideId],
+      payments: [{ id: insideId, paid_on: promisedDate }],
+    });
+
+    // Cited ids must be real receipts on this same invoice, undated and
+    // un-moved, sitting inside the window they are cited for.
+    const receipts = await storedPayments(receivableId);
+    for (const cited of evidence.payments) {
+      const row = receipts.find((payment) => payment.id === cited.id);
+      expect(row, "provenance may not invent a payment").toBeTruthy();
+      expect(row!.receivableId, "and may not borrow one from another invoice").toBe(receivableId);
+      expect(row!.paidDate, "or re-date one").toBe(cited.paid_on);
+      expect(cited.paid_on >= madeOn && cited.paid_on <= promisedDate, "cited evidence must fall inside the window").toBe(true);
+    }
+    expect(evidence.payment_ids, "money dated outside the window is not evidence for it").not.toContain(outsideId);
+
+    // The retry a flaky connection makes: same request id, same facts. The ledger
+    // replays the act; it does not append a second correction.
+    const replay = await paymentRpc(receivableId, rupees(3_000), promisedDate, "UPI", "S5P1-ONTIME", requestId);
+    expect(String((replay.data as { id?: string }).id ?? ""), "the retry hands back the original receipt").toBe(insideId);
+    const afterReplay = await promiseEvents(created.id);
+    expect(afterReplay, "a retry must not append a duplicate correction event").toHaveLength(3);
+    expect(afterReplay[2].metadata, "and must not restate the evidence differently").toEqual(evidence);
+    expect(await storedPayments(receivableId), "still exactly two receipts").toHaveLength(2);
+    expect((await storedPromise(receivableId))[0].status).toBe("PARTIALLY_KEPT");
+  }, 90_000);
+
+  it("phase 12: the original BROKEN event survives every later correction, unwritable", async () => {
+    await signInAs("history-not-editable");
+    const { receivableId } = await seedInvoice("S5P2", rupees(10_000), dueInMonth);
+    const created = await promiseFor(receivableId, rupees(5_000), promisedDate, "Call", "A record that must not be editable.", madeOn);
+    await promises.markDuePromisesBroken();
+    const before = await promiseEvents(created.id);
+    const broken = before.find((event) => event.to_status === "BROKEN")!;
+    expect(broken, "the miss itself has to be on the record").toBeTruthy();
+
+    const edited = await supabase.from("promise_events").update({ reason: "Rewritten by hand" } as never).eq("id", broken.id);
+    expect(edited.error?.message ?? "", "an owner may read their history but not edit it").toMatch(/permission denied/);
+    const erased = await supabase.from("promise_events").delete().eq("id", broken.id);
+    expect(erased.error?.message ?? "", "and not delete it either").toMatch(/permission denied/);
+
+    await paymentFor(receivableId, rupees(5_000), promisedDate, "UPI", "S5P2-EVIDENCE");
+    const after = await promiseEvents(created.id);
+    expect(after.filter((event) => event.to_status === "BROKEN"), "the miss stays on the record after the correction").toHaveLength(1);
+    expect(after.find((event) => event.to_status === "BROKEN")!.reason, "with the words it was first written in").toBe(broken.reason);
+    expect(after.some((event) => event.from_status === "BROKEN" && event.to_status === "KEPT"), "the correction is its own appended event").toBe(true);
+    expect(after, "creation, the miss, the correction — appended, never replaced").toHaveLength(before.length + 1);
+    expect((await storedPromise(receivableId))[0].status).toBe("KEPT");
+  }, 90_000);
+});
+
+// Each case is the same ₹5,000 promise over the same window, and only the shape
+// and the date of the money changes. Every case gets its own account and its own
+// invoice: attribution is per receivable, so sharing an invoice would make each
+// verdict depend on the previous case's receipts instead of on its own window.
+describeLocalStack("Stage 5 decides every attribution case by the window, not the keyboard (phase 13)", () => {
+  const today = todayInIndia();
+  const dueInMonth = addIndiaBusinessDays(today, 30);
+  const windowOpen = addIndiaBusinessDays(today, -6);
+  const windowClose = addIndiaBusinessDays(today, -2);
+  const beforeWindow = addIndiaBusinessDays(windowOpen, -1);
+  const midWindow = addIndiaBusinessDays(windowOpen, 1);
+  const afterWindow = addIndiaBusinessDays(windowClose, 1);
+  const promisedPaise = rupees(5_000);
+
+  afterAll(async () => {
+    await supabase.auth.signOut();
+    const purge = (() => {
+      try {
+        return purgeLocalFixtures("stage5life-%@dueweave.local");
+      } catch (error) {
+        return `purge failed: ${String(error)}`;
+      }
+    })();
+    if (!/residue=0/.test(purge) || !/guards=4\/4/.test(purge)) console.warn(`Stage 5 attribution-matrix fixtures were not fully purged: ${purge}`);
+  }, 120_000);
+
+  const cases: Array<{ key: string; label: string; madeOn: string; promisedDate: string; money: Array<{ paise: number; paidOn: string }>; creditPaise: number; status: string }> = [
+    { key: "opening-day", label: "arrives on the very day the promise was made", madeOn: windowOpen, promisedDate: windowClose, money: [{ paise: promisedPaise, paidOn: windowOpen }], creditPaise: promisedPaise, status: "KEPT" },
+    { key: "before-window", label: "arrives the business day before the promise was made", madeOn: windowOpen, promisedDate: windowClose, money: [{ paise: promisedPaise, paidOn: beforeWindow }], creditPaise: 0, status: "BROKEN" },
+    { key: "mid-window", label: "arrives in the middle of the window", madeOn: windowOpen, promisedDate: windowClose, money: [{ paise: promisedPaise, paidOn: midWindow }], creditPaise: promisedPaise, status: "KEPT" },
+    { key: "closing-day", label: "arrives exactly on the promised day", madeOn: windowOpen, promisedDate: windowClose, money: [{ paise: promisedPaise, paidOn: windowClose }], creditPaise: promisedPaise, status: "KEPT" },
+    { key: "after-window", label: "arrives the business day after the promised day", madeOn: windowOpen, promisedDate: windowClose, money: [{ paise: promisedPaise, paidOn: afterWindow }], creditPaise: 0, status: "BROKEN" },
+    { key: "split-across-deadline", label: "is split between inside the window and past the deadline", madeOn: windowOpen, promisedDate: windowClose, money: [{ paise: rupees(2_000), paidOn: windowOpen }, { paise: rupees(3_000), paidOn: afterWindow }], creditPaise: rupees(2_000), status: "PARTIALLY_KEPT" },
+    { key: "split-both-edges", label: "is split across both edges of the window", madeOn: windowOpen, promisedDate: windowClose, money: [{ paise: rupees(2_000), paidOn: windowOpen }, { paise: rupees(3_000), paidOn: windowClose }], creditPaise: promisedPaise, status: "KEPT" },
+    { key: "one-paisa-inside", label: "contributes one paisa inside the window", madeOn: windowOpen, promisedDate: windowClose, money: [{ paise: 1, paidOn: midWindow }], creditPaise: 1, status: "PARTIALLY_KEPT" },
+    { key: "single-day-hit", label: "lands on a promise whose window is one single day", madeOn: windowClose, promisedDate: windowClose, money: [{ paise: promisedPaise, paidOn: windowClose }], creditPaise: promisedPaise, status: "KEPT" },
+    { key: "single-day-miss", label: "misses a promise whose window was one single day", madeOn: windowClose, promisedDate: windowClose, money: [{ paise: promisedPaise, paidOn: afterWindow }], creditPaise: 0, status: "BROKEN" },
+  ];
+
+  it.each(cases)("phase 13: $creditPaise paise of credit when the money $label", async (testCase) => {
+    expect(testCase.money.every((receipt) => receipt.paidOn <= today), "a fixture may not date money in the future").toBe(true);
+    await signInAs(`attr-${testCase.key}`);
+    const { receivableId } = await seedInvoice(`S5M-${testCase.key}`, rupees(10_000), dueInMonth);
+    const created = await promiseFor(receivableId, promisedPaise, testCase.promisedDate, "Call", "Attribution matrix.", testCase.madeOn);
+    for (const receipt of testCase.money) {
+      await paymentFor(receivableId, receipt.paise, receipt.paidOn, "UPI", `S5M-${testCase.key}`);
+    }
+    await promises.markDuePromisesBroken();
+    expect(settledCreditOf(created.id), `window [${testCase.madeOn} .. ${testCase.promisedDate}], receipts ${testCase.money.map((receipt) => `${receipt.paise}@${receipt.paidOn}`).join(", ")}`)
+      .toBe(testCase.creditPaise);
+    const [stored] = await storedPromise(receivableId);
+    expect(stored.status, "and the verdict the customer sees must match that credit").toBe(testCase.status);
+  }, 90_000);
+});
+
+describeLocalStack("Stage 5 settles a closing hand and arriving money at once (phases 14-15)", () => {
+  const today = todayInIndia();
+  const inThreeDays = addIndiaBusinessDays(today, 3);
+  const dueInMonth = addIndiaBusinessDays(today, 30);
+
+  afterAll(async () => {
+    await supabase.auth.signOut();
+    const purge = (() => {
+      try {
+        return purgeLocalFixtures("stage5life-%@dueweave.local");
+      } catch (error) {
+        return `purge failed: ${String(error)}`;
+      }
+    })();
+    if (!/residue=0/.test(purge) || !/guards=4\/4/.test(purge)) console.warn(`Stage 5 race fixtures were not fully purged: ${purge}`);
+  }, 120_000);
+
+  type SecondClient = ReturnType<typeof clientWithSession>;
+  const errorMessage = (result: { error: unknown }) => String((result.error as { message?: string } | null)?.message ?? "");
+  const cancelInvoice = (client: SecondClient, receivableId: string, reason: string) =>
+    client.rpc("cancel_receivable" as never, { p_receivable_id: receivableId, p_reason: reason } as never);
+  const payInvoice = (client: SecondClient, receivableId: string, amountPaise: number) =>
+    client.rpc("record_payment" as never, {
+      p_receivable_id: receivableId,
+      p_amount_paise: amountPaise,
+      p_paid_on: today,
+      p_method: "UPI",
+      p_reference: "",
+      p_request_id: crypto.randomUUID(),
+      p_note: "",
+    } as never);
+
+  it("phase 14: a cancellation and a payment fire together and only one of them lands", async () => {
+    await signInAs("race-cancel-vs-payment");
+    const { receivableId } = await seedInvoice("S5R5", rupees(10_000), dueInMonth);
+    const token = await accessTokenOfCurrentUser();
+    // Two independent authenticated clients, one session each its own, both
+    // writing through PostgREST rather than one shared connection pool.
+    const [cancelled, paid] = await Promise.all([
+      cancelInvoice(clientWithSession(token), receivableId, "Scope never confirmed."),
+      payInvoice(clientWithSession(token), receivableId, rupees(3_000)),
+    ]);
+    for (const result of [cancelled, paid]) {
+      expect(errorMessage(result), "a lost race is answered by the ledger's rules, never by the lock manager").not.toMatch(/deadlock|timeout|canceling statement|retry/i);
+    }
+    expect([!cancelled.error, !paid.error].filter(Boolean), "exactly one of the two writes may survive").toHaveLength(1);
+
+    const stored = await storedReceivable(receivableId);
+    const receipts = await storedPayments(receivableId);
+    if (stored!.status === "CANCELLED") {
+      expect(receipts, "a cancelled invoice must not end up holding money").toHaveLength(0);
+      expect(stored!.outstandingPaise).toBe(0);
+    } else {
+      expect(receipts, "the surviving receipt is recorded once").toHaveLength(1);
+      expect(cancelled.error?.message ?? "", "and the cancellation was refused because money exists").toMatch(/cannot be cancelled/);
+      expect(stored!.outstandingPaise, "the balance stays derived, never negative").toBe(rupees(7_000));
+    }
+    expect(Number(localAdmin(ledgerAuditSql(await currentOwnerId()))), "the reconciliation audit must still be clean").toBe(0);
+  }, 120_000);
+
+  it("phase 14: money that arrives first closes the door on the cancellation", async () => {
+    await signInAs("race-money-first");
+    const { receivableId } = await seedInvoice("S5R6", rupees(10_000), dueInMonth);
+    await paymentFor(receivableId, rupees(3_000), today, "UPI", "S5R6-FIRST");
+    const refused = await rpcRaw("cancel_receivable", { p_receivable_id: receivableId, p_reason: "The money was already in." });
+    expect(refused.message).toMatch(/cannot be cancelled/);
+    const stored = await storedReceivable(receivableId);
+    expect(stored!.status).toBe("PARTIALLY_PAID");
+    expect(stored!.outstandingPaise).toBe(rupees(7_000));
+    expect(await storedPayments(receivableId)).toHaveLength(1);
+  }, 90_000);
+
+  it("phase 14: a cancellation that lands first refuses the money rather than swallowing it", async () => {
+    await signInAs("race-cancel-first");
+    const { receivableId } = await seedInvoice("S5R7", rupees(10_000), dueInMonth);
+    const closed = await rpcRaw("cancel_receivable", { p_receivable_id: receivableId, p_reason: "Quotation never became work." });
+    expect(closed.message).toBe("");
+    const refused = await paymentRpc(receivableId, rupees(3_000), today, "UPI", "S5R7-LATE", crypto.randomUUID());
+    expect(refused.message).toMatch(/cancelled receivable does not accept payments/);
+    expect(await storedPayments(receivableId), "no payment may sit behind a cancelled invoice").toHaveLength(0);
+    const stored = await storedReceivable(receivableId);
+    expect(stored!.status).toBe("CANCELLED");
+    expect(stored!.outstandingPaise).toBe(0);
+  }, 90_000);
+
+  it("phase 15: withdrawing a promise and funding it at the same moment ends in one recorded outcome", async () => {
+    await signInAs("race-cancel-promise-vs-payment");
+    const { receivableId } = await seedInvoice("S5R8", rupees(10_000), dueInMonth);
+    const created = await promiseFor(receivableId, rupees(5_000), inThreeDays, "Call", "Withdrawn, or paid — whichever the ledger sees first.");
+    const token = await accessTokenOfCurrentUser();
+    const [withdrawn, paid] = await Promise.all([
+      clientWithSession(token).rpc("cancel_promise" as never, { p_promise_id: created.id, p_reason: "Customer withdrew the commitment." } as never),
+      payInvoice(clientWithSession(token), receivableId, rupees(5_000)),
+    ]);
+    for (const result of [withdrawn, paid]) {
+      expect(errorMessage(result), "neither side may lose to a lock").not.toMatch(/deadlock|timeout|canceling statement|retry/i);
+    }
+
+    const [stored] = await storedPromise(receivableId);
+    if (withdrawn.error) {
+      expect(errorMessage(paid), "the money is the legitimate act").toBe("");
+      expect(stored.status, "a promise the money honoured cannot be withdrawn afterwards").toBe("KEPT");
+      expect(errorMessage(withdrawn)).toMatch(/has not reached its outcome/);
+    } else {
+      expect(paid.error ?? null, "the receipt itself is never refused because a promise was withdrawn").toBeNull();
+      expect(stored.status, "and money cannot resurrect a withdrawn promise").toBe("CANCELLED");
+    }
+    const events = await promiseEvents(created.id);
+    expect(events.filter((event) => event.from_status === "ACTIVE").map((event) => event.to_status), "exactly one outcome, whichever write reached the row first")
+      .toEqual([stored.status]);
+    expect((await storedReceivable(receivableId))!.outstandingPaise).toBeGreaterThanOrEqual(0);
+    expect(Number(localAdmin(ledgerAuditSql(await currentOwnerId()))), "the audit must be clean at either outcome").toBe(0);
+  }, 120_000);
 });
