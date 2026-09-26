@@ -17,16 +17,14 @@ const demoClients: Omit<Client, "updatedAt">[] = [
 // they were created with.
 const clients: Client[] = demoClients.map((row) => ({ ...row, updatedAt: row.createdAt }));
 
-const demoReceivables: Omit<Receivable, "updatedAt">[] = [
-  { id: "recv-nova", clientId: "client-nova", title: "Brand film — final milestone", invoiceRef: "NM-042", amountDuePaise: 9500000, dueDate: "2026-07-24", createdAt: "2026-07-10", notes: "Final cut and social cut-downs delivered.", status: "OPEN" },
+const demoReceivables: Omit<Receivable, "updatedAt" | "outstandingPaise">[] = [
+  { id: "recv-nova", clientId: "client-nova", title: "Brand film — final milestone", invoiceRef: "NM-042", amountDuePaise: 9500000, dueDate: "2026-07-24", createdAt: "2026-07-10", notes: "Final cut and social cut-downs delivered.", status: "PARTIALLY_PAID" },
   { id: "recv-rajesh", clientId: "client-rajesh", title: "Monsoon campaign photography", invoiceRef: "RS-118", amountDuePaise: 2800000, dueDate: "2026-07-18", createdAt: "2026-07-03", notes: "Gallery delivered. Two revised payment dates.", status: "OPEN" },
   { id: "recv-pixel", clientId: "client-pixel", title: "Packaging system — round 2", invoiceRef: "PM-019", amountDuePaise: 1800000, dueDate: "2026-08-13", createdAt: "2026-08-01", notes: "Client promised payment after internal sign-off.", status: "OPEN" },
   { id: "recv-meridian", clientId: "client-meridian", title: "Venue launch identity kit", invoiceRef: "ME-071", amountDuePaise: 3300000, dueDate: "2026-08-04", createdAt: "2026-07-18", notes: "Milestone invoice. First partial payment received.", status: "PARTIALLY_PAID" },
   { id: "recv-orbit", clientId: "client-orbit", title: "Apartment styling consultation", invoiceRef: "OI-033", amountDuePaise: 5540000, dueDate: "2026-07-31", createdAt: "2026-07-17", notes: "Scope completed and walkthrough shared.", status: "PARTIALLY_PAID" },
   { id: "recv-kite", clientId: "client-kite", title: "Product launch landing page", invoiceRef: "KL-054", amountDuePaise: 3600000, dueDate: "2026-08-07", createdAt: "2026-07-27", notes: "Paid in full after a single follow-up.", status: "PAID" },
 ];
-
-const receivables: Receivable[] = demoReceivables.map((row) => ({ ...row, updatedAt: row.createdAt }));
 
 const promises: PromiseRecord[] = [
   { id: "promise-nova-1", receivableId: "recv-nova", sequenceNo: 1, promisedAmountPaise: 500000, promisedDate: "2026-03-18", source: "Email", note: "Small deposit received after the first cut.", status: "KEPT", createdAt: "2026-03-15", resolvedAt: "2026-03-18" },
@@ -54,14 +52,22 @@ const payments: Payment[] = [
   { id: "pay-kite-1", receivableId: "recv-kite", amountPaise: 3600000, paidDate: "2026-08-07", method: "UPI", reference: "KITE-807", createdAt: "2026-08-07" },
 ];
 
+// The drawn balance is the drawn payment history, so the fixture cannot drift
+// into a state the database would reject.
+const receivables: Receivable[] = demoReceivables.map((row) => ({
+  ...row,
+  updatedAt: row.createdAt,
+  outstandingPaise: Math.max(0, row.amountDuePaise - payments.filter((payment) => payment.receivableId === row.id).reduce((sum, payment) => sum + payment.amountPaise, 0)),
+}));
+
 const activities: Activity[] = [
   { id: "act-nova-created", clientId: "client-nova", receivableId: "recv-nova", type: "created", occurredAt: "2026-07-10", note: "Receivable created for Brand film — final milestone." },
-  { id: "act-nova-follow-1", clientId: "client-nova", receivableId: "recv-nova", type: "follow_up", occurredAt: "2026-08-06", note: "Friendly follow-up opened in WhatsApp." },
-  { id: "act-nova-broken-6", clientId: "client-nova", receivableId: "recv-nova", type: "broken", occurredAt: "2026-08-10", note: "Promise broken — no payment recorded.", promiseId: "promise-nova-6" },
+  { id: "act-nova-follow-1", clientId: "client-nova", receivableId: "recv-nova", type: "contacted", occurredAt: "2026-08-06", note: "Friendly follow-up opened in WhatsApp." },
+  { id: "act-nova-broken-6", clientId: "client-nova", receivableId: "recv-nova", type: "outcome", occurredAt: "2026-08-10", note: "Promise broken — no payment recorded.", promiseId: "promise-nova-6" },
   { id: "act-nova-promise-7", clientId: "client-nova", receivableId: "recv-nova", type: "promise", occurredAt: "2026-08-11", note: "Arjun promised ₹15,000 by 13 August.", amountPaise: 1500000, promiseId: "promise-nova-7" },
   { id: "act-rajesh-created", clientId: "client-rajesh", receivableId: "recv-rajesh", type: "created", occurredAt: "2026-07-03", note: "Receivable created for Monsoon campaign photography." },
-  { id: "act-rajesh-follow", clientId: "client-rajesh", receivableId: "recv-rajesh", type: "follow_up", occurredAt: "2026-08-06", note: "Second follow-up opened in WhatsApp." },
-  { id: "act-rajesh-broken", clientId: "client-rajesh", receivableId: "recv-rajesh", type: "broken", occurredAt: "2026-08-12", note: "Second revised promise broken.", promiseId: "promise-rajesh-2" },
+  { id: "act-rajesh-follow", clientId: "client-rajesh", receivableId: "recv-rajesh", type: "contacted", occurredAt: "2026-08-06", note: "Second follow-up opened in WhatsApp." },
+  { id: "act-rajesh-broken", clientId: "client-rajesh", receivableId: "recv-rajesh", type: "outcome", occurredAt: "2026-08-12", note: "Second revised promise broken.", promiseId: "promise-rajesh-2" },
   { id: "act-pixel-created", clientId: "client-pixel", receivableId: "recv-pixel", type: "created", occurredAt: "2026-08-01", note: "Receivable created for Packaging system — round 2." },
   { id: "act-meridian-payment", clientId: "client-meridian", receivableId: "recv-meridian", type: "payment", occurredAt: "2026-08-10", note: "₹8,000 partial payment recorded by UPI.", amountPaise: 800000 },
   { id: "act-orbit-payment", clientId: "client-orbit", receivableId: "recv-orbit", type: "payment", occurredAt: "2026-08-05", note: "₹40,500 payment recorded by bank transfer.", amountPaise: 4050000 },

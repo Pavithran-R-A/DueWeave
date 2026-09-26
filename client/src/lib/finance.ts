@@ -1,7 +1,7 @@
 // Quiet Ledger style reminder: deterministic scoring and state transitions stay pure, explainable, and testable.
 
 import type { Activity, Client, LedgerState, Payment, PromiseRecord, PromiseStatus, Receivable } from "@/types/domain";
-import { systemClock, todayInIndia, type BusinessClock } from "@/lib/business-clock";
+import { systemClock, toIndiaBusinessDate, todayInIndia, type BusinessClock } from "@/lib/business-clock";
 
 export function isBusinessDate(value: string) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
@@ -54,8 +54,9 @@ export function getPaidAmount(receivableId: string, payments: Payment[]) {
   return getPaymentsFor(receivableId, payments).reduce((sum, payment) => sum + payment.amountPaise, 0);
 }
 
-export function getOutstanding(receivable: Receivable, payments: Payment[]) {
-  return Math.max(0, receivable.amountDuePaise - getPaidAmount(receivable.id, payments));
+/** The database's own balance: one number, owned by the write that changed it. */
+export function getOutstanding(receivable: Receivable) {
+  return receivable.outstandingPaise;
 }
 
 export function getPromisesFor(receivableId: string, promises: PromiseRecord[]) {
@@ -66,8 +67,25 @@ export function getLatestPromise(receivableId: string, promises: PromiseRecord[]
   return getPromisesFor(receivableId, promises).at(-1);
 }
 
+/** Only a message that actually went out counts as contact. */
 export function getLastContacted(receivableId: string, activities: Activity[]) {
-  return activities.filter((activity) => activity.receivableId === receivableId && ["follow_up", "contacted"].includes(activity.type)).sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))[0]?.occurredAt;
+  return activities.filter((activity) => activity.receivableId === receivableId && activity.type === "contacted").sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))[0]?.occurredAt;
+}
+
+/**
+ * How long the receivable has gone without a real conversation. Before any
+ * contact happened the honest anchor is the day it was recorded, so a receivable
+ * added this morning is never described as ignored for thirty days.
+ */
+export function getContactStaleness(receivable: Receivable, activities: Activity[], clock: BusinessClock = systemClock) {
+  return stalenessFor(receivable, activities, todayInIndia(clock));
+}
+
+function stalenessFor(receivable: Receivable, activities: Activity[], today: string) {
+  const lastContacted = getLastContacted(receivable.id, activities);
+  const anchor = lastContacted ?? toIndiaBusinessDate(receivable.createdAt);
+  if (!anchor) return { contacted: false, days: 0 };
+  return { contacted: Boolean(lastContacted), days: Math.max(0, daysBetween(anchor, today)) };
 }
 
 /** The latest explicit snooze controls queue visibility until its business date. */
@@ -86,17 +104,16 @@ export interface PriorityBreakdown {
 }
 
 function breakdownFor(receivable: Receivable, state: LedgerState, today: string): PriorityBreakdown {
-  const openReceivables = state.receivables.filter((item) => getOutstanding(item, state.payments) > 0);
-  const outstanding = getOutstanding(receivable, state.payments);
-  const maxOutstanding = Math.max(...openReceivables.map((item) => getOutstanding(item, state.payments)), 1);
+  const openReceivables = state.receivables.filter((item) => getOutstanding(item) > 0);
+  const outstanding = getOutstanding(receivable);
+  const maxOutstanding = Math.max(...openReceivables.map((item) => getOutstanding(item)), 1);
   const brokenCount = getPromisesFor(receivable.id, state.promises).filter((promise) => promise.status === "BROKEN").length;
   const latest = getLatestPromise(receivable.id, state.promises);
   const overdueDays = Math.max(0, daysBetween(receivable.dueDate, today));
   const daysToPromise = latest?.status === "ACTIVE" ? daysBetween(today, latest.promisedDate) : null;
-  const lastContacted = getLastContacted(receivable.id, state.activities);
-  const contactDays = lastContacted ? Math.max(0, daysBetween(lastContacted, today)) : 30;
-  const fiveDaysAgo = new Date(`${today}T12:00:00Z`); fiveDaysAgo.setUTCDate(fiveDaysAgo.getUTCDate() - 7);
-  const recentThreshold = fiveDaysAgo.toISOString().slice(0, 10);
+  const { days: contactDays } = stalenessFor(receivable, state.activities, today);
+  const aWeekAgo = new Date(`${today}T12:00:00Z`); aWeekAgo.setUTCDate(aWeekAgo.getUTCDate() - 7);
+  const recentThreshold = aWeekAgo.toISOString().slice(0, 10);
   const recentPartial = getPaymentsFor(receivable.id, state.payments).some((payment) => payment.paidDate >= recentThreshold && payment.amountPaise < receivable.amountDuePaise);
   const brokenPromises = Math.min(25, brokenCount * 10);
   const promiseUrgency = daysToPromise === null ? 0 : daysToPromise <= 0 ? 20 : daysToPromise <= 3 ? 12 : daysToPromise <= 7 ? 6 : 0;
@@ -118,12 +135,16 @@ export function priorityReasons(receivable: Receivable, state: LedgerState, cloc
   const reasons: { label: string; value: number }[] = [];
   const brokenCount = getPromisesFor(receivable.id, state.promises).filter((promise) => promise.status === "BROKEN").length;
   const overdueDays = Math.max(0, daysBetween(receivable.dueDate, today));
-  const lastContacted = getLastContacted(receivable.id, state.activities);
-  const contactDays = lastContacted ? Math.max(0, daysBetween(lastContacted, today)) : 30;
+  const { contacted, days: contactDays } = stalenessFor(receivable, state.activities, today);
+  const active = getLatestPromise(receivable.id, state.promises);
+  const daysToPromise = active?.status === "ACTIVE" ? daysBetween(today, active.promisedDate) : null;
   if (brokenCount > 0) reasons.push({ label: `${brokenCount} promise${brokenCount > 1 ? "s" : ""} broken`, value: breakdown.brokenPromises });
   if (overdueDays > 0) reasons.push({ label: `${overdueDays} day${overdueDays > 1 ? "s" : ""} overdue`, value: breakdown.daysOverdue });
-  if (contactDays >= 3) reasons.push({ label: `No contact for ${contactDays} days`, value: breakdown.contactStaleness });
-  if (breakdown.promiseUrgency > 0) reasons.push({ label: breakdown.promiseUrgency >= 20 ? "Promise due today" : "Promise due soon", value: breakdown.promiseUrgency });
+  if (contactDays >= 3) reasons.push({ label: contacted ? `No contact for ${contactDays} days` : `${contactDays} days since it was recorded`, value: breakdown.contactStaleness });
+  if (breakdown.promiseUrgency > 0 && daysToPromise !== null) {
+    const label = daysToPromise < 0 ? "Promise date has passed" : daysToPromise === 0 ? "Promise due today" : "Promise due soon";
+    reasons.push({ label, value: breakdown.promiseUrgency });
+  }
   if (breakdown.recentPartialAdjustment < 0) reasons.push({ label: "Recent partial payment", value: Math.abs(breakdown.recentPartialAdjustment) });
   if (reasons.length === 0) reasons.push({ label: "No action needed yet", value: 0 });
   return reasons.sort((a, b) => b.value - a.value).slice(0, 2);
@@ -131,17 +152,23 @@ export function priorityReasons(receivable: Receivable, state: LedgerState, cloc
 
 export function getQueue(state: LedgerState, clock: BusinessClock = systemClock) {
   const today = todayInIndia(clock);
-  return state.receivables.filter((receivable) => getOutstanding(receivable, state.payments) > 0 && (getSnoozedUntil(receivable.id, state.activities) ?? today) <= today).map((receivable) => ({ receivable, score: breakdownFor(receivable, state, today).total })).sort((a, b) => b.score - a.score || getOutstanding(b.receivable, state.payments) - getOutstanding(a.receivable, state.payments));
+  return state.receivables.filter((receivable) => getOutstanding(receivable) > 0 && (getSnoozedUntil(receivable.id, state.activities) ?? today) <= today).map((receivable) => ({ receivable, score: breakdownFor(receivable, state, today).total })).sort((a, b) => b.score - a.score || getOutstanding(b.receivable) - getOutstanding(a.receivable));
 }
+
+/**
+ * Only promises the customer actually answered say anything about keeping to a
+ * date. A commitment that was replaced or withdrawn is neither kept nor broken.
+ */
+const ANSWERED_PROMISE_STATUSES: PromiseStatus[] = ["KEPT", "PARTIALLY_KEPT", "BROKEN"];
 
 export function getReliability(clientId: string, state: LedgerState) {
   const clientReceivables = state.receivables.filter((receivable) => receivable.clientId === clientId);
-  const resolved = state.promises.filter((promise) => clientReceivables.some((receivable) => receivable.id === promise.receivableId) && promise.status !== "ACTIVE");
+  const resolved = state.promises.filter((promise) => clientReceivables.some((receivable) => receivable.id === promise.receivableId) && ANSWERED_PROMISE_STATUSES.includes(promise.status));
   if (resolved.length < 3) return { enoughHistory: false, total: resolved.length, kept: 0, broken: 0, partial: 0, averageDelay: null as number | null };
   const kept = resolved.filter((promise) => promise.status === "KEPT").length;
   const broken = resolved.filter((promise) => promise.status === "BROKEN").length;
   const partial = resolved.filter((promise) => promise.status === "PARTIALLY_KEPT").length;
-  const delays = resolved.filter((promise) => promise.resolvedAt).map((promise) => Math.max(0, daysBetween(promise.promisedDate, promise.resolvedAt!)));
+  const delays = resolved.filter((promise) => promise.resolvedAt).map((promise) => Math.max(0, daysBetween(promise.promisedDate, toIndiaBusinessDate(promise.resolvedAt!))));
   const averageDelay = delays.length ? Number((delays.reduce((sum, delay) => sum + delay, 0) / delays.length).toFixed(1)) : null;
   return { enoughHistory: true, total: resolved.length, kept, broken, partial, averageDelay };
 }

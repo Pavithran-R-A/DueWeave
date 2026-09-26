@@ -8,10 +8,10 @@ export type PromiseStatus =
   | "RENEGOTIATED"
   | "CANCELLED";
 
-export type ReceivableStatus = "OPEN" | "PARTIALLY_PAID" | "PAID" | "CANCELLED" | "WRITTEN_OFF";
+export type ReceivableStatus = "OPEN" | "PARTIALLY_PAID" | "PAID" | "CANCELLED";
 export type PaymentMethod = "UPI" | "Bank transfer" | "Cash" | "Other";
 export type PromiseSource = "WhatsApp" | "Call" | "Email" | "Meeting" | "Other";
-export type ActivityType = "created" | "due" | "follow_up" | "contacted" | "promise" | "broken" | "payment" | "note";
+export type ActivityType = "created" | "promise" | "outcome" | "corrected" | "cancelled" | "payment" | "contacted" | "snoozed" | "note";
 
 export interface Client {
   id: string;
@@ -32,7 +32,10 @@ export interface Receivable {
   title: string;
   invoiceRef?: string;
   amountDuePaise: number;
-  outstandingPaise?: number;
+  // The database owns this balance: it is recomputed from the whole payment
+  // history inside the same transaction that accepts a payment, and the status
+  // check below is written against it. Nothing on this side re-derives it.
+  outstandingPaise: number;
   dueDate: string;
   createdAt: string;
   updatedAt: string;

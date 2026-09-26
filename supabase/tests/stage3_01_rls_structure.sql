@@ -10,7 +10,7 @@
 set search_path = public, extensions, tap, core;
 create extension if not exists pgtap with schema extensions;
 
-select plan(32);
+select plan(33);
 
 -- ---------------------------------------------------------------------------
 -- A. Row-level security is enabled on every private table.
@@ -127,7 +127,9 @@ select is((select count(*) from pg_policy p join pg_class c on c.oid = p.polreli
 
 -- ---------------------------------------------------------------------------
 -- E. SECURITY DEFINER shape (Phase 19-20 invariants, so the written review
---    cannot silently rot). All 24 definer routines are pinned here.
+--    cannot silently rot). Every definer routine in public is covered by these
+--    catalog-wide assertions; the exact browser-callable set is pinned by
+--    stage3_02_privileges.sql.
 -- ---------------------------------------------------------------------------
 
 -- Every routine pins search_path, so no caller can steer an unqualified name.
@@ -137,14 +139,30 @@ select is((select count(*) from pg_proc p
              and not exists (select 1 from unnest(p.proconfig) c where c like 'search_path=%')), 0::bigint,
            'every function in public pins search_path');
 
--- ... and resolves application relations from public first, so a caller-created
--- temp object can never shadow a table or helper the body touches.
+-- ... and gives a caller no schema that resolves before its own. A routine
+-- either puts public first, or pins an empty path and so must spell every
+-- name it touches with its own qualifier — the stricter of the two, and the
+-- form the Stage 5 lifecycle helpers use. Anything else (a path that starts
+-- with pg_temp, or a path that simply omits public) is a steerable name.
 select is((select count(*) from pg_proc p
            join pg_namespace n on n.oid = p.pronamespace
            where n.nspname = 'public'
              and not exists (select 1 from unnest(p.proconfig) c
-                             where c like 'search_path=public,%' or c = 'search_path=public')), 0::bigint,
-           'every function resolves unqualified names from public before any caller-controlled schema');
+                             where c like 'search_path=public,%'
+                                or c = 'search_path=public'
+                                or c = 'search_path=""')
+             ), 0::bigint,
+           'every function either resolves from public first or pins an empty search path');
+
+-- The empty-path form is only safe while it stays empty: a later edit that
+-- appends a caller-writable schema would reintroduce shadowing.
+select is((select count(*) from pg_proc p
+           join pg_namespace n on n.oid = p.pronamespace
+           where n.nspname = 'public'
+             and exists (select 1 from unnest(p.proconfig) c where c = 'search_path=""')
+             and (select count(*) from unnest(p.proconfig) c where c like 'search_path=%') > 1
+           ), 0::bigint,
+           'a function that pins an empty search path pins no other schema');
 
 -- Definer routines run as their owner, so the owner must not be a browser role
 -- and must not be a superuser (the local postgres role is verified non-superuser).

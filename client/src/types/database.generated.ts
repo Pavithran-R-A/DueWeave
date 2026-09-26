@@ -330,6 +330,7 @@ export type Database = {
           paid_on: string
           receivable_id: string
           reference: string | null
+          request_id: string | null
         }
         Insert: {
           amount_paise: number
@@ -341,6 +342,7 @@ export type Database = {
           paid_on: string
           receivable_id: string
           reference?: string | null
+          request_id?: string | null
         }
         Update: {
           amount_paise?: number
@@ -352,6 +354,7 @@ export type Database = {
           paid_on?: string
           receivable_id?: string
           reference?: string | null
+          request_id?: string | null
         }
         Relationships: [
           {
@@ -473,6 +476,7 @@ export type Database = {
           promised_amount_paise: number
           promised_date: string
           receivable_id: string
+          request_id: string | null
           resolved_at: string | null
           sequence_no: number
           source: string
@@ -487,6 +491,7 @@ export type Database = {
           promised_amount_paise: number
           promised_date: string
           receivable_id: string
+          request_id?: string | null
           resolved_at?: string | null
           sequence_no: number
           source: string
@@ -501,6 +506,7 @@ export type Database = {
           promised_amount_paise?: number
           promised_date?: string
           receivable_id?: string
+          request_id?: string | null
           resolved_at?: string | null
           sequence_no?: number
           source?: string
@@ -651,6 +657,15 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      apply_promise_outcome: {
+        Args: {
+          p_actor_type: string
+          p_promise: Database["public"]["Tables"]["promises"]["Row"]
+          p_reason: string
+          p_to_status: string
+        }
+        Returns: undefined
+      }
       approve_founder_claim: {
         Args: { p_claim_id: string }
         Returns: {
@@ -714,6 +729,53 @@ export type Database = {
         SetofOptions: {
           from: "*"
           to: "purchase_claims"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      cancel_promise: {
+        Args: { p_promise_id: string; p_reason: string }
+        Returns: {
+          created_at: string
+          id: string
+          note: string | null
+          owner_id: string
+          promised_amount_paise: number
+          promised_date: string
+          receivable_id: string
+          request_id: string | null
+          resolved_at: string | null
+          sequence_no: number
+          source: string
+          status: string
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "promises"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      cancel_receivable: {
+        Args: { p_reason: string; p_receivable_id: string }
+        Returns: {
+          amount_due_paise: number
+          client_id: string
+          created_at: string
+          due_date: string
+          id: string
+          invoice_ref: string | null
+          label: string
+          notes: string | null
+          outstanding_paise: number
+          owner_id: string
+          status: string
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "receivables"
           isOneToOne: true
           isSetofReturn: false
         }
@@ -811,6 +873,7 @@ export type Database = {
           p_promised_amount_paise: number
           p_promised_date: string
           p_receivable_id: string
+          p_request_id: string
           p_source: string
         }
         Returns: {
@@ -821,6 +884,7 @@ export type Database = {
           promised_amount_paise: number
           promised_date: string
           receivable_id: string
+          request_id: string | null
           resolved_at: string | null
           sequence_no: number
           source: string
@@ -864,6 +928,7 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      current_business_date: { Args: never; Returns: string }
       delete_my_business_data: { Args: never; Returns: undefined }
       get_founder_funnel: {
         Args: never
@@ -917,6 +982,17 @@ export type Database = {
         }[]
       }
       mark_due_promises_broken: { Args: never; Returns: number }
+      promise_outcome: {
+        Args: {
+          p_business_date: string
+          p_promise: Database["public"]["Tables"]["promises"]["Row"]
+        }
+        Returns: string
+      }
+      promise_settled_amount: {
+        Args: { p_promise: Database["public"]["Tables"]["promises"]["Row"] }
+        Returns: number
+      }
       reconsider_founder_claim: {
         Args: {
           p_bank_history_verified: boolean
@@ -978,6 +1054,7 @@ export type Database = {
           p_paid_on: string
           p_receivable_id: string
           p_reference: string
+          p_request_id: string
         }
         Returns: {
           amount_paise: number
@@ -989,6 +1066,7 @@ export type Database = {
           paid_on: string
           receivable_id: string
           reference: string | null
+          request_id: string | null
         }
         SetofOptions: {
           from: "*"
@@ -1026,6 +1104,18 @@ export type Database = {
       revoke_founder_entitlement: {
         Args: { p_reason: string; p_user_id: string }
         Returns: undefined
+      }
+      settle_promises_for_owner: {
+        Args: { p_business_date: string; p_owner: string }
+        Returns: number
+      }
+      settle_promises_for_receivable: {
+        Args: {
+          p_business_date: string
+          p_owner: string
+          p_receivable_id: string
+        }
+        Returns: number
       }
       snooze_receivable: {
         Args: { p_receivable_id: string; p_until: string }

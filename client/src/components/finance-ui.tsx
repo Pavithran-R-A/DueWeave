@@ -13,7 +13,7 @@ export function BrandMark({ compact = false }: { compact?: boolean }) {
 }
 
 export function StatusPill({ status }: { status: PromiseStatus | Receivable["status"] }) {
-  const label = { OPEN: "Open", PARTIALLY_PAID: "Partially paid", PAID: "Paid", CANCELLED: "Cancelled", WRITTEN_OFF: "Written off", ACTIVE: "Active promise", KEPT: "Kept", PARTIALLY_KEPT: "Partially kept", BROKEN: "Promise broken", RENEGOTIATED: "Renegotiated" }[status];
+  const label = { OPEN: "Open", PARTIALLY_PAID: "Partially paid", PAID: "Paid", CANCELLED: "Cancelled", ACTIVE: "Active promise", KEPT: "Kept", PARTIALLY_KEPT: "Partially kept", BROKEN: "Promise broken", RENEGOTIATED: "Renegotiated" }[status];
   return <span className={`status-pill status-pill--${status.toLowerCase()}`}><span className="status-dot" />{label}</span>;
 }
 
@@ -39,7 +39,7 @@ export function Metric({ label, value, accent = "default", sub }: { label: strin
 }
 
 export function QueueCard({ receivable, client, state, selected, onSelect, onFollowUp }: { receivable: Receivable; client: Client; state: LedgerState; selected: boolean; onSelect: () => void; onFollowUp: () => void }) {
-  const outstanding = getOutstanding(receivable, state.payments);
+  const outstanding = getOutstanding(receivable);
   const reasons = priorityReasons(receivable, state);
   const latest = getLatestPromise(receivable.id, state.promises);
   const priority = priorityBreakdown(receivable, state).total;
@@ -52,12 +52,12 @@ export function QueueCard({ receivable, client, state, selected, onSelect, onFol
 export function Timeline({ receivable, state }: { receivable: Receivable; state: LedgerState }) {
   const events = state.activities.filter((activity) => activity.receivableId === receivable.id).sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
   const promiseById = new Map(state.promises.map((promise) => [promise.id, promise]));
-  return <div className="timeline" aria-label="Receivable activity timeline">{events.map((event) => { const promise = event.promiseId ? promiseById.get(event.promiseId) : undefined; return <div key={event.id} className={`timeline-item ${event.type === "broken" ? "timeline-item--critical" : ""}`}><div className="timeline-marker"><span /></div><div className="timeline-content"><div className="timeline-content__top"><span className="timeline-date">{formatDate(event.occurredAt, { day: "numeric", month: "short", year: "numeric" })}</span>{event.type === "payment" && <span className="timeline-amount">{formatINR(event.amountPaise ?? 0)} received</span>}</div><strong>{event.note}</strong>{event.snoozedUntil && <span className="timeline-sub">Returns to Today on {formatDate(event.snoozedUntil, { day: "numeric", month: "short", year: "numeric" })}</span>}{promise && <span className="timeline-sub">{promise.status === "BROKEN" ? "Original promise preserved in history" : `${promise.source} · ${formatINR(promise.promisedAmountPaise)} promised`}</span>}</div></div>; })}</div>;
+  return <div className="timeline" aria-label="Receivable activity timeline">{events.map((event) => { const promise = event.promiseId ? promiseById.get(event.promiseId) : undefined; return <div key={event.id} className={`timeline-item ${promise?.status === "BROKEN" ? "timeline-item--critical" : ""}`}><div className="timeline-marker"><span /></div><div className="timeline-content"><div className="timeline-content__top"><span className="timeline-date">{formatDate(event.occurredAt, { day: "numeric", month: "short", year: "numeric" })}</span>{event.type === "payment" && <span className="timeline-amount">{formatINR(event.amountPaise ?? 0)} received</span>}</div><strong>{event.note}</strong>{event.snoozedUntil && <span className="timeline-sub">Returns to Today on {formatDate(event.snoozedUntil, { day: "numeric", month: "short", year: "numeric" })}</span>}{promise && <span className="timeline-sub">{promise.status === "BROKEN" ? "Original promise preserved in history" : `${promise.source} · ${formatINR(promise.promisedAmountPaise)} promised`}</span>}</div></div>; })}</div>;
 }
 
 export function Reliability({ clientId, state }: { clientId: string; state: LedgerState }) {
   const reliability = getReliability(clientId, state);
-  if (!reliability.enoughHistory) return <div className="reliability reliability--muted"><Info size={15} /><div><strong>Not enough history</strong><span>Reliability appears after 3 resolved promises.</span></div></div>;
+  if (!reliability.enoughHistory) return <div className="reliability reliability--muted"><Info size={15} /><div><strong>Not enough history</strong><span>Reliability appears once 3 promises have reached their outcome.</span></div></div>;
   return <div className="reliability"><div className="reliability__ring"><strong>{Math.round((reliability.kept / reliability.total) * 100)}%</strong><span>kept</span></div><div><strong>{reliability.kept} of {reliability.total} promises kept</strong><span>Average delay {reliability.averageDelay ?? 0} days · {reliability.broken} broken · {reliability.partial} partial</span></div></div>;
 }
 

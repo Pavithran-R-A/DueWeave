@@ -1,4 +1,5 @@
 import type { Activity, Client, Payment, PaymentMethod, PromiseRecord, PromiseSource, Receivable, ReceivableStatus } from "@/types/domain";
+import { toIndiaBusinessDate } from "@/lib/business-clock";
 
 type Row = Record<string, unknown>;
 
@@ -20,17 +21,20 @@ const promiseSourceByDatabaseValue: Record<string, PromiseSource> = {
 const activityTypeByDatabaseValue: Record<string, Activity["type"]> = {
   RECEIVABLE_CREATED: "created",
   PROMISE_CREATED: "promise",
-  PROMISE_STATUS_CHANGED: "note",
+  PROMISE_STATUS_CHANGED: "outcome",
+  PROMISE_CORRECTED: "corrected",
+  PROMISE_CANCELLED: "cancelled",
+  RECEIVABLE_CANCELLED: "cancelled",
   PAYMENT_RECORDED: "payment",
   FOLLOW_UP_RECORDED: "contacted",
-  SNOOZED: "follow_up",
+  SNOOZED: "snoozed",
   NOTE_ADDED: "note",
 };
 
 function string(value: unknown) { return typeof value === "string" ? value : ""; }
 function optionalString(value: unknown) { const result = string(value); return result || undefined; }
 function paise(value: unknown) { const result = Number(value); return Number.isSafeInteger(result) ? result : 0; }
-function calendarDate(value: unknown) { const raw = string(value); return raw.includes("T") ? raw.slice(0, 10) : raw; }
+function businessDate(value: unknown) { return toIndiaBusinessDate(string(value)); }
 
 export function toClient(row: Row): Client {
   return { id: string(row.id), name: string(row.name), company: string(row.company), phone: optionalString(row.phone), email: optionalString(row.email), notes: optionalString(row.notes), createdAt: string(row.created_at), updatedAt: string(row.updated_at) };
@@ -53,7 +57,7 @@ export function toPayment(row: Row): Payment {
 export function toActivity(row: Row): Activity {
   const databaseType = string(row.type).toUpperCase();
   const metadata = row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata) ? row.metadata as Row : {};
-  return { id: string(row.id), clientId: string(row.client_id), receivableId: string(row.receivable_id), promiseId: optionalString(row.promise_id), type: activityTypeByDatabaseValue[databaseType] ?? "note", occurredAt: calendarDate(row.occurred_at), note: string(row.note), amountPaise: typeof row.amount_paise === "undefined" || row.amount_paise === null ? undefined : paise(row.amount_paise), snoozedUntil: databaseType === "SNOOZED" ? optionalString(metadata.snoozed_until) : undefined };
+  return { id: string(row.id), clientId: string(row.client_id), receivableId: string(row.receivable_id), promiseId: optionalString(row.promise_id), type: activityTypeByDatabaseValue[databaseType] ?? "note", occurredAt: businessDate(row.occurred_at), note: string(row.note), amountPaise: typeof row.amount_paise === "undefined" || row.amount_paise === null ? undefined : paise(row.amount_paise), snoozedUntil: databaseType === "SNOOZED" ? optionalString(metadata.snoozed_until) : undefined };
 }
 
 export function promiseSourceToDatabase(source: PromiseSource) {
@@ -67,7 +71,27 @@ export function paymentMethodToDatabase(method: PaymentMethod) {
 export function userFacingDataError(message?: string, code?: string) {
   const normalized = (message ?? "").toLowerCase();
   if (code === "40001" || normalized.includes("changed in another session")) return "This record changed while you were editing. Reopen it and save again with the latest version.";
-  if (normalized.includes("private ledger")) return "That record is no longer available in your ledger.";
+  // A retry that carries the same request id returns the original result, so a
+  // mismatch here means two genuinely different writes were attempted.
+  if (normalized.includes("already recorded a different")) return "That change does not match what was already saved. Reload to see the current state before trying again.";
+  if (normalized.includes("larger than dueweave can record")) return "That amount is larger than DueWeave can record. Split it into smaller entries.";
+  if (normalized.includes("dated in the future")) return "A payment cannot be dated in the future. Choose today or an earlier date.";
+  if (normalized.includes("how the money arrived")) return "Choose how the money arrived.";
+  if (normalized.includes("how the promise was made")) return "Choose how the promise was made.";
+  if (normalized.includes("the date the money arrived")) return "Choose the date the money arrived.";
+  if (normalized.includes("the date the customer promised")) return "Choose the date the customer promised.";
+  if (normalized.includes("already settled")) return "This receivable is fully paid, so there is nothing left to record against it.";
+  if (normalized.includes("promise is already cancelled")) return "That promise has already been withdrawn.";
+  if (normalized.includes("already cancelled") || normalized.includes("cancelled receivable does not accept")) return "This receivable is already closed.";
+  if (normalized.includes("with recorded payments cannot be cancelled")) return "Payments have been recorded against this receivable, so it stays open with its remaining balance.";
+  if (normalized.includes("cancel the promise instead")) return "This receivable is fully paid. Withdraw the promise instead if it was recorded by mistake.";
+  if (normalized.includes("short reason for")) return "Add a short reason before closing this.";
+  if (normalized.includes("already has a recorded outcome") || normalized.includes("is final") || normalized.includes("has not reached its outcome")) return "That promise already has its outcome recorded, so it cannot be changed again.";
+  if (normalized.includes("up to 2,000 characters")) return "Keep that note under 2,000 characters.";
+  if (normalized.includes("up to 160 characters")) return "Keep that reference under 160 characters.";
+  if (normalized.includes("one business calendar")) return "DueWeave keeps a single working calendar for the ledger.";
+  if (normalized.includes("inr only")) return "DueWeave records amounts in rupees.";
+  if (normalized.includes("protected workflow") || normalized.includes("needs a request id")) return "That change could not be recorded safely. Please try again.";
   if (normalized.includes("founder review access")) return "Founder review access is not available for this account.";
   if (normalized.includes("already active")) return "Founder access is already active for this account.";
   if (normalized.includes("offer is currently full")) return "The verified Founder offer is currently full.";

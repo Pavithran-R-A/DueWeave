@@ -118,12 +118,15 @@ select is((select coalesce(array_agg(p.proname::text order by p.proname), array[
            where n.nspname = 'public' and has_function_privilege('authenticated', p.oid, 'EXECUTE')),
     -- The approved RPC set, in name order: the eight core workflow routines,
     -- five self-scoped founder purchase routines, seven founder review
-    -- routines that each re-check assert_founder_admin() internally, and the
-    -- two Stage 4 edit routines. The list stays an exact set on purpose: a
-    -- future migration that grants one more RPC has to be approved here first.
+    -- routines that each re-check assert_founder_admin() internally, the
+    -- two Stage 4 edit routines, and the two Stage 5 lifecycle routines that
+    -- close a receivable or withdraw a promise. The list stays an exact set on
+    -- purpose: a future migration that grants one more RPC has to be approved
+    -- here first.
     array[
-        'approve_founder_claim', 'cancel_founder_claim', 'create_client',
-        'create_client_and_receivable', 'create_founder_claim', 'create_promise',
+        'approve_founder_claim', 'cancel_founder_claim', 'cancel_promise',
+        'cancel_receivable', 'create_client', 'create_client_and_receivable',
+        'create_founder_claim', 'create_promise',
         'create_receivable', 'get_founder_funnel', 'get_founder_offer',
         'list_pending_founder_claims', 'list_rejected_founder_claims',
         'mark_due_promises_broken', 'reconsider_founder_claim', 'record_contacted',
@@ -131,7 +134,7 @@ select is((select coalesce(array_agg(p.proname::text order by p.proname), array[
         'revoke_founder_entitlement', 'snooze_receivable', 'submit_founder_payment',
         'update_client', 'update_receivable_details'
     ]::text[],
-    'authenticated can execute exactly the 22 RPCs the application calls');
+    'authenticated can execute exactly the 24 RPCs the application calls');
 
 select is(has_function_privilege('authenticated', 'public.is_founder_admin()', 'EXECUTE'), false,
     'is_founder_admin() is internal and not callable over RPC');

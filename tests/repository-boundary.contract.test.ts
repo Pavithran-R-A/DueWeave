@@ -167,9 +167,23 @@ describe("edit surface (Stage 4)", () => {
     expect(receivableEdit).toMatch(/id: selectedReceivable\.id/);
     expect(receivableEdit).toMatch(/expectedUpdatedAt: selectedReceivable\.updatedAt/);
     for (const handler of [clientEdit, receivableEdit]) {
-      expect(handler).toMatch(/savingRef\.current\) return/);
-      expect(handler).toMatch(/finally \{ savingRef\.current = false; setSaving\(false\); \}/);
+      expect(handler, "an edit must refuse while another write is on the wire").toMatch(/!\s*beginWrite\(\)\)\s*return/);
+      expect(handler, "the in-flight guard must be released even when the write fails").toMatch(/finally \{ endWrite\(\); \}/);
       expect(updatePayload(handler)).not.toMatch(/amount|dueDate|outstanding|status|clientId|ownerId|archived/i);
+    }
+  });
+
+  // The handlers above only refuse if the guard itself is real: one flag, set
+  // before the first await and cleared in a finally, is what makes a double
+  // click arrive as one write.
+  it("keeps the shared in-flight guard honest rather than decorative", () => {
+    expect(homePage).toMatch(/function beginWrite\(\) \{ if \(savingRef\.current\) return false; savingRef\.current = true; setSaving\(true\); return true; \}/);
+    expect(homePage).toMatch(/function endWrite\(\) \{ savingRef\.current = false; setSaving\(false\); \}/);
+    const moneyHandlers = ["async function addPromise(", "async function recordPayment(", "async function addReceivable(", "async function addClient(", "async function closeReceivable(", "async function withdrawPromise("];
+    for (const signature of moneyHandlers) {
+      const handler = functionSource(homePage, signature);
+      expect(handler, `${signature} must refuse a second concurrent write`).toMatch(/!\s*beginWrite\(\)\)\s*return/);
+      expect(handler).toMatch(/finally \{ endWrite\(\); \}/);
     }
   });
 

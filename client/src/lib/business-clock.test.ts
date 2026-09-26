@@ -13,7 +13,9 @@ function clockAt(instant: string): BusinessClock {
 const client: Client = { id: "client-1", name: "Leela", company: "Leela Films", createdAt: "2026-01-01", updatedAt: "2026-01-01" };
 
 function receivable(overrides: Partial<Receivable> = {}): Receivable {
-  return { id: "recv-1", clientId: "client-1", title: "Campaign film", amountDuePaise: 500000, dueDate: "2026-08-20", createdAt: "2026-01-01", updatedAt: "2026-01-01", status: "OPEN", ...overrides };
+  // The balance is the database's answer, so a fixture has to state it too;
+  // an unpaid invoice's balance is simply its full amount.
+  return { id: "recv-1", clientId: "client-1", title: "Campaign film", amountDuePaise: 500000, outstandingPaise: 500000, dueDate: "2026-08-20", createdAt: "2026-01-01", updatedAt: "2026-01-01", status: "OPEN", ...overrides };
 }
 
 function ledger(overrides: Partial<LedgerState> = {}): LedgerState {

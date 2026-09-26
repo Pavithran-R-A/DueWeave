@@ -332,6 +332,7 @@ async function seedOwnedBusiness(account: Account, tag: string) {
       p_promised_date: "2026-10-05",
       p_source: "WHATSAPP",
       p_note: `${tag} promised part payment`,
+      p_request_id: crypto.randomUUID(),
     }
   );
   assert(
@@ -349,6 +350,7 @@ async function seedOwnedBusiness(account: Account, tag: string) {
       p_paid_on: "2026-09-20",
       p_method: "UPI",
       p_reference: `PAY-${tag}`,
+      p_request_id: crypto.randomUUID(),
     })
   );
   allowed(
@@ -512,14 +514,21 @@ describeLocalStack(
       // Teardown: remove the synthetic accounts. The founder offer row is never
       // touched by this suite, so nothing needs restoring there. The history
       // guards refuse DELETE even to the table owner — which this run proves
-      // elsewhere — so the purge disables those triggers inside one transaction
-      // and re-enables them before committing.
+      // elsewhere — so the purge skips them for one transaction with
+      // `set local session_replication_role = replica`, which reverts at commit
+      // and takes no lock on the guarded tables. The previous form of this teardown
+      // issued `alter table … disable trigger` instead, and that is what made the
+      // suite poison the runs after it: the ALTER asks for ACCESS EXCLUSIVE while
+      // ledger RPCs hold row locks on the same tables (a money write waiting
+      // behind the purge, and the purge waiting for the next table, is a cycle
+      // Postgres breaks by killing the money write), and every ALTER also fires
+      // the ddl_command_end notify that reloads PostgREST's schema cache, so a
+      // browser request landing in that window fails with no Postgres-side error
+      // at all. This setting is superuser-only, transaction-scoped and does not
+      // touch RLS — the local superuser already bypasses it, so the purge gains
+      // no authority this suite is not meant to have.
       localAdmin(`begin;
-      alter table public.activities disable trigger activities_immutable;
-      alter table public.payments disable trigger payments_immutable;
-      alter table public.promise_events disable trigger promise_events_immutable;
-      alter table public.promises disable trigger promises_guard_history;
-      alter table public.purchase_claims disable trigger purchase_claims_protect_workflow;
+      set local session_replication_role = replica;
       delete from public.founder_audit_events where target_user_id in (select id from auth.users where email like 'stage3-%@dueweave.local');
       delete from public.founder_audit_events where actor_user_id in (select id from auth.users where email like 'stage3-%@dueweave.local');
       delete from public.founder_admins where user_id in (select id from auth.users where email like 'stage3-%@dueweave.local');
@@ -534,11 +543,6 @@ describeLocalStack(
       delete from public.entitlements where user_id in (select id from auth.users where email like 'stage3-%@dueweave.local');
       delete from public.profiles where id in (select id from auth.users where email like 'stage3-%@dueweave.local');
       delete from auth.users where email like 'stage3-%@dueweave.local';
-      alter table public.activities enable trigger activities_immutable;
-      alter table public.payments enable trigger payments_immutable;
-      alter table public.promise_events enable trigger promise_events_immutable;
-      alter table public.promises enable trigger promises_guard_history;
-      alter table public.purchase_claims enable trigger purchase_claims_protect_workflow;
       commit;`);
     });
 
@@ -1071,6 +1075,7 @@ describeLocalStack(
             p_paid_on: "2026-09-20",
             p_method: "UPI",
             p_reference: "ATTACK",
+            p_request_id: crypto.randomUUID(),
           }),
           notYours
         )
@@ -1086,6 +1091,7 @@ describeLocalStack(
             p_promised_date: "2026-09-28",
             p_source: "CALL",
             p_note: "attack",
+            p_request_id: crypto.randomUUID(),
           }),
           notYours
         )
@@ -1242,6 +1248,7 @@ describeLocalStack(
           p_promised_date: "2026-10-10",
           p_source: "CALL",
           p_note: "",
+          p_request_id: crypto.randomUUID(),
         })
       );
       allowed(
@@ -1253,6 +1260,7 @@ describeLocalStack(
           p_paid_on: "2026-09-22",
           p_method: "BANK_TRANSFER",
           p_reference: "OWN-1",
+          p_request_id: crypto.randomUUID(),
         })
       );
       const { data, error } = await a.client
@@ -1791,6 +1799,7 @@ describeLocalStack(
           p_promised_date: "2026-09-30",
           p_source: "CALL",
           p_note: "",
+          p_request_id: "00000000-0000-0000-0000-000000000001",
         },
       },
       {
@@ -1801,6 +1810,7 @@ describeLocalStack(
           p_paid_on: "2026-09-20",
           p_method: "UPI",
           p_reference: "x",
+          p_request_id: "00000000-0000-0000-0000-000000000002",
         },
       },
       {

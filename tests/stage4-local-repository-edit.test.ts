@@ -31,6 +31,16 @@ function localAdmin(sql: string) {
   ).trim();
 }
 
+// The fixture rows this suite creates are guarded by AFTER DELETE triggers that
+// raise unconditionally, so a purge that only issues DELETEs aborts at the first
+// statement and leaves the whole run behind. `session_replication_role = replica`
+// is transaction-scoped and takes no lock on the guarded tables, so the purge
+// cannot be the DDL that a `disable trigger` would be: that statement asks for
+// ACCESS EXCLUSIVE on each history table while ledger writes are in flight, and
+// PostgREST reloads its schema cache on every one of them. The setting is
+// superuser-only and reverts at commit, and RLS is untouched by it — this run's
+// local superuser already bypasses RLS, so the purge gains no authority the
+// suite is not supposed to have.
 const PROTECTED_HISTORY_TRIGGERS: Array<[table: string, trigger: string]> = [
   ["public.activities", "activities_immutable"],
   ["public.payments", "payments_immutable"],
@@ -38,8 +48,11 @@ const PROTECTED_HISTORY_TRIGGERS: Array<[table: string, trigger: string]> = [
   ["public.promises", "promises_guard_history"],
 ];
 
+function historyGuardState() {
+  return localAdmin(`select count(*) filter (where tgenabled = 'O') || '/' || count(*) from pg_trigger where tgname in (${PROTECTED_HISTORY_TRIGGERS.map(([, trigger]) => `'${trigger}'`).join(", ")});`);
+}
+
 function purgeLocalFixtures(emailPattern: string) {
-  const flip = (verb: string) => PROTECTED_HISTORY_TRIGGERS.map(([table, trigger]) => `  alter table ${table} ${verb} trigger ${trigger};`).join("\n");
   const tables: Array<[string, string]> = [
     ["public.activities", "owner_id"],
     ["public.promise_events", "owner_id"],
@@ -53,10 +66,9 @@ function purgeLocalFixtures(emailPattern: string) {
   ];
   const owned = tables.map(([table, column]) => `  delete from ${table} where ${column} in (select id from auth.users where email like '${emailPattern}');`).join("\n");
   return localAdmin(`begin;
-${flip("disable")}
+set local session_replication_role = replica;
 ${owned}
   delete from auth.users where email like '${emailPattern}';
-${flip("enable")}
 commit;
 select 'residue=' || count(*) from auth.users where email like '${emailPattern}';`);
 }
@@ -104,7 +116,7 @@ describeLocalStack("Stage 4 persistence through the repository classes", () => {
         return `purge failed: ${String(error)}`;
       }
     })();
-    expect(localAdmin("select count(*) filter (where tgenabled = 'O') || '/' || count(*) from pg_trigger where tgname in ('activities_immutable','payments_immutable','promise_events_immutable','promises_guard_history');")).toBe("4/4");
+    expect(historyGuardState(), "a history guard is switched off in the shared local database").toBe("4/4");
     if (!/residue=0/.test(purge)) console.warn(`Stage 4 repository fixtures were not fully purged: ${purge}`);
   }, 120_000);
 

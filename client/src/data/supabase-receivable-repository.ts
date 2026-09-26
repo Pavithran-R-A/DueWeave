@@ -60,6 +60,16 @@ export class SupabaseReceivableRepository {
     return toReceivable(data);
   }
 
+  // Cancellation is offered only while nothing has been received: the amount
+  // due and the whole payment history stay on the row, and the database refuses
+  // the call the moment there is money to account for.
+  async cancel(receivableId: string, reason: string): Promise<void> {
+    if (!receivableId) throw new Error("Choose the receivable you want to close.");
+    if (!reason.trim()) throw new Error("Add a short reason before closing this receivable.");
+    const { error } = await supabase.rpc("cancel_receivable", { p_receivable_id: receivableId, p_reason: reason.trim() });
+    if (error) throw new Error(userFacingDataError(error.message, error.code));
+  }
+
   // Only the descriptive columns travel; the amount, outstanding balance, status
   // and owning client are refused by the database itself, so an edit can clarify
   // what an invoice was for but never what is owed.

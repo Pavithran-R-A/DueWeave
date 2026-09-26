@@ -19,13 +19,13 @@ describe("finance helpers", () => {
   it("keeps partial payments visible as an outstanding balance", () => {
     const state = createDemoState();
     const orbit = state.receivables.find((item) => item.id === "recv-orbit")!;
-    expect(getOutstanding(orbit, state.payments)).toBe(1490000);
+    expect(getOutstanding(orbit)).toBe(1490000);
   });
 
   it("recognizes a fully paid receivable", () => {
     const state = createDemoState();
     const kite = state.receivables.find((item) => item.id === "recv-kite")!;
-    expect(getOutstanding(kite, state.payments)).toBe(0);
+    expect(getOutstanding(kite)).toBe(0);
   });
 
   it("orders the deterministic queue by priority score", () => {
@@ -46,7 +46,7 @@ describe("finance helpers", () => {
   it("keeps a snoozed receivable out of Today until its India business date", () => {
     const state = createDemoState();
     const snoozedId = state.receivables[0].id;
-    state.activities.push({ id: "activity-snooze", clientId: state.receivables[0].clientId, receivableId: snoozedId, type: "follow_up", occurredAt: todayInIndia(), note: "Follow-up snoozed", snoozedUntil: addIndiaBusinessDays(todayInIndia(), 1) });
+    state.activities.push({ id: "activity-snooze", clientId: state.receivables[0].clientId, receivableId: snoozedId, type: "snoozed", occurredAt: todayInIndia(), note: "Follow-up snoozed", snoozedUntil: addIndiaBusinessDays(todayInIndia(), 1) });
     expect(getQueue(state).some(({ receivable }) => receivable.id === snoozedId)).toBe(false);
   });
 

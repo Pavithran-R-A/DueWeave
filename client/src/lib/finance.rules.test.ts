@@ -6,28 +6,34 @@ import {
   addIndiaBusinessDays,
   formatINR,
   getLatestPromise,
+  getLastContacted,
   getOutstanding,
   getPaidAmount,
   getPromisesFor,
   getQueue,
+  getReliability,
   getSnoozedUntil,
   getSuggestion,
   isBusinessDate,
   parseINRToPaise,
+  priorityBreakdown,
+  priorityReasons,
 } from "@/lib/finance";
 import { todayInIndia } from "@/lib/business-clock";
 
 const TODAY = todayInIndia();
 
 function receivable(overrides: Partial<Receivable> = {}): Receivable {
+  const amountDuePaise = overrides.amountDuePaise ?? 500000;
   return {
     id: "recv-1",
     clientId: "client-1",
     title: "Brand film",
-    amountDuePaise: 500000,
+    amountDuePaise,
+    outstandingPaise: amountDuePaise,
     dueDate: TODAY,
-    createdAt: "2026-01-01T00:00:00Z",
-    updatedAt: "2026-01-01T00:00:00Z",
+    createdAt: `${TODAY}T06:30:00Z`,
+    updatedAt: `${TODAY}T06:30:00Z`,
     status: "OPEN",
     ...overrides,
   };
@@ -39,6 +45,10 @@ function payment(amountPaise: number, overrides: Partial<Payment> = {}): Payment
 
 function promise(sequenceNo: number, status: PromiseRecord["status"], overrides: Partial<PromiseRecord> = {}): PromiseRecord {
   return { id: `promise-${sequenceNo}`, receivableId: "recv-1", sequenceNo, promisedAmountPaise: 500000, promisedDate: TODAY, source: "WhatsApp", status, createdAt: `2026-01-0${sequenceNo}T00:00:00Z`, ...overrides };
+}
+
+function activity(overrides: Partial<Activity> = {}): Activity {
+  return { id: "act-1", clientId: "client-1", receivableId: "recv-1", type: "contacted", occurredAt: TODAY, note: "Follow-up opened in WhatsApp.", ...overrides };
 }
 
 function state(overrides: Partial<LedgerState> = {}): LedgerState {
@@ -101,27 +111,76 @@ describe("rupee display", () => {
   });
 });
 
-describe("outstanding balance", () => {
-  it("reduces by each partial payment", () => {
-    const item = receivable({ amountDuePaise: 500000 });
-    const payments = [payment(100000), payment(150000)];
-    expect(getPaidAmount("recv-1", payments)).toBe(250000);
-    expect(getOutstanding(item, payments)).toBe(250000);
+describe("outstanding balance authority", () => {
+  it("uses the balance the database recorded instead of re-deriving it from the payment list", () => {
+    const item = receivable({ amountDuePaise: 500000, outstandingPaise: 250000 });
+    expect(getOutstanding(item)).toBe(250000);
   });
 
-  it("reaches exactly zero once fully paid", () => {
-    const item = receivable({ amountDuePaise: 500000, status: "PARTIALLY_PAID" });
-    const payments = [payment(200000), payment(300000)];
-    expect(getOutstanding(item, payments)).toBe(0);
+  it("reports a settled receivable as settled from the record itself", () => {
+    expect(getOutstanding(receivable({ amountDuePaise: 500000, outstandingPaise: 0, status: "PAID" }))).toBe(0);
   });
 
-  it("ignores payments belonging to another receivable", () => {
+  it("still totals payments for narrative use, without letting the total decide the balance", () => {
+    expect(getPaidAmount("recv-1", [payment(100000), payment(150000)])).toBe(250000);
     expect(getPaidAmount("recv-1", [payment(100000, { receivableId: "recv-2" })])).toBe(0);
   });
+});
 
-  it("clamps a contradictory overpayment to zero instead of going negative", () => {
-    const item = receivable({ amountDuePaise: 500000 });
-    expect(getOutstanding(item, [payment(600000)])).toBe(0);
+describe("priority reasons state what the ledger actually witnessed", () => {
+  it("does not treat a snooze as a conversation with the client", () => {
+    const snoozed = [activity({ type: "snoozed", occurredAt: TODAY, note: "Follow-up snoozed", snoozedUntil: addIndiaBusinessDays(TODAY, 2) })];
+    expect(getLastContacted("recv-1", snoozed), "a snooze records a decision to wait, not contact").toBeUndefined();
+    const aged = receivable({ createdAt: `${addIndiaBusinessDays(TODAY, -20)}T06:30:00Z` });
+    expect(priorityBreakdown(aged, state({ activities: snoozed })).contactStaleness).toBe(10);
+  });
+
+  it("invents no silence for a receivable that was recorded today", () => {
+    const fresh = receivable();
+    expect(priorityBreakdown(fresh, state()).contactStaleness).toBe(0);
+    expect(priorityReasons(fresh, state()).map((reason) => reason.label).join(" ")).not.toMatch(/no contact/i);
+  });
+
+  it("measures an untouched receivable from the day it was recorded", () => {
+    const aged = receivable({ createdAt: `${addIndiaBusinessDays(TODAY, -20)}T06:30:00Z` });
+    expect(priorityReasons(aged, state())[0].label).toMatch(/20 days/);
+  });
+
+  it("counts a quiet fortnight from the last real contact", () => {
+    const activities = [activity({ occurredAt: addIndiaBusinessDays(TODAY, -15) })];
+    const aged = receivable({ createdAt: `${addIndiaBusinessDays(TODAY, -60)}T06:30:00Z` });
+    expect(priorityBreakdown(aged, state({ activities })).contactStaleness).toBe(10);
+    expect(priorityReasons(aged, state({ activities }))[0].label).toContain("15 days");
+  });
+
+  it("keeps the overdue reason to the invoice's own due date", () => {
+    const overdue = receivable({ dueDate: addIndiaBusinessDays(TODAY, -4) });
+    expect(priorityReasons(overdue, state())[0].label).toBe("4 days overdue");
+  });
+});
+
+describe("reliability counts promises the customer answered", () => {
+  it("ignores promises that were renegotiated or cancelled", () => {
+    const promises = [promise(1, "RENEGOTIATED"), promise(2, "CANCELLED"), promise(3, "BROKEN")];
+    const result = getReliability("client-1", state({ promises }));
+    expect(result.enoughHistory, "two promises were never answered, so there is no score yet").toBe(false);
+    expect(result.total).toBe(1);
+  });
+
+  it("measures delay in India business days from a database timestamp", () => {
+    const promises = [
+      promise(1, "KEPT", { promisedDate: "2026-08-10", resolvedAt: "2026-08-12T18:30:00.000Z" }),
+      promise(2, "KEPT", { promisedDate: "2026-08-11", resolvedAt: "2026-08-11T06:00:00.000Z" }),
+      promise(3, "KEPT", { promisedDate: "2026-08-12", resolvedAt: "2026-08-14T18:00:00.000Z" }),
+    ];
+    const result = getReliability("client-1", state({ promises }));
+    expect(result.enoughHistory).toBe(true);
+    expect(result.kept).toBe(3);
+    // 12 Aug 18:30 UTC is already 13 Aug in Kolkata, so that promise was three
+    // days late; 11 Aug 06:00 UTC was answered on the day it named; 14 Aug
+    // 18:00 UTC is 23:30 the same IST day. Slicing the timestamp instead reads
+    // each one a day early and parsing it as a calendar date yields NaN.
+    expect(result.averageDelay).toBe(1.7);
   });
 });
 
@@ -175,8 +234,8 @@ describe("promise history and renegotiation", () => {
 
 describe("snooze visibility", () => {
   function snoozedState(until: string): LedgerState {
-    const activity: Activity = { id: "act-snooze", clientId: "client-1", receivableId: "recv-1", type: "follow_up", occurredAt: TODAY, note: "Follow-up snoozed", snoozedUntil: until };
-    return state({ activities: [activity] });
+    const item: Activity = { id: "act-snooze", clientId: "client-1", receivableId: "recv-1", type: "snoozed", occurredAt: TODAY, note: "Follow-up snoozed", snoozedUntil: until };
+    return state({ activities: [item] });
   }
 
   it("hides a follow-up while its return date is still ahead", () => {
@@ -197,8 +256,8 @@ describe("snooze visibility", () => {
   it("honours the most recent snooze when a follow-up was postponed twice", () => {
     const later = addIndiaBusinessDays(TODAY, 1);
     const activities: Activity[] = [
-      { id: "act-1", clientId: "client-1", receivableId: "recv-1", type: "follow_up", occurredAt: addIndiaBusinessDays(TODAY, -1), note: "First snooze", snoozedUntil: TODAY },
-      { id: "act-2", clientId: "client-1", receivableId: "recv-1", type: "follow_up", occurredAt: TODAY, note: "Second snooze", snoozedUntil: later },
+      { id: "act-1", clientId: "client-1", receivableId: "recv-1", type: "snoozed", occurredAt: addIndiaBusinessDays(TODAY, -1), note: "First snooze", snoozedUntil: TODAY },
+      { id: "act-2", clientId: "client-1", receivableId: "recv-1", type: "snoozed", occurredAt: TODAY, note: "Second snooze", snoozedUntil: later },
     ];
     expect(getSnoozedUntil("recv-1", activities)).toBe(later);
     expect(getQueue(state({ activities })).map((item) => item.receivable.id)).not.toContain("recv-1");
@@ -248,7 +307,7 @@ describe("queue determinism", () => {
   });
 
   it("excludes settled receivables from today's follow-ups", () => {
-    const settled = receivable({ id: "recv-paid", amountDuePaise: 500000, status: "PAID" });
+    const settled = receivable({ id: "recv-paid", amountDuePaise: 500000, outstandingPaise: 0, status: "PAID" });
     const payments = [payment(500000, { receivableId: "recv-paid" })];
     expect(getQueue(state({ clients: [state().clients[0]], receivables: [settled], payments })).map((item) => item.receivable.id)).toEqual([]);
   });

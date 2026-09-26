@@ -40,12 +40,17 @@ function localAdmin(sql: string) {
 
 // The fixture rows this suite creates are guarded by AFTER DELETE triggers that
 // raise unconditionally, so a purge that only issues DELETEs aborts at the first
-// statement and leaves the whole run behind. The guards are switched off inside
-// one transaction and switched back on before the commit. DDL is transactional,
-// and ON_ERROR_STOP makes psql abandon the script on the first failure, so an
-// aborted purge rolls the switch-back too — a broken run can never leave a
-// history guard disabled. Measured both ways: a committed disable leaves
-// tgenabled='D'; a failed statement in the same transaction leaves 'O'.
+// statement and leaves the whole run behind. The guards are skipped for one
+// transaction with `set local session_replication_role = replica`, which reverts
+// at commit and takes no lock on the guarded tables. Doing it with
+// `alter table … disable trigger` was tried first and is wrong: that asks for
+// ACCESS EXCLUSIVE on each history table while the ledger RPCs are mid-write, so
+// a money insert waiting behind a purge that is itself waiting for the next
+// table is a cycle Postgres resolves by killing the money write — and each ALTER
+// also fires the Stage 3 ddl_command_end notify, reloading PostgREST's schema
+// cache so that a browser request landing in the window fails. ON_ERROR_STOP
+// still makes an aborted purge roll back, and the guard state is read back from
+// pg_trigger afterwards rather than trusted from the transcript.
 const PROTECTED_HISTORY_TRIGGERS: Array<[table: string, trigger: string]> = [
   ["public.activities", "activities_immutable"],
   ["public.payments", "payments_immutable"],
@@ -59,7 +64,6 @@ function historyGuardState() {
 }
 
 function purgeLocalFixtures(emailPattern: string) {
-  const flip = (verb: string) => PROTECTED_HISTORY_TRIGGERS.map(([table, trigger]) => `  alter table ${table} ${verb} trigger ${trigger};`).join("\n");
   const tables: Array<[string, string]> = [
     ["public.activities", "owner_id"],
     ["public.promise_events", "owner_id"],
@@ -74,10 +78,9 @@ function purgeLocalFixtures(emailPattern: string) {
   const owned = tables.map(([table, column]) => `  delete from ${table} where ${column} in (select id from auth.users where email like '${emailPattern}');`).join("\n");
   return localAdmin(`select 'before=' || count(*) from auth.users where email like '${emailPattern}';
 begin;
-${flip("disable")}
+set local session_replication_role = replica;
 ${owned}
   delete from auth.users where email like '${emailPattern}';
-${flip("enable")}
 commit;
 select 'residue=' || count(*) from auth.users where email like '${emailPattern}';`);
 }
@@ -336,9 +339,9 @@ describeLocalStack("Stage 4 local edit workflows: owner edits, foreign accounts,
 
   it("leaves promise, payment and activity history byte-identical across a details edit", async () => {
     const a = state.a!;
-    const promise = await a.client.rpc("create_promise", { p_receivable_id: a.receivableId, p_promised_amount_paise: 1000000, p_promised_date: "2026-09-20", p_source: "WHATSAPP", p_note: "Stage 4 history probe." });
+    const promise = await a.client.rpc("create_promise", { p_receivable_id: a.receivableId, p_promised_amount_paise: 1000000, p_promised_date: "2026-09-20", p_source: "WHATSAPP", p_note: "Stage 4 history probe.", p_request_id: crypto.randomUUID() });
     expect(promise.error ?? null, "create_promise failed for the history probe").toBeNull();
-    const payment = await a.client.rpc("record_payment", { p_receivable_id: a.receivableId, p_amount_paise: 500000, p_paid_on: "2026-09-15", p_method: "UPI", p_reference: `S4HIST${runTag.slice(0, 6).toUpperCase()}`, p_note: "Stage 4 history probe." });
+    const payment = await a.client.rpc("record_payment", { p_receivable_id: a.receivableId, p_amount_paise: 500000, p_paid_on: "2026-09-15", p_method: "UPI", p_reference: `S4HIST${runTag.slice(0, 6).toUpperCase()}`, p_note: "Stage 4 history probe.", p_request_id: crypto.randomUUID() });
     expect(payment.error ?? null, "record_payment failed for the history probe").toBeNull();
 
     async function history() {
