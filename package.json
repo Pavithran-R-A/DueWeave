@@ -22,6 +22,7 @@
     "test:stage3": "vitest run tests/stage3-local-rls.test.ts",
     "test:e2e:stage2": "playwright test e2e/stage2-local-auth.spec.ts",
     "test:e2e:stage3": "playwright test e2e/stage3-local-isolation.spec.ts",
+    "test:e2e:stage6": "playwright test e2e/stage6-local",
     "verify:stage2": "pnpm db:reset:local && pnpm db:types && pnpm test:stage2"
   },
   "dependencies": {

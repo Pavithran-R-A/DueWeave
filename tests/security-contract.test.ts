@@ -89,6 +89,25 @@ describe("Stage 2 Supabase security contract", () => {
     expect(authPage).toMatch(/We never display technical database errors here\./);
   });
 
+  it("tells the truth about sign-up, recovery and pending states on the auth screens", () => {
+    // A sign-up that returned no session must never read like an open ledger.
+    expect(authHook).toMatch(/status: "confirmation-required"/);
+    expect(authHook).toMatch(/if \(response\.data\?\.session\) return \{ status: "session" \};/);
+    expect(authPage).toMatch(/Confirm your email to open your ledger\./);
+    expect(authPage).not.toMatch(/account is ready/i);
+
+    // A recovery route with no session must not render a working-looking password form.
+    expect(authPage).toMatch(/mode === "update" && !user/);
+    expect(authPage).toMatch(/This recovery link is not active\./);
+    expect(authPage).toMatch(/Request a new reset link/);
+
+    // Unusable input is refused inside the form, with live semantics, before the server is asked.
+    expect(authPage).toMatch(/aria-invalid=\{Boolean\(fieldErrors\.email\)\}/);
+    expect(authPage).toMatch(/id="auth-email-error" role="alert"/);
+    expect(authPage).toMatch(/That does not look like an email address yet\./);
+    expect(authPage).toMatch(/disabled=\{submitting\}/);
+  });
+
   it("keeps Stage 3 client, receivable, promise-refresh, and snooze workflows authenticated-only", () => {
     for (const rpc of ["create_client", "create_receivable", "create_client_and_receivable", "mark_due_promises_broken", "create_promise", "snooze_receivable"]) {
       expect(stage3WorkflowMigration).toMatch(new RegExp(`revoke all on function public\\.${rpc}`, "i"));
@@ -112,7 +131,7 @@ describe("Stage 2 Supabase security contract", () => {
 
   it("passes mapped standalone receivable failures to the actual non-technical UI feedback path", () => {
     expect(homePage).toMatch(/message\.includes\("Free plan allows up to three active receivables"\)/);
-    expect(homePage).toMatch(/toast\.error\("Could not add receivable", \{ description: message \}\)/);
+    expect(homePage).toMatch(/feedback\.error\("Could not add receivable", \{ description: message \}\)/);
     expect(homePage).toMatch(/new SupabaseReceivableRepository\(\)/);
   });
 
@@ -129,7 +148,7 @@ describe("Stage 2 Supabase security contract", () => {
   it("persists snoozes and follow-ups while leaving WhatsApp sending under user control", () => {
     expect(activityRepository).toMatch(/supabase\.rpc\("snooze_receivable"/);
     expect(activityRepository).toMatch(/supabase\.rpc\("record_contacted"/);
-    expect(homePage).toMatch(/await activityRepository\.recordContacted\(selectedReceivable\.id\); await refresh\(\); setSheet\(null\); toast\.success\("Follow-up marked"/);
+    expect(homePage).toMatch(/await activityRepository\.recordContacted\(selectedReceivable\.id\); await refresh\(\); setSheet\(null\); feedback\.success\("Follow-up marked"/);
     expect(homePage).toMatch(/onMarkContacted=\{markContacted\}/);
     expect(sheets).toMatch(/https:\/\/wa\.me\//);
     expect(sheets).toMatch(/encodeURIComponent\(message\)/);

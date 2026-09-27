@@ -1,4 +1,5 @@
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
+import { completeWorkspaceSetup, reachLedgerAfterSignIn } from "./workspace-setup";
 
 // DUEWEAVE CURRENT ROADMAP STAGE 4 — the persistence claim a customer can see.
 //
@@ -14,6 +15,7 @@ const localStackEnabled = process.env.STAGE4_LOCAL_E2E === "1";
 
 type Account = {
   displayName: string;
+  businessName: string;
   email: string;
   password: string;
   token: string;
@@ -28,6 +30,7 @@ function newAccount(role: "owner" | "stranger"): Account {
   const token = `${Date.now().toString(36).slice(-5)}${Math.random().toString(36).slice(2, 6)}`;
   return {
     displayName: `Stage4 ${role} Ledger`,
+    businessName: `Stage4 ${role} workspace ${token}`,
     email: `stage4-e2e-${role}-${token}@dueweave.local`,
     password: `Stage4-browser-${token}!`,
     token,
@@ -46,7 +49,7 @@ async function signUp(page: Page, account: Account) {
   await page.getByLabel("Email address").fill(account.email);
   await page.getByLabel("Password").fill(account.password);
   await page.getByRole("button", { name: "Create my workspace" }).click();
-  await expect(page).toHaveURL(/\/$/, { timeout: 15_000 });
+  await completeWorkspaceSetup(page, account);
   await expect(page.getByRole("heading", { name: "Make the next conversation easier." })).toBeVisible();
 }
 
@@ -56,7 +59,7 @@ async function signIn(page: Page, account: Account) {
   await page.getByLabel("Email address").fill(account.email);
   await page.getByLabel("Password").fill(account.password);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
-  await expect(page.getByLabel("Primary navigation")).toBeVisible({ timeout: 15_000 });
+  await reachLedgerAfterSignIn(page, account);
 }
 
 async function signOut(page: Page) {

@@ -1,13 +1,14 @@
 import { expect, test } from "@playwright/test";
+import { qaWorkspace, reachLedgerAfterSignIn } from "./workspace-setup";
 
 type Credentials = { email?: string; password?: string };
 
-async function signIn(page: import("@playwright/test").Page, credentials: Credentials) {
+async function signIn(page: import("@playwright/test").Page, credentials: Credentials, role: string) {
   await page.goto("/auth");
   await page.getByLabel("Email address").fill(credentials.email!);
   await page.getByLabel("Password").fill(credentials.password!);
   await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page).toHaveURL(/\/$/);
+  await reachLedgerAfterSignIn(page, qaWorkspace(role));
 }
 
 async function openExistingClientReceivable(page: import("@playwright/test").Page, clientName: string) {
@@ -28,7 +29,7 @@ test.describe("controlled Stage 4.1 existing-client and Founder conversion workf
   test.skip(!existing.email || !existing.password || !limited.email || !limited.password, "Set only local ignored Stage 4.1 E2E fixture credentials.");
 
   test("uses a deliberately selected existing client without creating a duplicate", async ({ page }) => {
-    await signIn(page, existing);
+    await signIn(page, existing, "existing");
     await openExistingClientReceivable(page, "Stage 4.1 Existing Client");
     await page.getByRole("button", { name: "Save receivable" }).click();
     await expect(page.getByText("Receivable added", { exact: true })).toBeVisible();
@@ -36,7 +37,7 @@ test.describe("controlled Stage 4.1 existing-client and Founder conversion workf
   });
 
   test("converts the authoritative fourth-receivable denial into the real Founder route", async ({ page }) => {
-    await signIn(page, limited);
+    await signIn(page, limited, "limited");
     await openExistingClientReceivable(page, "Stage 4.1 Limit Client");
     await page.getByRole("button", { name: "Save receivable" }).click();
     await expect(page.getByRole("status")).toContainText("Free plan limit reached");

@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { completeWorkspaceSetup } from "./workspace-setup";
 
 // Qualified against the repository's own local Supabase Docker stack only.
 // Run with STAGE2_LOCAL_E2E=1 after `pnpm supabase:start`, a local db reset,
@@ -12,6 +13,7 @@ const localStackEnabled = process.env.STAGE2_LOCAL_E2E === "1";
 const suffix = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 const account = {
   displayName: `Stage2 Fixture ${suffix.slice(-6)}`,
+  businessName: `Stage2 Fixture Studio ${suffix.slice(-6)}`,
   email: `stage2-${suffix}@dueweave.local`,
   password: `Stage2-local-${suffix}!`,
 };
@@ -33,7 +35,7 @@ test.describe("Stage 2 local browser auth journey", () => {
     await page.getByLabel("Password").fill(account.password);
     await page.getByRole("button", { name: "Create my workspace" }).click();
 
-    await expect(page).toHaveURL(/\/$/, { timeout: 15_000 });
+    await completeWorkspaceSetup(page, account);
     await expect(page.getByRole("heading", { name: "Make the next conversation easier." })).toBeVisible();
     await expect(page.getByText("Still outstanding")).toBeHidden();
     for (const marker of demoMarkers) {

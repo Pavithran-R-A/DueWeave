@@ -89,6 +89,21 @@ export interface LedgerState {
   activities: Activity[];
 }
 
+// The signed-in owner's own row in `public.profiles`. `plan` is deliberately
+// absent: it is entitlement state the database guards with a trigger, and a view
+// type that can carry it is a channel for writing it back by accident. Email is
+// not here either — Supabase Auth owns it and the app reads it from there.
+export interface Profile {
+  id: string;
+  displayName: string;
+  businessName: string;
+  timezone: string;
+  currency: string;
+  // The database's own microsecond timestamp, kept as a raw string so a
+  // concurrent edit can be detected instead of silently overwritten.
+  updatedAt: string;
+}
+
 export type AppSection = "today" | "receivables" | "clients" | "more" | "empty" | "loading" | "error";
 
 export type FounderClaimStatus = "DRAFT" | "PENDING_REVIEW" | "APPROVED" | "REJECTED" | "CANCELLED";

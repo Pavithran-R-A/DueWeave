@@ -190,7 +190,7 @@ describe("edit surface (Stage 4)", () => {
   it("leaves a failed edit open, typed, and understandable instead of closing it", () => {
     for (const handler of [clientEdit, receivableEdit]) {
       const failure = catchBlock(handler);
-      expect(failure).toMatch(/toast\.error\(/);
+      expect(failure).toMatch(/feedback\.error\(/);
       expect(failure, "a refused edit must keep the sheet open with its content").not.toContain("setSheet(null)");
       expect(failure).not.toMatch(/raw|SQLSTATE|40001|P0002|policy|permission/i);
     }

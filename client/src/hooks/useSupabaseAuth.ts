@@ -4,6 +4,21 @@ import { supabase } from "@/lib/supabase";
 
 export type AuthResult = { error?: string };
 
+// A sign-up attempt ends in one of three genuinely different places, and the two
+// that involve no error are not the same news to give someone: a session means the
+// ledger is open right now, while no session means an email has to be confirmed
+// first and there is nothing to open yet. Collapsing those into { error? } is what
+// let the screen say "your account is ready" to a person who could not get in.
+export type SignUpOutcome = { status: "session" } | { status: "confirmation-required" } | { status: "error"; error: string };
+
+export const GENERIC_AUTH_FAILURE = "We could not complete that request. Please try again.";
+
+/** The part of a sign-up reply the screen has to decide from: a refusal, a session, a user, or nothing. */
+export type SignUpResponse = {
+  error?: { message: string } | null;
+  data?: { session?: unknown | null; user?: unknown | null } | null;
+};
+
 function friendlyAuthError(message: string) {
   const normalized = message.toLowerCase();
   if (normalized.includes("invalid login") || normalized.includes("invalid credentials")) {
@@ -21,7 +36,16 @@ function friendlyAuthError(message: string) {
   if (normalized.includes("network") || normalized.includes("fetch")) {
     return "We could not reach DueWeave. Check your connection and try again.";
   }
-  return "We could not complete that request. Please try again.";
+  return GENERIC_AUTH_FAILURE;
+}
+
+// Read once, decided once: an account that exists is not the same news as a ledger
+// that is open, and neither is the same as a refusal.
+export function interpretSignUpResponse(response: SignUpResponse): SignUpOutcome {
+  if (response.error) return { status: "error", error: friendlyAuthError(response.error.message) };
+  if (response.data?.session) return { status: "session" };
+  if (response.data?.user) return { status: "confirmation-required" };
+  return { status: "error", error: GENERIC_AUTH_FAILURE };
 }
 
 export function useSupabaseAuth() {
@@ -56,13 +80,13 @@ export function useSupabaseAuth() {
     return error ? { error: friendlyAuthError(error.message) } : {};
   }, []);
 
-  const signUp = useCallback(async (displayName: string, email: string, password: string): Promise<AuthResult> => {
-    const { error } = await supabase.auth.signUp({
+  const signUp = useCallback(async (displayName: string, email: string, password: string): Promise<SignUpOutcome> => {
+    const response = await supabase.auth.signUp({
       email: email.trim(),
       password,
       options: { data: { display_name: displayName.trim() } },
     });
-    return error ? { error: friendlyAuthError(error.message) } : {};
+    return interpretSignUpResponse(response);
   }, []);
 
   const signOut = useCallback(async (): Promise<AuthResult> => {

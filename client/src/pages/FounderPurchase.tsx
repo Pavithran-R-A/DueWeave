@@ -2,7 +2,7 @@ import QRCode from "qrcode";
 import { ArrowLeft, BadgeCheck, Check, Clipboard, ExternalLink, Loader2, ShieldCheck, Sparkles } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
-import { toast } from "sonner";
+import { feedback } from "@/components/ui/sonner";
 import { SupabaseFounderRepository } from "@/data/supabase-founder-repository";
 import { ErrorState, LoadingState } from "@/components/finance-ui";
 import { formatINR } from "@/lib/finance";
@@ -43,8 +43,8 @@ export default function FounderPurchase() {
 
   async function createClaim() {
     setSaving(true);
-    try { const claim = await repository.createClaim(); setData((current) => current ? { ...current, claim } : current); toast.success("Payment claim started", { description: "Pay only to the verified UPI destination shown here." }); }
-    catch (reason) { toast.error("Could not start payment claim", { description: reason instanceof Error ? reason.message : "Please try again." }); }
+    try { const claim = await repository.createClaim(); setData((current) => current ? { ...current, claim } : current); feedback.success("Payment claim started", { description: "Pay only to the verified UPI destination shown here." }); }
+    catch (reason) { feedback.error("Could not start payment claim", { description: reason instanceof Error ? reason.message : "Please try again." }); }
     finally { setSaving(false); }
   }
 
@@ -52,23 +52,23 @@ export default function FounderPurchase() {
     event.preventDefault();
     if (!data?.claim) return;
     setSaving(true);
-    try { const claim = await repository.submitPayment(data.claim.claimId, utr, payerName); setData((current) => current ? { ...current, claim } : current); toast.success("Payment submitted for review", { description: data.offer.reviewWindowCopy }); }
-    catch (reason) { toast.error("Could not submit payment", { description: reason instanceof Error ? reason.message : "Please try again." }); }
+    try { const claim = await repository.submitPayment(data.claim.claimId, utr, payerName); setData((current) => current ? { ...current, claim } : current); feedback.success("Payment submitted for review", { description: data.offer.reviewWindowCopy }); }
+    catch (reason) { feedback.error("Could not submit payment", { description: reason instanceof Error ? reason.message : "Please try again." }); }
     finally { setSaving(false); }
   }
 
   async function cancelClaim() {
     if (!data?.claim) return;
     setSaving(true);
-    try { const claim = await repository.cancelClaim(data.claim.claimId); setData((current) => current ? { ...current, claim } : current); toast.message("Payment claim cancelled", { description: "You can start a new claim when you are ready." }); }
-    catch (reason) { toast.error("Could not cancel claim", { description: reason instanceof Error ? reason.message : "Please try again." }); }
+    try { const claim = await repository.cancelClaim(data.claim.claimId); setData((current) => current ? { ...current, claim } : current); feedback.message("Payment claim cancelled", { description: "You can start a new claim when you are ready." }); }
+    catch (reason) { feedback.error("Could not cancel claim", { description: reason instanceof Error ? reason.message : "Please try again." }); }
     finally { setSaving(false); }
   }
 
   async function copyPaymentLink() {
     if (!payload) return;
-    try { await navigator.clipboard.writeText(payload); toast.success("UPI link copied", { description: "Review the payee and amount in your UPI app before you pay." }); }
-    catch { toast.error("Could not copy the UPI link", { description: "Use Open UPI instead." }); }
+    try { await navigator.clipboard.writeText(payload); feedback.success("UPI link copied", { description: "Review the payee and amount in your UPI app before you pay." }); }
+    catch { feedback.error("Could not copy the UPI link", { description: "Use Open UPI instead." }); }
   }
 
   if (loading) return <div className="app-shell founder-shell"><LoadingState /></div>;

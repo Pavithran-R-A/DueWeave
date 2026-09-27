@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { completeWorkspaceSetup } from "./workspace-setup";
 
 // Qualified against the repository's own local Supabase Docker stack only.
 // Run with STAGE3_LOCAL_E2E=1 after `pnpm supabase:start`, a local db reset,
@@ -14,6 +15,7 @@ const localStackEnabled = process.env.STAGE3_LOCAL_E2E === "1";
 type Account = {
   role: string;
   displayName: string;
+  businessName: string;
   email: string;
   password: string;
   token: string;
@@ -27,6 +29,7 @@ function newAccount(role: "alpha" | "beta"): Account {
   return {
     role,
     displayName: `Stage3 ${role} Reviewer`,
+    businessName: `Stage3 ${role} workspace ${token}`,
     email: `stage3-e2e-${role}-${token}@dueweave.local`,
     password: `Stage3-browser-${token}!`,
     token,
@@ -43,7 +46,7 @@ async function signUp(page: Page, account: Account) {
   await page.getByLabel("Email address").fill(account.email);
   await page.getByLabel("Password").fill(account.password);
   await page.getByRole("button", { name: "Create my workspace" }).click();
-  await expect(page).toHaveURL(/\/$/, { timeout: 15_000 });
+  await completeWorkspaceSetup(page, account);
   await expect(
     page.getByRole("heading", { name: "Make the next conversation easier." })
   ).toBeVisible();
@@ -70,6 +73,7 @@ async function expectNoTrace(page: Page, account: Account) {
   await expect(page.getByText(account.clientName, { exact: false })).toHaveCount(0);
   await expect(page.getByText(account.receivableLabel, { exact: false })).toHaveCount(0);
   await expect(page.getByText(account.email, { exact: false })).toHaveCount(0);
+  await expect(page.getByText(account.businessName, { exact: false })).toHaveCount(0);
 }
 
 async function openSection(page: Page, section: "Receivables" | "Clients") {
@@ -87,6 +91,11 @@ test.describe("controlled Stage 3 two-account browser isolation", () => {
     !localStackEnabled,
     "Set STAGE3_LOCAL_E2E=1 to run against the local Supabase stack."
   );
+  // Stage 6 made every account here name its workspace through the setup screen
+  // before it can be used, so the hook now drives two sign-ups, two setups and two
+  // seeded ledgers. Measured on the local stack that is ~33s of real UI work, and
+  // the 30s default was cutting the set-up short rather than the journey.
+  test.describe.configure({ timeout: 90_000 });
 
   const alpha = newAccount("alpha");
   const beta = newAccount("beta");

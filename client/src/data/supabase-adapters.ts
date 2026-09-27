@@ -1,4 +1,4 @@
-import type { Activity, Client, Payment, PaymentMethod, PromiseRecord, PromiseSource, Receivable, ReceivableStatus } from "@/types/domain";
+import type { Activity, Client, Payment, PaymentMethod, Profile, PromiseRecord, PromiseSource, Receivable, ReceivableStatus } from "@/types/domain";
 import { toIndiaBusinessDate } from "@/lib/business-clock";
 
 type Row = Record<string, unknown>;
@@ -38,6 +38,12 @@ function businessDate(value: unknown) { return toIndiaBusinessDate(string(value)
 
 export function toClient(row: Row): Client {
   return { id: string(row.id), name: string(row.name), company: string(row.company), phone: optionalString(row.phone), email: optionalString(row.email), notes: optionalString(row.notes), createdAt: string(row.created_at), updatedAt: string(row.updated_at) };
+}
+
+// `plan` is never mapped: it is entitlement state the database guards with a
+// trigger, and a domain profile that could carry it invites a write-back.
+export function toProfile(row: Row): Profile {
+  return { id: string(row.id), displayName: string(row.display_name), businessName: string(row.business_name), timezone: string(row.timezone), currency: string(row.currency), updatedAt: string(row.updated_at) };
 }
 
 export function toReceivable(row: Row): Receivable {
@@ -120,6 +126,9 @@ export function userFacingDataError(message?: string, code?: string) {
   if (normalized.includes("snooze date")) return "Choose today or a future date to snooze this follow-up.";
   if (normalized.includes("closed receivable")) return "This receivable is already closed, so it cannot receive a new promise.";
   if (normalized.includes("not available for this account")) return "That item is not available in this private ledger.";
+  // An expired credential has one fix and it is not "try again": say so, in the
+  // product's words, instead of leaving a generic failure next to a sign-in button.
+  if (normalized.includes("jwt") || normalized.includes("jws") || normalized.includes("session has expired") || normalized.includes("token expired")) return "Your session has expired. Please sign in again.";
   if (normalized.includes("authentication")) return "Your session has expired. Please sign in again.";
   if (normalized.includes("network") || normalized.includes("fetch")) return "We could not reach DueWeave. Check your connection and try again.";
   return "We could not save that change. Please try again.";

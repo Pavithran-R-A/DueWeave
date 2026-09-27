@@ -8,6 +8,9 @@ The product is **pre-deployment**. The repository contains an independently buil
 
 ## What the app does
 
+- a guided first-run setup that names you and the workspace, and stores both in the database; an incomplete setup cannot be skipped by typing a URL
+- a settings screen that shows the saved workspace identity, where the address, INR and the India business calendar are stated as fixed facts rather than presented as editable controls
+- search over receivables and clients, composable with the Open / Paid / Cancelled / All status filters, with a distinct answer when a search simply matches nothing
 - a Today-first queue of receivables that need attention, with an explained priority order
 - outstanding-cash summary across the whole book
 - client and receivable detail views with the complete promise history
@@ -15,6 +18,7 @@ The product is **pre-deployment**. The repository contains an independently buil
 - partial-payment tracking that keeps the remaining balance visible
 - editable, respectful follow-up message drafts opened manually in WhatsApp
 - snoozing that pauses a follow-up without erasing the timeline
+- one stored browser preference — the light/dark theme. Signed-in session storage belongs to Supabase's own client; no ledger amount, client name or promise is written to browser storage
 - a manual-verification Founder Lifetime claim flow
 
 All money values are integer paise end to end, and dates are handled on the India business calendar. Financial and date rules live in small pure helpers (`client/src/lib/finance.ts`) rather than inside UI components.
@@ -102,6 +106,19 @@ pnpm preview --port 3000 --strictPort --host 127.0.0.1   # serve dist on the por
 pnpm test:e2e               # in a second terminal
 ```
 
+### Stage 6 first-user and product journeys
+
+Stage 6's browser specs drive the real product against the local stack: signup states, the workspace gate, onboarding read-back, settings/profile editing, loading versus background refresh, error and retry, empty states, search and filters, toast/focus/dialog behaviour, the accessibility qualification, and the responsive width matrix. They gate themselves behind `STAGE6_LOCAL_E2E=1` so a machine without the stack skips rather than pretends:
+
+```bash
+pnpm build && pnpm preview --port 3000 --strictPort --host 127.0.0.1   # terminal one
+STAGE6_LOCAL_E2E=1 pnpm test:e2e:stage6                               # terminal two
+```
+
+`tests/stage6-local-profile.test.ts` (part of `pnpm test`) covers the same profile authority model through the real authenticated PostgREST path: an owner reads and saves only `display_name` and `business_name`, another owner's row is invisible, and writes aimed at `id`, `plan`, `timezone` or `currency` are refused by the database.
+
+The password-recovery journey reads the reset mail from the local Inbucket inbox (`STAGE6_INBOX_URL`, default `http://127.0.0.1:54324`). That proves the app's handling of a real recovery link on a local mail catcher only; `supabase/config.toml` disables signup confirmation, so nothing here verifies hosted SMTP, a hosted Site URL, or a redirect allow-list.
+
 ## Founder workflow
 
 Founder Lifetime is a manual-verification flow, not a payment processor. The configured offer currently remains an enabled **PLACEHOLDER** with no UPI destination. A customer can create a protected claim only when payment instructions are configured. A submitted reference is checked manually against business bank history by an allowlisted reviewer, who can approve, reject, revoke, or—after an explicit recheck—reconsider a rejected claim. The database prevents self-activation, duplicate UTR reuse, unapproved changes, and non-atomic seat-cap bypasses. Claim and audit history are preserved.
@@ -121,6 +138,9 @@ The design targets Supabase Free, GitHub Free, static hosting, and no paid payme
 - `client/src/config/brand.ts` keeps the product identity and its local brand assets in one place.
 - `client/src/lib/finance.ts` contains the reusable money/date/priority logic.
 - `client/src/data/supabase-*.ts` are the per-table persistence adapters; `supabase-adapters.ts` maps rows to domain types.
+- `client/src/data/supabase-profile-repository.ts` is the only path the app uses to read or save the signed-in owner's `profiles` row; views never query that table directly.
+- `client/src/lib/profile.ts` holds the single onboarding rule (`business_name` blank means the workspace is not set up yet) — there is no separate completion flag in the database or the browser.
+- `client/src/lib/ledger-search.ts` holds the case- and whitespace-tolerant matching used by receivable and client search.
 - `client/src/data/demo.ts` contains fictional example data used only by tests.
 - `client/src/types/database.generated.ts` is committed and regenerated from the live local schema with `pnpm db:types`; it is prettier-ignored so formatting runs cannot churn it.
 - `scripts/local-supabase-env.mjs` reads `supabase status` and writes only the two browser-safe `VITE_*` values.

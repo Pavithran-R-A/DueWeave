@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { qaWorkspace, reachLedgerAfterSignIn } from "./workspace-setup";
 
 const email = process.env.E2E_EMAIL;
 const password = process.env.E2E_PASSWORD;
@@ -21,7 +22,7 @@ test.describe("controlled responsive authenticated dashboard", () => {
     await page.getByLabel("Email address").fill(email!);
     await page.getByLabel("Password").fill(password!);
     await page.getByRole("button", { name: "Sign in" }).click();
-    await expect(page).toHaveURL(/\/$/);
+    await reachLedgerAfterSignIn(page, qaWorkspace("controlled"));
 
     for (const viewport of viewports) {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });

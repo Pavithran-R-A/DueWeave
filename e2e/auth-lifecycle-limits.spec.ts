@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { qaWorkspace, reachLedgerAfterSignIn } from "./workspace-setup";
 
 const email = process.env.E2E_EMAIL;
 const password = process.env.E2E_PASSWORD;
@@ -11,6 +12,7 @@ async function signIn(page: Page) {
   await page.getByLabel("Email address").fill(email!);
   await page.getByLabel("Password").fill(password!);
   await page.getByRole("button", { name: "Sign in" }).click();
+  await reachLedgerAfterSignIn(page, qaWorkspace("controlled"));
   await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
 }
 

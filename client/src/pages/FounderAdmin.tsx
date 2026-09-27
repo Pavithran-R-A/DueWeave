@@ -1,7 +1,7 @@
 import { ArrowLeft, BadgeCheck, Check, Loader2, ShieldAlert, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useLocation } from "wouter";
-import { toast } from "sonner";
+import { feedback } from "@/components/ui/sonner";
 import { LoadingState } from "@/components/finance-ui";
 import { SupabaseFounderAdminRepository } from "@/data/supabase-founder-admin-repository";
 import { formatINR } from "@/lib/finance";
@@ -29,21 +29,21 @@ export default function FounderAdmin() {
 
   async function approve(claim: PendingFounderClaim) {
     setWorkingId(claim.claimId);
-    try { await repository.approve(claim.claimId); toast.success("Founder access approved", { description: "The entitlement and audit entry were written atomically." }); await refresh(); }
-    catch (reason) { toast.error("Could not approve claim", { description: reason instanceof Error ? reason.message : "Please try again." }); }
+    try { await repository.approve(claim.claimId); feedback.success("Founder access approved", { description: "The entitlement and audit entry were written atomically." }); await refresh(); }
+    catch (reason) { feedback.error("Could not approve claim", { description: reason instanceof Error ? reason.message : "Please try again." }); }
     finally { setWorkingId(""); }
   }
   async function reject(claim: PendingFounderClaim) {
     setWorkingId(claim.claimId);
-    try { await repository.reject(claim.claimId, reasonByClaim[claim.claimId] ?? "Not verified in business bank history"); toast.message("Founder claim rejected", { description: "The customer can contact support if the payment needs review." }); await refresh(); }
-    catch (reason) { toast.error("Could not reject claim", { description: reason instanceof Error ? reason.message : "Please try again." }); }
+    try { await repository.reject(claim.claimId, reasonByClaim[claim.claimId] ?? "Not verified in business bank history"); feedback.message("Founder claim rejected", { description: "The customer can contact support if the payment needs review." }); await refresh(); }
+    catch (reason) { feedback.error("Could not reject claim", { description: reason instanceof Error ? reason.message : "Please try again." }); }
     finally { setWorkingId(""); }
   }
   async function reconsider(claim: RejectedFounderClaim) {
     if (!bankVerifiedByClaim[claim.claimId]) return;
     setWorkingId(claim.claimId);
-    try { await repository.reconsider(claim.claimId, reasonByClaim[claim.claimId] ?? ""); toast.success("Founder access approved after recheck", { description: "The original payment reference and rejection history remain in the audit trail." }); await refresh(); }
-    catch (reason) { toast.error("Could not reconsider claim", { description: reason instanceof Error ? reason.message : "Please try again." }); }
+    try { await repository.reconsider(claim.claimId, reasonByClaim[claim.claimId] ?? ""); feedback.success("Founder access approved after recheck", { description: "The original payment reference and rejection history remain in the audit trail." }); await refresh(); }
+    catch (reason) { feedback.error("Could not reconsider claim", { description: reason instanceof Error ? reason.message : "Please try again." }); }
     finally { setWorkingId(""); }
   }
 

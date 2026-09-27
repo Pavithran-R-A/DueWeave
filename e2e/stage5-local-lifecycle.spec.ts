@@ -1,4 +1,5 @@
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
+import { completeWorkspaceSetup } from "./workspace-setup";
 
 // DUEWEAVE CURRENT ROADMAP STAGE 5 — the money and promise lifecycle a customer
 // can watch happen.
@@ -34,6 +35,7 @@ const yesterday = businessDate(-1);
 
 type Account = {
   displayName: string;
+  businessName: string;
   email: string;
   password: string;
   token: string;
@@ -45,6 +47,7 @@ function newAccount(role: string): Account {
   const token = `${Date.now().toString(36).slice(-5)}${Math.random().toString(36).slice(2, 6)}`;
   return {
     displayName: `Stage5 ${role} Ledger`,
+    businessName: `Stage5 ${role} workspace ${token}`,
     email: `stage5-e2e-${role}-${token}@dueweave.local`,
     password: `Stage5-browser-${token}!`,
     token,
@@ -60,7 +63,7 @@ async function signUp(page: Page, account: Account) {
   await page.getByLabel("Email address").fill(account.email);
   await page.getByLabel("Password").fill(account.password);
   await page.getByRole("button", { name: "Create my workspace" }).click();
-  await expect(page).toHaveURL(/\/$/, { timeout: 20_000 });
+  await completeWorkspaceSetup(page, account);
   await expect(page.getByRole("heading", { name: "Make the next conversation easier." })).toBeVisible();
 }
 
@@ -242,7 +245,9 @@ test.describe("Stage 5 settles money against a promise without erasing either", 
   test("the final ₹5,000 settles the invoice and leaves the earlier promise in the timeline", async () => {
     await recordPayment(page, { amountRupees: "5000", paidDate: today, method: "UPI", clickTwice: true });
     await expect(outstanding(page)).toHaveText("₹0");
-    await expect(page.locator(".timeline .timeline-amount"), "a retried submit must not record a third receipt").toHaveCount(2);
+    // The receipts are counted by their own timeline entries: a payment activity row
+    // holds no amount of its own, so the figure beside it is not what proves the count.
+    await expect(page.locator(".timeline-item").filter({ hasText: "Payment recorded" }), "a retried submit must not record a third receipt").toHaveCount(2);
     await expect(page.locator(".timeline").getByText("WhatsApp · ₹5,000 promised").first()).toBeVisible();
     const { pill, back } = await receivablePill(page, label, "paid");
     await expect(pill).toHaveText("Paid");
