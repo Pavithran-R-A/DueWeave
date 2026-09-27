@@ -16,7 +16,9 @@ The product is **pre-deployment**. The repository contains an independently buil
 - client and receivable detail views with the complete promise history
 - promise-to-pay records that never overwrite earlier promises
 - partial-payment tracking that keeps the remaining balance visible
-- editable, respectful follow-up message drafts opened manually in WhatsApp
+- five built-in follow-up tones you can choose between and edit before acting; the draft exists only while the form is open and DueWeave never stores or sends it
+- a manual WhatsApp handoff — opening the conversation is not proof of sending, and DueWeave cannot see whether you pressed Send, so the timeline records a contact only when you confirm one ("I sent it", or "Contacted some other way")
+- a full JSON data archive plus Clients, Receivables, Payments, Promises and Activity CSV exports from Settings. These are ordinary files your browser downloads, and they contain your sensitive business information
 - snoozing that pauses a follow-up without erasing the timeline
 - one stored browser preference — the light/dark theme. Signed-in session storage belongs to Supabase's own client; no ledger amount, client name or promise is written to browser storage
 - a manual-verification Founder Lifetime claim flow
@@ -93,7 +95,7 @@ pnpm build
 pnpm audit --prod --audit-level=high
 ```
 
-`pnpm lint` is real ESLint 10 (flat config, typescript-eslint, react-hooks) run with `--max-warnings=0`; `pnpm check` is `tsc --noEmit`. The unit tests cover INR/paise parsing and formatting, outstanding balances after partial payments, paid-state detection, India business-date handling, deterministic queue ordering, promise sequencing, snooze visibility, follow-up interpolation, and the repository/adapter column contract. They also cover the Stage 2 boundary contracts: no production file may import the demo dataset, and no privileged credential may appear in browser source or in the built bundle.
+`pnpm lint` is real ESLint 10 (flat config, typescript-eslint, react-hooks) run with `--max-warnings=0`; `pnpm check` is `tsc --noEmit`. The unit tests cover INR/paise parsing and formatting, outstanding balances after partial payments, paid-state detection, India business-date handling, deterministic queue ordering, promise sequencing, snooze visibility, follow-up interpolation, and the repository/adapter column contract. They also cover the Stage 2 boundary contracts: no production file may import the demo dataset, and no privileged credential may appear in browser source or in the built bundle. Stage 7 adds pure-helper coverage for the follow-up truth model (which actions may and may not claim), phone-number normalization and the WhatsApp URL, the JSON envelope and CSV rules including formula-injection defence and UTF-8 escaping, and the download filename; plus a contract test that the export path touches no browser storage.
 
 `tests/stage2-local-foundation.test.ts` runs against the local Docker stack and skips itself when `.env.local` does not point at a loopback Supabase URL, so a machine without the stack still gets a green `pnpm test`. With the local stack running it executes 12 real auth, profile, RPC, constraint and row-level-security checks. One further test targets a hosted project and always skips unless hosted credentials are supplied.
 
@@ -116,6 +118,17 @@ STAGE6_LOCAL_E2E=1 pnpm test:e2e:stage6                               # terminal
 ```
 
 `tests/stage6-local-profile.test.ts` (part of `pnpm test`) covers the same profile authority model through the real authenticated PostgREST path: an owner reads and saves only `display_name` and `business_name`, another owner's row is invisible, and writes aimed at `id`, `plan`, `timezone` or `currency` are refused by the database.
+
+### Stage 7 follow-up and portability journeys
+
+Stage 7's browser specs assert what the product is allowed to claim. `e2e/stage7-local-followup.spec.ts` proves that copying a draft or opening a WhatsApp conversation writes no history — the link is intercepted so a test never reaches wa.me — and that a contact appears only after an explicit confirmation, once, even under a double click. `e2e/stage7-local-export.spec.ts` reads the bytes Chromium actually saved, checks the JSON envelope and each CSV against the ledger on screen, and proves a second account's data cannot appear in the first account's file. Both gate behind `STAGE7_LOCAL_E2E=1`.
+
+```bash
+pnpm build && pnpm preview --port 3000 --strictPort --host 127.0.0.1   # terminal one
+STAGE7_LOCAL_E2E=1 npx playwright test e2e/stage7-local               # terminal two
+```
+
+The preview server serves `dist/`, so a browser run only measures the code you just wrote if `pnpm build` ran after it.
 
 The password-recovery journey reads the reset mail from the local Inbucket inbox (`STAGE6_INBOX_URL`, default `http://127.0.0.1:54324`). That proves the app's handling of a real recovery link on a local mail catcher only; `supabase/config.toml` disables signup confirmation, so nothing here verifies hosted SMTP, a hosted Site URL, or a redirect allow-list.
 
@@ -149,3 +162,5 @@ The design targets Supabase Free, GitHub Free, static hosting, and no paid payme
 ## Status and boundaries
 
 This is intentionally not presented as a production billing system. It is a source-only, undeployed repository: no environment is live, no payments are processed, and no email delivery is configured. Introducing any of those is separate, explicitly requested work.
+
+Data portability is one-way. Exports are generated in your browser from your own rows and saved by the browser's download mechanism; nothing is uploaded, kept or queued anywhere, and there is no import path and no automatic or scheduled messaging.

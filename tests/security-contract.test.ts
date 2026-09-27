@@ -27,6 +27,10 @@ const founderPage = readFileSync(resolve(root, "client/src/pages/FounderPurchase
 const founderAdminPage = readFileSync(resolve(root, "client/src/pages/FounderAdmin.tsx"), "utf8");
 const founderPaymentHelper = readFileSync(resolve(root, "client/src/lib/founder-payment.ts"), "utf8");
 const sheets = readFileSync(resolve(root, "client/src/components/sheets.tsx"), "utf8");
+const whatsappLib = readFileSync(resolve(root, "client/src/lib/whatsapp.ts"), "utf8");
+const dataExportLib = readFileSync(resolve(root, "client/src/lib/data-export.ts"), "utf8");
+const downloadLib = readFileSync(resolve(root, "client/src/lib/download.ts"), "utf8");
+const exportRepository = readFileSync(resolve(root, "client/src/data/supabase-data-export-repository.ts"), "utf8");
 const financeUi = readFileSync(resolve(root, "client/src/components/finance-ui.tsx"), "utf8");
 const schema = `${baseMigration}\n${alignedMigration}\n${rpcGrantMigration}\n${stage3WorkflowMigration}\n${stage4Migration}\n${stage4HardeningMigration}\n${stage4DraftConstraintMigration}\n${stage4CancellationConstraintMigration}\n${stage41ReconsiderationMigration}\n${stage42PaymentReadinessMigration}\n${stage42aLivePaymentGateMigration}`;
 
@@ -145,16 +149,65 @@ describe("Stage 2 Supabase security contract", () => {
     expect(homePage).toMatch(/priority is deterministic/i);
   });
 
-  it("persists snoozes and follow-ups while leaving WhatsApp sending under user control", () => {
+  // Stage 7 rewrote this contract on purpose. Before it, the WhatsApp link itself
+  // recorded the touchpoint, which logged a conversation that may never have
+  // happened. Opening a tab proves nothing; only a confirmation inside DueWeave does.
+  it("records a follow-up only from an explicit confirmation, never from opening WhatsApp", () => {
     expect(activityRepository).toMatch(/supabase\.rpc\("snooze_receivable"/);
     expect(activityRepository).toMatch(/supabase\.rpc\("record_contacted"/);
-    expect(homePage).toMatch(/await activityRepository\.recordContacted\(selectedReceivable\.id\); await refresh\(\); setSheet\(null\); feedback\.success\("Follow-up marked"/);
-    expect(homePage).toMatch(/onMarkContacted=\{markContacted\}/);
-    expect(sheets).toMatch(/https:\/\/wa\.me\//);
-    expect(sheets).toMatch(/encodeURIComponent\(message\)/);
-    expect(sheets).toMatch(/target="_blank" rel="noreferrer" onClick=\{onMarkContacted\}/);
+    expect(homePage).toMatch(/await activityRepository\.recordContacted\(selectedReceivable\.id, note\); await refresh\(\); setSheet\(null\); feedback\.success\("Follow-up marked"/);
+    expect(homePage).toMatch(/onConfirmContact=\{\(note\) => \{ void markContacted\(note\); \}\}/);
+    // The anchor is inert: a plain, tab-nabbing-safe link that only remembers that
+    // WhatsApp was opened.
+    expect(sheets).toMatch(/<a className="button-primary" href=\{waUrl\} target="_blank" rel="noopener noreferrer" onClick=\{\(\) => setWhatsappOpened\(true\)\}>/);
+    expect(sheets).not.toMatch(/rel="noreferrer"/);
+    // Every write the sheet can perform carries a canned note, so the edited draft a
+    // person may have thrown away never reaches the ledger.
+    expect(sheets.match(/onConfirmContact\(/g)).toHaveLength(2);
+    expect(sheets).not.toMatch(/onConfirmContact\((?!contactNote)/);
+    expect(whatsappLib).toMatch(/https:\/\/wa\.me\//);
+    expect(whatsappLib).toMatch(/encodeURIComponent\(message\)/);
     expect(sheets).toMatch(/never sent automatically/i);
+    expect(sheets).toMatch(/cannot tell whether you pressed Send/i);
     expect(financeUi).toMatch(/snoozedUntil/);
+  });
+
+  // Pressing "download" must not be able to move money, settle a promise or leave a
+  // trace in the ledger, so the export seam is checked for write verbs as well as
+  // proved behaviourally in the live suite.
+  it("keeps the data export a read-only surface with no privileged key", () => {
+    expect(exportRepository).not.toMatch(/\.insert\(|\.upsert\(|\.update\(|\.delete\(|\.rpc\(/);
+    expect(exportRepository).toMatch(/supabase\.auth\.getSession\(\)/);
+    expect(exportRepository).toMatch(/from\("promise_events"\)/);
+    expect(exportRepository).not.toMatch(/service_role|createClient\(/);
+  });
+
+  // Phase 56. The screen that offers the files is allowed to be a screen: it asks for
+  // a bundle and hands it to the browser. Every read stays behind the repository, so
+  // a later change cannot quietly start writing from the place a person clicks.
+  it("keeps the export screen, the formatter and the download helper free of the database", () => {
+    for (const [name, source] of [["data-export", dataExportLib], ["download", downloadLib]] as const) {
+      expect(source, `client/src/lib/${name}.ts reached for a client`).not.toMatch(/supabase|fetch\(|XMLHttpRequest|WebSocket/);
+    }
+    expect(homePage).not.toMatch(/import .* from "@\/lib\/supabase"/);
+    expect(homePage).toMatch(/const snapshot = await exportRepository\.read\(\);/);
+    // An archive is regenerated on demand, so a stale copy must not survive the tab.
+    // Home is allowed exactly one stored value — the theme a person picked — so the
+    // page text is checked with that key removed rather than excusing the whole file.
+    const homeWithoutTheme = homePage.replace(/localStorage\.(getItem|setItem)\("dueweave-theme"[^\n]*/g, "");
+    const exportPath = `${homeWithoutTheme}${sheets}${dataExportLib}${downloadLib}${exportRepository}`;
+    expect(exportPath).not.toMatch(/localStorage|sessionStorage|indexedDB|document\.cookie|caches\./);
+    const storedKeys = Array.from(homePage.matchAll(/localStorage\.\w+\("([^"]+)"/g), (match) => match[1]);
+    expect(Array.from(new Set(storedKeys))).toEqual(["dueweave-theme"]);
+  });
+
+  // Phase 56. Portability is a URL and nothing else: no Business API token, no
+  // sending endpoint, no credential that could turn a download button into a message.
+  it("keeps WhatsApp a link the person clicks and never an integration that sends", () => {
+    const clientSource = `${whatsappLib}${sheets}${homePage}${exportRepository}`;
+    expect(clientSource).not.toMatch(/graph\.facebook\.com|wa\.cloud\.api|whatsapp_business|TWILIO|AccountSID|auth_token/i);
+    expect(clientSource).toMatch(/target="_blank" rel="noopener noreferrer"/);
+    expect(whatsappLib).not.toMatch(/fetch\(|XMLHttpRequest/);
   });
 
   it("keeps Founder monetization tables under RLS with no browser-writable admin allowlist or payment configuration", () => {

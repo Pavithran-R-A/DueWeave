@@ -73,6 +73,16 @@ export function getLastContacted(receivableId: string, activities: Activity[]) {
 }
 
 /**
+ * A receivable's history, oldest event first. The activity read arrives
+ * newest-first and every exact timestamp is flattened to a business date, so
+ * within one day that arrival order is the only record of which event came
+ * first; reversing it before the stable sort keeps a day's events honest.
+ */
+export function timelineEvents(activities: Activity[], receivableId: string) {
+  return activities.filter((activity) => activity.receivableId === receivableId).reverse().sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
+}
+
+/**
  * How long the receivable has gone without a real conversation. Before any
  * contact happened the honest anchor is the day it was recorded, so a receivable
  * added this morning is never described as ignored for thirty days.

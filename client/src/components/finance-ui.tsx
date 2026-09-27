@@ -3,7 +3,7 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { CalendarClock, Check, ChevronRight, CircleAlert, Info, MessageCircle, Moon, MoreHorizontal, Plus, RefreshCw, ShieldCheck, Sparkles, Sun, Users, WalletCards, X } from "lucide-react";
 import { BRAND } from "@/config/brand";
-import { formatDate, formatINR, getLatestPromise, getOutstanding, getReliability, priorityBreakdown, priorityReasons } from "@/lib/finance";
+import { formatDate, formatINR, getLatestPromise, getOutstanding, getReliability, priorityBreakdown, priorityReasons, timelineEvents } from "@/lib/finance";
 import type { AppSection, Client, LedgerState, PromiseStatus, Receivable } from "@/types/domain";
 
 export const iconMap = { today: Sparkles, receivables: WalletCards, clients: Users, more: MoreHorizontal } as const;
@@ -50,7 +50,7 @@ export function QueueCard({ receivable, client, state, selected, onSelect, onFol
 }
 
 export function Timeline({ receivable, state }: { receivable: Receivable; state: LedgerState }) {
-  const events = state.activities.filter((activity) => activity.receivableId === receivable.id).sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
+  const events = timelineEvents(state.activities, receivable.id);
   const promiseById = new Map(state.promises.map((promise) => [promise.id, promise]));
   // A payment activity has no figure of its own — the sum lives on the payment row,
   // which this read never joins — so the entry names the event rather than inventing ₹0.
