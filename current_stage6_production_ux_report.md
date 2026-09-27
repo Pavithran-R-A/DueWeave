@@ -42,7 +42,7 @@ Everything below is reported against the **built** app (`pnpm build` → `vite p
 
 ## 3. Diff shape
 
-28 tracked files modified/deleted (656 insertions, 242 deletions) + 20 new files = **48 files changed**.
+Measured on the pushed commit with `git diff --name-status 22af572 HEAD`: 27 files modified + 1 deleted + 22 added = **50 files changed, 4,705 insertions(+), 242 deletions(-)**. The 22 additions are 5 production files, 5 unit/contract test files, 9 browser spec files, 2 e2e helpers, and this report.
 
 New production surface:
 `client/src/lib/profile.ts` (the single onboarding rule), `client/src/data/supabase-profile-repository.ts` (the only path to `profiles`), `client/src/contexts/WorkspaceProfileContext.tsx` (authoritative identity in memory), `client/src/pages/Onboarding.tsx`, `client/src/lib/ledger-search.ts`.
