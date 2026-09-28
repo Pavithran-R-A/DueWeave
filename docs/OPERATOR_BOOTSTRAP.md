@@ -37,28 +37,47 @@ The caller must already be allowlisted, or the call is refused. Revocation marks
 
 ## Reading the readiness state
 
-One query reports which prerequisites are still unsatisfied, in the same order the application's readiness model uses. An empty result means the offer is payable.
+One query reports every prerequisite, satisfied or not, in the same order the application's readiness model uses, together with the authority's own verdict. The whitespace class below is the set of characters the customer surface treats as blank — the ASCII space and controls, the Unicode space separators and the byte-order mark — so a value that looks configured through a plain `trim()` is not necessarily configured; it is spelled out with `chr()` so a copy-paste into psql cannot lose an invisible character. `ready` is `public.founder_offer_payment_ready()`'s answer, the same conjunction both claim RPCs evaluate before they let a customer start or submit a claim, and the per-term rows explain which line of that answer a person has to clear.
 
 ```sql
-select g.gap
-  from public.founder_offer_config c
+with ws(c) as (values(
+  ' '||chr(9)||chr(10)||chr(11)||chr(12)||chr(13)||chr(160)||chr(5760)
+     ||chr(8192)||chr(8193)||chr(8194)||chr(8195)||chr(8196)||chr(8197)||chr(8198)||chr(8199)||chr(8200)||chr(8201)||chr(8202)
+     ||chr(8232)||chr(8233)||chr(8239)||chr(8287)||chr(12288)||chr(65279)) ),
+rd as (
+  select coalesce(public.founder_offer_payment_ready(offer), false) as ready,
+         offer.*,
+         ws.c as ws_chars
+    from public.founder_offer_config offer
+     cross join ws
+   where offer.offer_key = 'FOUNDER_V1'
+)
+select g.ord,
+       case when g.missing then 'GAP' else 'ok' end as state,
+       g.gap_kind,
+       rd.ready
+  from rd
  cross join lateral (values
-    (1, 'offer-disabled',               not c.enabled),
-    (2, 'destination-not-live',         c.payment_destination_status <> 'LIVE'),
-    (3, 'price-not-canonical',          c.amount_paise <> 49900),
-    (4, 'vpa-missing',                  coalesce(trim(c.upi_id), '') = ''),
-    (5, 'vpa-malformed',                coalesce(trim(c.upi_id), '') <> '' and c.upi_id !~* '^[a-z0-9._-]{2,}@[a-z0-9.-]{2,}$'),
-    (6, 'payee-missing',                coalesce(trim(c.payee_name), '') = ''),
-    (7, 'support-pending',              c.support_contact_status <> 'CONFIGURED'),
-    (8, 'support-contact-unusable',     length(coalesce(trim(c.support_contact), '')) < 3),
-    (9, 'refund-policy-pending',        c.refund_policy_status <> 'APPROVED'),
-    (10,'refund-policy-text-missing',   coalesce(trim(c.refund_policy_text), '') = ''),
-    (11,'refund-policy-text-too-short', coalesce(trim(c.refund_policy_text), '') <> '' and length(trim(c.refund_policy_text)) < 40),
-    (12,'disclosures-pending',          c.disclosures_status <> 'APPROVED')
-  ) as g(ord, gap, missing)
- where g.missing
+    (1,'offer-disabled',               not rd.enabled),
+    (2,'destination-not-live',         rd.payment_destination_status <> 'LIVE'),
+    (3,'price-not-canonical',          rd.amount_paise <> 49900),
+    (4,'vpa-missing',                  btrim(coalesce(rd.upi_id, ''), rd.ws_chars) = ''),
+    (5,'vpa-malformed',                btrim(coalesce(rd.upi_id, ''), rd.ws_chars) <> ''
+                                       and btrim(rd.upi_id, rd.ws_chars) !~* '^[a-z0-9._-]{2,}@[a-z0-9.-]{2,}$'),
+    (6,'payee-missing',                btrim(coalesce(rd.payee_name, ''), rd.ws_chars) = ''),
+    (7,'support-pending',              rd.support_contact_status <> 'CONFIGURED'),
+    (8,'support-contact-unusable',     length(btrim(coalesce(rd.support_contact, ''), rd.ws_chars)) < 3
+                                       or btrim(rd.support_contact, rd.ws_chars) = 'Support contact not configured'),
+    (9,'refund-policy-pending',        rd.refund_policy_status <> 'APPROVED'),
+    (10,'refund-policy-text-missing',  btrim(coalesce(rd.refund_policy_text, ''), rd.ws_chars) = ''),
+    (11,'refund-policy-text-too-short', btrim(coalesce(rd.refund_policy_text, ''), rd.ws_chars) <> ''
+                                       and length(btrim(rd.refund_policy_text, rd.ws_chars)) < 40),
+    (12,'disclosures-pending',         rd.disclosures_status <> 'APPROVED')
+  ) as g(ord, gap_kind, missing)
  order by g.ord;
 ```
+
+Seven rows come back labelled `GAP` on the delivered database — `destination-not-live`, `vpa-missing`, `support-pending`, `support-contact-unusable`, `refund-policy-pending`, `refund-policy-text-missing`, `disclosures-pending` — and every row carries `ready` as `f`. The offer is payable only when no row is `GAP` and `ready` is `t`; `ready` is coalesced, so an absent `FOUNDER_V1` row or a null verdict answers `f` instead of reading as an answer.
 
 Two companion reads settle who can review and how many seats are taken:
 

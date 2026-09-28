@@ -2,10 +2,14 @@
 
 Stage 8. Written before the readiness code was changed, and kept as the
 authority for what "PAYMENT-READY" means. Code: `client/src/lib/founder-readiness.ts`.
-Database authority: the `founder_offer_config` checks, the destination gate
-inside `create_founder_claim` and `submit_founder_payment`, and the reviewer
-allowlist assertion made by each of the seven reviewer routines (pinned by
-`supabase/tests/stage8_03_reviewer_boundaries.sql`).
+Database authority: the `founder_offer_config` checks, the conjunction held by
+`public.founder_offer_payment_ready()` and evaluated by both
+`create_founder_claim` and `submit_founder_payment`, and the reviewer allowlist
+assertion made by each of the seven reviewer routines (pinned by
+`supabase/tests/stage8_03_reviewer_boundaries.sql`). The client restates the same
+twelve terms; `tests/stage8-founder-contracts.test.ts` pins the pattern, the shipped
+support sentence and the whitespace class against the copies inside the readiness
+function, so neither boundary can be edited into a different rule unnoticed.
 
 ## Configuration states
 
@@ -30,7 +34,7 @@ True only when every term holds:
 4. non-empty, well-formed VPA
 5. payee display name present
 6. support status `CONFIGURED`
-7. support contact present
+7. support contact present, and not the shipped placeholder sentence
 8. refund policy `APPROVED`
 9. refund policy text present
 10. disclosures `APPROVED`
@@ -38,8 +42,22 @@ True only when every term holds:
 This is a conjunction, not a score. Missing any single term blocks the customer
 payment surface, the UPI URI/QR payload, and the claim RPCs. `founderReadinessGaps()`
 returns the missing terms in the order above so an operator can see which one is
-left; `isFounderPaymentReady()` is the same list tested for emptiness. The
-delivered row satisfies the enable and payee terms, so it reports six gaps.
+left; `isFounderPaymentReady()` is the same list tested for emptiness. The twelve
+gap kinds fold into these ten terms — the VPA has a present kind and a parseable one,
+the refund text a present kind and a length kind — so the delivered row, which
+satisfies only enable, price and payee name, reports seven of them: `destination-not-live`,
+`vpa-missing`, `support-pending`, `support-contact-unusable`, `refund-policy-pending`,
+`refund-policy-text-missing`, `disclosures-pending`.
+
+Blank means blank after one character class, shared by both boundaries: the ASCII
+space and controls, the Unicode space separators (including no-break space), and the
+byte-order mark. The client gets that set from `String.prototype.trim()`; the
+readiness function lists it explicitly, because Postgres' own `trim()` removes only
+the space and a class that stopped at the ASCII controls would read a value padded
+with a no-break space as configured while the customer surface called it blank.
+U+200B ZERO WIDTH SPACE belongs to neither class, on purpose: JavaScript keeps it, so
+a value carrying one stays malformed at both boundaries rather than being quietly
+stripped by one side.
 
 Whether the page is payable is decided from the boolean alone. The only offer
 fields the customer copy renders are the ones written for customers — the price,
@@ -52,7 +70,11 @@ QR or UPI intent appears until the conjunction holds.
 - `TEST` — synthetic destination for local fixtures only. Accepts a VPA so the
   URI builder can be exercised, and is refused by every customer claim RPC.
   Never used in the delivered row, never labelled live.
-- `LIVE` — requires a VPA of 3–160 trimmed characters and a payee name.
+- `LIVE` — requires a VPA that is non-blank after the class above and parses as an
+  address (`^[a-z0-9._-]{2,}@[a-z0-9.-]{2,}$`, case-insensitive), plus a payee name.
+  A stored value that fails the shape stays storable and is reported as
+  `vpa-malformed`, so the gate refuses it at the decision point instead of rejecting
+  the write halfway through configuration.
   Reachable only by a trusted operator writing the table directly; no browser
   RPC, admin screen or one-click control changes this column.
 

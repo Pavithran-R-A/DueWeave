@@ -19,7 +19,7 @@
 set search_path = public, extensions, tap, core;
 create extension if not exists pgtap with schema extensions;
 
-select plan(13);
+select plan(14);
 
 -- ---------------------------------------------------------------------------
 -- A. The allowlist is a list of accounts and nothing else: one row per user, no
@@ -55,6 +55,31 @@ select is(
 -- B. The reviewer half of the Founder surface is exactly the seven routines that
 --    assert the allowlist, and the customer half contains none of them.
 -- ---------------------------------------------------------------------------
+-- Stage 8's readiness parity repair added a fifteenth `%founder%` routine,
+-- `founder_offer_payment_ready`, which is neither customer-facing nor a reviewer
+-- routine: it is an internal helper no browser role can execute. Rather than
+-- quietly excluding it from the counts below, the whole surface is pinned by name
+-- first, so the fourteen-routine split underneath cannot absorb a new routine by
+-- accident.
+select is(
+    (select array_agg(p.proname::text order by p.proname::text)
+       from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname = 'public' and p.proname like '%founder%'),
+    array['approve_founder_claim', 'assert_founder_admin', 'cancel_founder_claim',
+          'create_founder_claim', 'founder_offer_payment_ready', 'get_founder_funnel',
+          'get_founder_offer', 'is_founder_admin', 'list_pending_founder_claims',
+          'list_rejected_founder_claims', 'reconsider_founder_claim',
+          'record_founder_upgrade_view', 'reject_founder_claim', 'revoke_founder_entitlement',
+          'submit_founder_payment'],
+    'the Founder surface is fifteen named routines, and no sixteenth way in was added');
+
+select is(
+    (select array_agg(p.proname::text order by p.proname::text)
+       from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname = 'public' and p.proname like '%founder%' and not p.prosecdef),
+    array['founder_offer_payment_ready'],
+    'the readiness helper is the only Founder routine that runs as invoker, so no browser routine lost SECURITY DEFINER');
+
 select is(
     (select array_agg(p.proname::text order by p.proname::text)
        from pg_proc p join pg_namespace n on n.oid = p.pronamespace
@@ -69,16 +94,11 @@ select is(
     (select array_agg(p.proname::text order by p.proname::text)
        from pg_proc p join pg_namespace n on n.oid = p.pronamespace
       where n.nspname = 'public' and p.proname like '%founder%'
+        and p.proname <> 'founder_offer_payment_ready'
         and pg_get_functiondef(p.oid) not like '%perform public.assert_founder_admin()%'),
     array['assert_founder_admin', 'cancel_founder_claim', 'create_founder_claim', 'get_founder_offer',
           'is_founder_admin', 'record_founder_upgrade_view', 'submit_founder_payment'],
     'the customer-facing half is the remaining seven, and no routine joined it by inheriting reviewer powers');
-
-select is(
-    (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-      where n.nspname = 'public' and p.proname like '%founder%'),
-    14::bigint,
-    'no eleventh way into the Founder surface was added beyond the seven customer and seven reviewer routines');
 
 -- ---------------------------------------------------------------------------
 -- C. Every Founder routine runs as a definer with a pinned search path, so the
@@ -89,14 +109,14 @@ select is(
     (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
       where n.nspname = 'public' and p.proname like '%founder%' and p.prosecdef),
     14::bigint,
-    'every Founder routine is SECURITY DEFINER, the only way it can write a table the caller cannot touch');
+    'every Founder routine that reaches the browser is SECURITY DEFINER, the only way it can write a table the caller cannot touch');
 
 select is(
     (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-      where n.nspname = 'public' and p.proname like '%founder%'
+      where n.nspname = 'public' and p.proname like '%founder%' and p.prosecdef
         and p.proconfig @> array['search_path=public, auth, pg_temp']),
     14::bigint,
-    'every Founder routine pins its search path to public, auth and pg_temp');
+    'every browser-facing Founder routine pins its search path to public, auth and pg_temp');
 
 -- ---------------------------------------------------------------------------
 -- D. Nothing in the Founder surface is reachable without a session, and the
@@ -124,9 +144,10 @@ select is(
     (select array_agg(p.proname::text order by p.proname::text)
        from pg_proc p join pg_namespace n on n.oid = p.pronamespace
       where n.nspname = 'public' and p.proname like '%founder%' and p.provolatile = 's'),
-    array['assert_founder_admin', 'get_founder_funnel', 'get_founder_offer', 'is_founder_admin',
-          'list_pending_founder_claims', 'list_rejected_founder_claims'],
-    'every Founder reader is declared STABLE, so a screen refresh cannot change a claim');
+    array['assert_founder_admin', 'founder_offer_payment_ready', 'get_founder_funnel',
+          'get_founder_offer', 'is_founder_admin', 'list_pending_founder_claims',
+          'list_rejected_founder_claims'],
+    'every Founder reader, including the readiness helper, is declared STABLE, so a screen refresh cannot change a claim');
 
 select is(
     (select array_agg(p.proname::text order by p.proname::text)

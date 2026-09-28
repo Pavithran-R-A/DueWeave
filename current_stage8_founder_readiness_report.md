@@ -121,7 +121,19 @@ Re-measured against the post-replay database:
 | `entitlements` | on | f / f | t / f / f / f |
 | `analytics_events` | on | f / f | t / f / f / f |
 
-All 14 `*founder*` functions are `SECURITY DEFINER`, owner `postgres`, with a fixed `search_path`; `anon` holds EXECUTE on none of them, `authenticated` on all, `service_role` on all. No customer table is writable through REST: every Founder state change goes through an RPC that re-checks the caller, the readiness conjunction and the offer match inside the transaction. This is the Stage 3 fail-closed default-privilege model, unchanged.
+The function half of this map was restated wrongly in the first version of this report ("all 14 `*founder*` functions … `authenticated` on all"), and the correction belongs here rather than in a footnote: it was contradicted by `supabase/tests/stage8_03_reviewer_boundaries.sql`, which pins that `authenticated` cannot EXECUTE the authorization predicates. The paragraph below is the re-measurement taken at the readiness-parity closure, so the counts include the routine that repair added.
+
+Measured from `pg_proc` joined to `aclexplode(proacl)` with `has_function_privilege` for each browser role, over `nspname = 'public'` and `proname like '%founder%'` (the same scan also carried `stage3_default_privileges_fail_closed` as the fail-closed control):
+
+| routine class | count | `anon` EXECUTE | `authenticated` EXECUTE | `service_role` | `PUBLIC` |
+| --- | --- | --- | --- | --- | --- |
+| `*founder*` routines | 15 | 0 | 12 | 15 | 0 |
+| — of which `SECURITY DEFINER` | 14 | 0 | 12 | 14 | 0 |
+| — of which the internal helper | 1 | 0 | 0 | 1 | 0 |
+
+The three routines no browser role can call are `is_founder_admin`, `assert_founder_admin` and `founder_offer_payment_ready` (the last added by this closure; grantees on each are `postgres` + `service_role` only, and `has_function_privilege('public', …)` is `f`). The 12 `authenticated`-callable routines are the customer and reviewer RPCs: `get_founder_offer`, `get_founder_funnel`, `record_founder_upgrade_view`, `create_founder_claim`, `submit_founder_payment`, `cancel_founder_claim`, `list_pending_founder_claims`, `list_rejected_founder_claims`, `approve_founder_claim`, `reject_founder_claim`, `reconsider_founder_claim`, `revoke_founder_entitlement`. All 14 definers are owner `postgres` with `search_path=public, auth, pg_temp`; the internal helper is `INVOKER` with `search_path=public, pg_temp`, because Stage 3's fail-closed default-privilege trigger strips `PUBLIC`/`anon`/`authenticated` EXECUTE from anything new, so the helper never needed a grant widened to reach it. It stays callable from the RPCs because a `SECURITY DEFINER` body makes its privilege checks as the definer: an `authenticated` caller of `submit_founder_payment` gets the readiness refusal, while calling the helper directly answers 42501 (`supabase/tests/stage8_01_offer_readiness.sql` section M).
+
+No customer table is writable through REST: every Founder state change goes through an RPC that re-checks the caller, the readiness conjunction and the offer match inside the transaction. This is the Stage 3 fail-closed default-privilege model, unchanged.
 
 ## CUSTOMER CLAIM STATE MACHINE
 
@@ -440,12 +452,12 @@ No deploy, no tag, no hosting command, no CDN action.
 2. Approval from the pending queue has no machine-enforced bank-verification flag; only reconsideration does (`p_bank_history_verified`). A reviewer can approve a pending claim without ticking anything, so the "verified in business bank history" guarantee is procedural discipline plus the audit trail, not a database precondition. I did not add the flag, because changing the reviewer's contract is an owner decision, not a qualification step.
 3. A repeat approval of an already-APPROVED claim answers 200 (correctly, as a no-op — no second entitlement, seat or event) but shows a success toast saying the entitlement and audit entry were written. Misleading wording; correct state.
 4. `create_founder_claim` does not check the seat cap, so a customer can open a DRAFT when zero spots remain. The customer UI disables the action at 0 spots and approval is where the cap is enforced, so no seat can be over-issued — but the draft is a dead end rather than a refusal.
-5. The delivered `support_contact` holds the sentence `Support contact not configured`. It reads as configured to a length-only check, which is why the checklist marks it `placeholder`: it must be replaced, not confirmed.
+5. The delivered `support_contact` holds the sentence `Support contact not configured`. At the time this line was written a length-only check read it as configured, which is why the checklist marked it `placeholder`: it must be replaced, not confirmed. That gap (D-S8-6) is repaired in the closure section below — the readiness authority now refuses the sentence even with `support_contact_status = 'CONFIGURED'` — but the operational instruction is unchanged: an owner still has to publish a real contact.
 6. Stage 8 fixtures temporarily write `TEST` + `dueweave-test@upi` to the single offer row during a run. Teardown restores the delivered snapshot in an unconditional `afterAll`, and the delivered row was re-measured after every battery; a hard interruption can still leave a synthetic TEST destination on that machine. It cannot affect the repository, and `LIVE` is never written. Related: the live suites sign up synthetic auth accounts, so a post-test local database is not empty (after the final pair it measured 0 reviewers / 0 claims / 0 audit events / 0 analytics events but 6 leftover auth users and their 6 FREE entitlements). Zero replay is the control that returns it to the shipped state — the repository itself ships no rows.
 7. The built app's first paint depends on a third-party Google Fonts stylesheet. Offline it logs `ERR_NAME_NOT_RESOLVED`. Self-hosting the font is a separate product decision.
 8. Same-instant two-tab browser races are not measurable on this machine (D-S8-3), and the Stage 4 two-tab and Stage 6 forms cases are consequently qualified at `--workers=1`. A faster qualification machine should re-run the full battery at a higher worker count; a failure there would be a real signal rather than starvation.
 9. No refund or disclosure wording was authored. The brief forbids inventing legal terms, so those two columns stay empty and unapproved by design, and the checklist says who must fill them.
-10. Readiness is a client-side conjunction over a server read; the database independently re-checks every term inside the RPCs at call time, so the client copy is not the gate. The two are pinned to agree by `tests/stage8-founder-contracts.test.ts:198` and the pgTAP files, not by assumption.
+10. Readiness is a client-side conjunction over a server read. This line originally asserted that "the database independently re-checks every term inside the RPCs at call time"; that claim was only partly true when written, because the SQL copies of two terms (`upi_id`, `support_contact`) were weaker than the client — exactly D-S8-5 and D-S8-6. After the readiness-parity closure below, both RPCs evaluate the conjunction through one SQL function and the claim holds. The client copy is still not the gate, and the two are pinned to agree by `tests/stage8-founder-contracts.test.ts:198`, the live matrix and the pgTAP files rather than by assumption.
 11. Timeout margin on this machine is thin in general. Only two live files state an explicit window (`tests/stage8-local-founder-readiness.test.ts:360` and, after D-S8-4, `tests/stage7-local-export.test.ts:178`); the rest inherit Vitest's 5 000 ms default. The closest any of them came across the fourteen runs of the settled 604-case suite was `tests/stage5-local-lifecycle.test.ts` at 4 709 ms (`../stage8-artifacts/test-run-final-A.log`), under 300 ms of margin, though the same test measured 2 023 ms when re-run for this report, with that file's slowest case at 2 356 ms (`../stage8-artifacts/sibling-timings.log`). Nothing failed in those files during this stage, so nothing was changed in them — but a slower machine should expect to apply the same explicit window before concluding a regression.
 
 ## OWNER-SIDE BLOCKERS BEFORE LIVE MONEY
@@ -479,3 +491,217 @@ Stage 9 is recommended only on the strength of this PASS: whatever the roadmap h
 `current-stage-8-founder-readiness` is pushed; `git rev-parse HEAD` and `git rev-parse origin/current-stage-8-founder-readiness` are identical. No PR was created. Nothing was merged. `main` was not modified.
 
 The stage is delivered as forward commits on one parent chain, no amend and no rewrite: `405a224 feat: qualify Founder monetization readiness` (PHASE 89, parent `68a3cbb`, 28 paths), then `0a3dacf fix:` carrying D-S8-4's timeout window for the inherited Stage 7 live file, then the `docs:` corrections to this report, whose delivered counts could not be known before the feature commit existed. `git log --oneline 68a3cbb..HEAD` shows the whole chain in that order.
+
+## STAGE 8 FINAL READINESS-PARITY CLOSURE
+
+This section closes the readiness-parity repair that followed the delivery above. It does not replace any section before it; the earlier counts describe the commits they were written for.
+
+STARTING SHA: `adce509535e34c9c5d3a6bc89612c806d960aca6`
+BRANCH: `current-stage-8-founder-readiness`
+DATABASE: local Supabase only — container `supabase_db_dueweave`, Kong at `127.0.0.1:54321`, CLI v2.117.0.
+REPAIR MODE: forward-only. One new migration, no edit to any existing migration, no `db push`, no `--linked`.
+
+### D-S8-5 malformed-VPA parity
+
+RED. The exact value stored was `upi_id = 'not-a-vpa'` — the brief's own example, first confirmed storable against the column's 3..160 length check so the test exercised the gate and not the write. The client reported `vpa-malformed` and refused to render a payable surface; the server accepted the parity request:
+
+```
+[readiness-gate] malformed VPA: create_founder_claim — parity request was accepted
+2 failed | 50 skipped
+```
+
+Root cause: the client validated the address against `VPA_PATTERN`, while the RPC conjunction only asked `char_length(trim(coalesce(upi_id,''))) >= 3`. `not-a-vpa` is nine characters, so it passed the server and failed the client. This is a boundary divergence, not a severity difference: a stored address the customer surface refuses to act on was a stored address the claim path was willing to act on.
+
+FIX. One stored conjunction in a single function, `public.founder_offer_payment_ready(c public.founder_offer_config)`, called by both claim RPCs so they cannot drift again. The VPA rule became `v_upi ~* '^[a-z0-9._-]{2,}@[a-z0-9.-]{2,}$'` after normalisation, matching the client's `local@provider` shape and its two-character floors.
+
+GREEN — full matrix, every row stored through the operator lane and then attacked from an `authenticated` browser client. `create_founder_claim` refused `P0001 Founder payment instructions are not ready yet`; `submit_founder_payment` refused `P0001 Payment instructions are not ready for submission`; the client gap set was `vpa-malformed` alone; no claim row was created in any case (16 refusals + 8 unchanged-state proofs recorded in the ledger, run tag `mul5v7wmrrb1`):
+
+| value stored | shape | client gap | create_founder_claim | submit_founder_payment | claim rows |
+|---|---|---|---|---|---|
+| `not-a-vpa` | no at-sign | `vpa-malformed` | refused P0001 | refused P0001 | 0 |
+| `not a vpa` | spaces inside | `vpa-malformed` | refused P0001 | refused P0001 | 0 |
+| `merchant@` | empty provider | `vpa-malformed` | refused P0001 | refused P0001 | 0 |
+| `@upi` | empty local part | `vpa-malformed` | refused P0001 | refused P0001 | 0 |
+| `a@b` | both below the floor | `vpa-malformed` | refused P0001 | refused P0001 | 0 |
+| `x@y@z` | two at-signs | `vpa-malformed` | refused P0001 | refused P0001 | 0 |
+| `https://dueweave.invalid/pay` | a page URL, not an address | `vpa-malformed` | refused P0001 | refused P0001 | 0 |
+| `dueweave-test@upi` | zero-width space welded to the front | `vpa-malformed` | refused P0001 | refused P0001 | 0 |
+
+### D-S8-6 support-placeholder parity
+
+RED. The client domain function returned no gap for the shipped placeholder once the status column read `CONFIGURED`, and the live parity expectation `expected [] to include 'support-contact-unusable'` failed. The server rule was `char_length(trim(coalesce(support_contact,''))) >= 3` and the repository ships `support_contact = 'Support contact not configured'` — 29 characters of text that is not a contact, published behind a `CONFIGURED` status. An operator who flipped the status without pasting an address would have opened the payment workflow with a sentence where a contact should be.
+
+FIX. The placeholder is refused by name next to the length rule in the same stored conjunction — `v_support is distinct from 'Support contact not configured'` — and the literal is shared with the client as `FOUNDER_SUPPORT_PLACEHOLDER` in `client/src/lib/founder-readiness.ts`, so the two boundaries cannot disagree about which sentence is a placeholder. `FounderPurchase.tsx` now routes its support copy through `isUsableSupportContact()` instead of a bare `.trim().length > 2`.
+
+GREEN — every row stored with `support_contact_status = 'CONFIGURED'`, client gap set `support-contact-unusable` alone, both RPCs refused P0001, no claim row created (12 refusals + 6 unchanged-state proofs):
+
+| value stored | why unusable | create | submit | claim rows |
+|---|---|---|---|---|
+| `Support contact not configured` | the column default sentence | refused P0001 | refused P0001 | 0 |
+| `  Support contact not configured  ` | same sentence, padded | refused P0001 | refused P0001 | 0 |
+| `\t\t\t` | only tabs | refused P0001 | refused P0001 | 0 |
+| ` \t\t` | a space and two tabs | refused P0001 | refused P0001 | 0 |
+| `ab` | below the three-character floor | refused P0001 | refused P0001 | 0 |
+| `\u00A0\u00A0\u00A0\u00A0\u00A0` | five non-breaking spaces | refused P0001 | refused P0001 | 0 |
+
+No address format is validated, and that is deliberate: an email-or-phone rule is a product decision the owner has not made, and inventing one here would have rejected contacts the owner is free to publish. The rule refuses the known-unusable values, nothing more.
+
+### WHITESPACE PARITY
+
+A third defect surfaced while proving the first two, and it was repaired before either matrix was called green. JavaScript's `String.prototype.trim()` removes Unicode whitespace; Postgres' one-argument `trim()` removes only the ASCII space character. So `char_length(trim(coalesce(upi_id,''))) >= 3` measured five characters for a value the browser saw as empty. A repair that only added the VPA and placeholder rules would have left the two boundaries disagreeing about padding.
+
+SQL normalisation now uses `btrim(coalesce(col, ''), c_ws)` where `c_ws` is a `chr()`-spelled literal listing the same class the client uses — space, `\t \n \r \f \v`, U+00A0, U+1680, U+2000 through U+200A, U+2028, U+2029, U+202F, U+205F, U+3000, U+FEFF. The literals are spelled with `chr()` rather than embedded so the migration stays readable and no invisible byte sits in a SQL file.
+
+The repair had to be parity, not severity: a configuration the customer surface calls ready must still open the claim path, or a passing matrix would only prove the gate had been made unreachable. Thirteen padding classes were therefore wrapped around a valid synthetic offer (address, payee and support contact each padded with the same character) and accepted on both sides — tab, space, newline, non-breaking space, ogham space mark, en quad, hair space, line separator, paragraph separator, narrow no-break space, medium mathematical space, ideographic space, byte-order mark — 13/13 recorded as `accepted` with the claim returned in `DRAFT` at the pinned price.
+
+U+200B (zero-width space) is in neither class on purpose: ECMAScript does not trim it, so the client keeps it and the SQL side must keep it too. It appears in the VPA matrix as a control, refusing `dueweave-test@upi` at both boundaries rather than silently passing at one.
+
+The cross-boundary pin lives in `tests/stage8-founder-contracts.test.ts`, which asserts the client's trim behaviour and the migration's whitespace literal agree character by character, so a future edit to either side breaks a test rather than diverging in production.
+
+### Documentation and report corrections
+
+The report's grant map claimed `authenticated` could EXECUTE all 14 Founder functions. Measured from the executed database that is false: it is 12 of 16 routines, and the two guards are precisely the ones that must not be reachable. The tests were the safer authority and the report was corrected to the measurement, not the other way round.
+
+The readiness documentation said six owner gaps; the enforced contract yields seven, and both operator gap queries in `docs/OPERATOR_BOOTSTRAP.md` and `docs/FOUNDER_LIVE_ACTIVATION_CHECKLIST.md` were corrected and then executed against the local database — each returns 12 rows with 7 marked `GAP` and `ready = f`. `README.md`, `docs/FOUNDER_PAYMENT_READINESS.md` and `docs/STAGE_4_2_OPERATOR_CONFIGURATION.md` were aligned to the enforced contract, and the migration counts they carried ("22 migrations") now read 23.
+
+### FORWARD MIGRATION / TOTAL MIGRATIONS / HISTORICAL MIGRATIONS MODIFIED
+
+FORWARD MIGRATION: `supabase/migrations/20260928090000_current_stage8_readiness_parity.sql`
+TOTAL MIGRATIONS: 23
+HISTORICAL MIGRATIONS MODIFIED: NO — `git status --short supabase/migrations` lists exactly one `??` path and no `M`, and `git diff --name-only HEAD -- supabase/migrations` is empty, so migrations 1 through 22 are byte-unchanged.
+ZERO REPLAY: `supabase db reset` applied all 23 migrations, exit 0 (`zero-replay-final.log`), then the privilege map and default offer were re-measured from the replayed database.
+
+### FOUNDER EXECUTE MAP
+
+Measured from the executed database with `has_function_privilege(role, oid, 'EXECUTE')` over `pg_proc`/`pg_namespace` — copied from nothing. Re-measured after zero replay: the two logs are byte-identical, md5 `5a4d5a56f9b4556f1c56f2aa36b6337e`, so the new migration widened no privilege as a side effect.
+
+| routine | secdef | authenticated | anon | PUBLIC | service_role |
+|---|---|---|---|---|---|
+| `approve_founder_claim(text)` | DEFINER | t | f | f | t |
+| `assert_founder_admin()` | DEFINER | f | f | f | t |
+| `cancel_founder_claim(text)` | DEFINER | t | f | f | t |
+| `create_founder_claim()` | DEFINER | t | f | f | t |
+| `founder_offer_payment_ready(founder_offer_config)` | INVOKER | f | f | f | t |
+| `get_founder_funnel()` | DEFINER | t | f | f | t |
+| `get_founder_offer()` | DEFINER | t | f | f | t |
+| `is_founder_admin()` | DEFINER | f | f | f | t |
+| `list_pending_founder_claims()` | DEFINER | t | f | f | t |
+| `list_rejected_founder_claims()` | DEFINER | t | f | f | t |
+| `reconsider_founder_claim(text,boolean,text)` | DEFINER | t | f | f | t |
+| `record_founder_upgrade_view()` | DEFINER | t | f | f | t |
+| `reject_founder_claim(text,text)` | DEFINER | t | f | f | t |
+| `revoke_founder_entitlement(uuid,text)` | DEFINER | t | f | f | t |
+| `stage3_default_privileges_fail_closed()` | INVOKER | f | f | f | t |
+| `submit_founder_payment(text,text,text)` | DEFINER | t | f | f | t |
+
+Totals across 16 routines: anon 0, PUBLIC 0, authenticated 12, service_role 16. The 12 authenticated grants are the customer and reviewer RPCs; the four refusals are exactly the two Stage 3 guards, the new readiness helper, and the Stage 3 default-privilege trigger. A direct `authenticated` call to `founder_offer_payment_ready` answers 42501 — pinned in section M of `supabase/tests/stage8_01_offer_readiness.sql` — while an `authenticated` caller of a claim RPC reaches it through the definer, which is the intended shape. The helper needed no grant because Stage 3's fail-closed `ddl_command_end` default-privilege trigger strips PUBLIC/anon/authenticated EXECUTE from every new function; the migration only had to avoid asking for one.
+
+Two observations worth recording: `proacl` is an unordered array, so a re-grant appends and the printed order of grantees is not evidence of anything; and `pg_get_functiondef` for the helper is 1817 characters containing zero grant lines with `prokind='f'`, so reading definitions can never answer a privilege question.
+
+### DEFAULT OFFER AFTER ZERO REPLAY
+
+The exact row, read from the replayed database:
+
+```
+offer_key|enabled|payment_destination_status|upi_id|payee_name|amount_paise|founder_cap|support_contact_status|support_contact|refund_policy_status|refund_policy_text|disclosures_status|ready
+FOUNDER_V1|t|PLACEHOLDER|<NULL>|DueWeave|49900|50|PENDING|Support contact not configured|PENDING_APPROVAL|<NULL>|PENDING|false
+```
+
+IDENTICAL at four measurement points: before the repair, after the repair migration, after the browser suites, and after the final zero replay (`offer-row-browserpre.log`, `offer-row-after-browser.log`, `offer-row-after-formal-runs.log`, `offer-row-after-final-replay.log`). The real/default Founder row was never set to LIVE and no real VPA or support address was configured — `ready = f` at every point.
+
+Fixture residue before the final replay was disclosed, not hidden: `auth.users` carried 37 rows after the browser suites and 4 after the full test runs, because the live and browser suites provision synthetic accounts. Reviewer rows were 0 and active Founder entitlements 0 throughout. After the final zero replay: `auth_users 0`, `founder_admin_rows 0`, `active_founder_entitlements 0`, `founder_offer_rows 1`, `offer_not_default 0`. The shipped state is clean.
+
+### PGTAP
+
+`pnpm test:db` — `Files=8, Tests=364, Result: PASS`, 0 failed (`pgtap-final-closure.log`). The Stage 8 readiness file gained the malformed-VPA and placeholder refusals, the whitespace-class equality pin, and the privilege assertions above.
+`supabase db lint --local` — `No schema errors found` (`db-lint-final-closure.log`).
+Local advisors ran clean, with the standing disclosure that this is the CLI's local check, not Supabase's hosted advisor engine, and is therefore not claimed as hosted-advisor evidence.
+
+### STAGE 8 LIVE
+
+`tests/stage8-local-founder-readiness.test.ts` ran against the local database with `STAGE8_LOCAL_E2E`-style gating satisfied and produced 302 ledger entries across 17 categories, including 156 `readiness-gate` observations. Live suite inside the serial battery: green. The malformed-VPA and unusable-support refusals are recorded as `refused P0001` with matching `stored state unchanged` proofs, and the padded-valid rows as `accepted`.
+
+### STAGE 8 CUSTOMER BROWSER
+
+`e2e/stage8-local-founder-customer.spec.ts` — 11 passed, 0 failed, 2.6m (`e2e-gated-8c.log`) on `--workers=1`.
+
+### STAGE 8 REVIEWER BROWSER
+
+`e2e/stage8-local-founder-reviewer.spec.ts` — 10 passed, 0 failed, 5.7m (`e2e-gated-8r.log`) on `--workers=1`.
+
+### STAGE 2–7 REGRESSION
+
+Run serially at the worker count already qualified on this machine (`--workers=1`, no raised parallelism), each suite behind its own `STAGEn_LOCAL_E2E=1` gate. An ungated run was performed first and reported honestly: it exited 0 with every spec skipped (`e2e-closure-a..d.log`), which is a skip, not a pass, so the gated runs below are the evidence.
+
+| suite | result |
+|---|---|
+| Stage 2 auth | 1 passed |
+| Stage 3 isolation | 5 passed |
+| Stage 4 persistence | 10 passed |
+| Stage 5 lifecycle | 14 passed |
+| Stage 6 UX/a11y (form, focus, a11y) | 1 failed, 23 passed, 6 did not run — then 30 passed on isolated re-run (4.5m) |
+| Stage 6 responsive | 34 passed |
+| Stage 7 follow-up/export | 2 failed, 1 passed, 29 did not run — then 32 passed on isolated re-run (7.3m) |
+| Stage 8 customer | 11 passed |
+| Stage 8 reviewer | 10 passed |
+| legacy gated specs | 3 passed, 8 skipped |
+
+Both first failures were investigated before anything was re-run, and neither was a product regression:
+- Stage 6a: `"beforeAll" hook timeout of 30000ms exceeded` while waiting for the onboarding heading. Category (d) timeout/resource starvation. The hook uses the Playwright config's 30s default rather than the per-test timeout; the identical shape appears in accepted Stage 6/7 history (`e2e-battery.log`, on `stage6-local-forms`). No file under `e2e/` and no config is in this diff. First-failure output preserved in `e2e-gated-6a.FIRSTFAILURE-preserved.log`.
+- Stage 7: `afterEach` problem-watch collected `net::ERR_NAME_NOT_RESOLVED` for the Google Fonts stylesheet — already KNOWN LIMITATION 7 of this report. The CDN was verified reachable (`http=200`) at the time. Category (d) infrastructure. First-failure output preserved in `e2e-gated-7.FIRSTFAILURE-preserved.log`.
+
+The "did not run" counts are explained by `mode: "serial"` in both specs: Playwright abandons the remainder of a file after its first failure. No assertion was weakened, no timeout widened, and nothing was edited between the failed run and the green isolated re-run (verified by the re-run hashes being over unchanged files).
+
+Coverage gap disclosed: the malformed-VPA and placeholder-support refusals are proven at the live-RPC layer and the client-domain layer, not as a composed browser journey, because no `e2e/` spec stores those values into the offer row and adding one would require an operator-lane write from inside the browser test. Eight legacy browser tests skipped for pre-provisioned QA accounts that do not exist locally; they are reported as skipped, never as passing.
+
+The eight Stage 8 claims were each re-proved at the strongest available layer:
+
+| claim | evidence |
+|---|---|
+| A malformed VPA never opens the payment workflow | 8-row live matrix, both RPCs P0001 + client `vpa-malformed` |
+| `CONFIGURED` + the placeholder sentence never opens it | 6-row live matrix, both RPCs P0001 + client `support-contact-unusable` |
+| The valid synthetic `dueweave-test@upi` still works in TEST fixtures | customer browser: synthetic fixture reveals pinned price/payee/seats and renders QR matching the link; 13 padded live accepts |
+| The delivered repository default renders no payable QR or link | customer browser: "the delivered build shows a non-payable placeholder with no destination at all" + the default row above |
+| No browser event implies payment | customer browser: "opening UPI leaves the claim a draft, the account Free, and the history unchanged"; "submitting a reference lands in manual review and never claims payment succeeded" |
+| A customer cannot enter the reviewer surface | reviewer browser: "signing out, going Back, and a customer at the review address all leave no queue" |
+| The reviewer allowlist still controls the queue | reviewer browser: "an account with no allowlist row is refused the queue, and one database row opens it" |
+| No real payment destination appears anywhere | default row `payment_destination_status = PLACEHOLDER`, `upi_id NULL`; secret scan below |
+
+### FULL TEST RUN #1 / #2 / SERIAL LIVE BATTERY / PGRST303
+
+`pnpm test` was run twice formally with no edit between the runs, recorded separately:
+
+FULL RUN #1 — start 16:51:12, duration 185.03s, `Test Files 28 passed | 1 skipped (29)`, `Tests 631 passed | 1 skipped (632)`, 0 failed (`formal-run-1.log`).
+FULL RUN #2 — start 16:54:28, duration 212.77s, `Test Files 28 passed | 1 skipped (29)`, `Tests 631 passed | 1 skipped (632)`, 0 failed (`formal-run-2.log`).
+No retry-until-green: each run is reported as it landed. The single skipped test in both is `tests/supabase.public-config.live.test.ts`, gated on its own environment condition.
+
+Serial live battery (Stage 2 through 8 live suites in one run, `--no-file-parallelism`): `Test Files 11 passed | 1 skipped (12)`, `Tests 338 passed | 1 skipped (339)`, duration 273.53s, 0 failed (`battery-stage2-8.clean.log`). Note that vitest 2.1.9 has no `--workers` flag — passing one is a `CACError` — so serialisation here is `--no-file-parallelism`; `--workers=1` is the Playwright flag and was used for the browser suites.
+
+PGRST303: 0 occurrences across the battery and both formal runs (`grep -c PGRST303` = 0 in each log). No clock workaround, no retry, no suppressed instance.
+
+### Static gates / secret scan
+
+All exit 0, re-measured with codes captured after the final replay (`gate-recheck-codes.log`):
+
+```
+install_rc=0   pnpm install --frozen-lockfile
+lint_rc=0      pnpm lint            (eslint, --max-warnings=0)
+check_rc=0     pnpm check           (tsc --noEmit)
+build_rc=0     pnpm build
+audit_rc=0     pnpm audit --prod --audit-level=high   → No known vulnerabilities found
+diffcheck_rc=0 git diff --check
+```
+
+Final diff review: 15 paths — 14 modified plus the one new migration (302 lines, untracked until this commit). The repair itself is 987 insertions over 99 deletions, this closure section's own lines apart. Every added line was read; the added-line capture run against the secret and payment-destination scan is 1303 lines (`closure-added-lines.txt`). No path contains a real VPA, a real support email or phone, a real reviewer UUID, a real UTR, any account or bank number, `service_role`, `sb_secret`, a JWT, `.env`, `dist/`, or a Playwright trace or screenshot. The only identifiers present are synthetic and test-scoped: `dueweave-test@upi`, the `@invalid` and `.invalid` domains, `DW-F-` claim ids, `parity-` account labels, and the placeholder sentence the column already ships with. No timeout was widened in this repair — the previously justified D-S8-4 change is the only timeout edit in the branch, and no new RED asked for another.
+
+GENERATED TYPES: `client/src/types/database.generated.ts` was regenerated twice from the local schema after the repair migration; both outputs were byte-identical to each other and to the delivered file, SHA-256 `daa34cbdcb6794d3b2b645e5897a53747fc7612c493423d1158ca99f3d0091a6` (measured three times). 4 added lines, no hand editing.
+
+POINTER DRIFT DISCLOSED: this closure commit is also where the four paths whose behaviour changed carry their test updates — `tests/stage8-local-founder-readiness.test.ts`, `tests/stage8-founder-contracts.test.ts`, `client/src/lib/founder-readiness.ts` and its unit file. Earlier sections of this report cite their pre-repair line numbers; the sections that count migrations (22) and owner gaps (6) are corrected above and in the docs, and supersede the earlier prose.
+
+### Boundaries held
+
+REMOTE SUPABASE MUTATIONS: NONE. HOSTED PROJECT CREATED: NO. DEPLOYMENT: NONE. REAL MONEY COLLECTED: NO. PAYMENT ACTIVATION: NONE — the default row never left `PLACEHOLDER`/`PENDING`/`ready = false`. REAL REVIEWER CREATED: NO. REAL VPA CONFIGURED: NO. REAL SUPPORT ADDRESS CONFIGURED: NO. Stage 3 authorization rules: not weakened — the fail-closed trigger still fires, its routine is still `authenticated`-refused, and the executed map is unchanged across replay. PR: NOT CREATED. MERGE: NONE. `main`: NOT MODIFIED. No amend, rebase, squash or force push.
+
+### Verdict
+
+PASS, on the measurements above rather than on the suites still being green. D-S8-5, D-S8-6 and the whitespace-class divergence are each reproduced with a failing assertion, repaired with one stored conjunction shared to the client, and proved across a 27-row matrix at both boundaries plus 13 acceptance classes that keep the gate reachable. Every earlier Stage 2–8 browser suite was re-run at the accepted worker count, with both first failures diagnosed and preserved before any re-run, and both re-running clean over unchanged files. The report's false grant-map claim is replaced by the executed inventory, and the documentation now matches the enforced contract. The delivered state remains NOT READY FOR LIVE MONEY, which is the correct state: the owner's seven human steps still stand between this repository and a payment destination.

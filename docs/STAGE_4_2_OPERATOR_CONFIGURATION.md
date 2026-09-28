@@ -27,12 +27,17 @@ The delivered `FOUNDER_V1` row is a non-payable placeholder:
 | `disclosures_status` | `PENDING` |
 
 Against the twelve-term readiness conjunction in `FOUNDER_PAYMENT_READINESS.md`,
-that row reports six gaps, so a customer sees no payment instructions, no QR, no
-UPI link, no copy action, and no claim button.
+that row reports seven gaps, so a customer sees no payment instructions, no QR, no
+UPI link, no copy action, and no claim button: the destination is not live, the VPA
+is absent, support, refund and disclosures are unapproved, the refund text is absent,
+and the shipped support sentence is not an address a customer can use. That last one
+is the gap a length-only rule could not see, because the sentence is twenty-eight
+characters long.
 
 The database refuses the same way the browser does. `create_founder_claim()` and
-`submit_founder_payment()` both re-check readiness inside the transaction, so the
-UI is not the gate.
+`submit_founder_payment()` both evaluate
+`public.founder_offer_payment_ready()` inside the transaction, so the UI is not the
+gate and the two RPCs cannot drift into enforcing different rules from each other.
 
 ## Fixtures are not configuration
 

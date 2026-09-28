@@ -939,6 +939,10 @@ export type Database = {
       }
       current_business_date: { Args: never; Returns: string }
       delete_my_business_data: { Args: never; Returns: undefined }
+      founder_offer_payment_ready: {
+        Args: { c: Database["public"]["Tables"]["founder_offer_config"]["Row"] }
+        Returns: boolean
+      }
       get_founder_funnel: {
         Args: never
         Returns: {

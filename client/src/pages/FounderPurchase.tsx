@@ -7,7 +7,7 @@ import { SupabaseFounderRepository } from "@/data/supabase-founder-repository";
 import { ErrorState, LoadingState } from "@/components/finance-ui";
 import { formatINR } from "@/lib/finance";
 import { buildFounderUpiPayload } from "@/lib/founder-payment";
-import { isFounderPaymentReady } from "@/lib/founder-readiness";
+import { isFounderPaymentReady, isUsableSupportContact } from "@/lib/founder-readiness";
 import type { FounderClaim, FounderEntitlement, FounderOffer } from "@/types/domain";
 import "../founder-disclosures.css";
 
@@ -77,7 +77,7 @@ export default function FounderPurchase() {
 
   const { offer, claim, entitlement } = data;
   const paymentReady = isFounderPaymentReady(offer);
-  const supportCopy = offer.supportContactStatus === "CONFIGURED" && offer.supportContact.trim().length > 2
+  const supportCopy = offer.supportContactStatus === "CONFIGURED" && isUsableSupportContact(offer.supportContact)
     ? `For payment or refund questions, contact ${offer.supportContact} with your claim ID.`
     : "Support contact will be available before payments open.";
   const approved = entitlement.plan === "FOUNDER" && entitlement.status === "ACTIVE";

@@ -3,8 +3,10 @@ import { buildFounderUpiPayload } from "./founder-payment";
 import {
   FOUNDER_PRICE_PAISE,
   FOUNDER_READINESS_GAP_COPY,
+  FOUNDER_SUPPORT_PLACEHOLDER,
   founderReadinessGaps,
   isFounderPaymentReady,
+  isUsableSupportContact,
   isUsableVpa,
 } from "./founder-readiness";
 import type { FounderOffer } from "@/types/domain";
@@ -28,8 +30,10 @@ const readyOffer: FounderOffer = {
 };
 
 // Exactly what `get_founder_offer()` returns against the delivered database row
-// (PHASE 4 inventory): the offer is enabled and correctly priced, but the
-// destination, support contact, refund policy and disclosures are all unset.
+// (PHASE 4 inventory, re-read for the parity repair): the offer is enabled and
+// correctly priced, the destination and refund text and disclosures are unset, and
+// `support_contact` holds the column default sentence rather than an address. Every
+// field below is the stored value, not a stand-in for it.
 const deliveredOffer: FounderOffer = {
   amountPaise: FOUNDER_PRICE_PAISE,
   founderCap: 50,
@@ -37,7 +41,7 @@ const deliveredOffer: FounderOffer = {
   payeeName: "DueWeave",
   upiId: undefined,
   paymentDestinationStatus: "PLACEHOLDER",
-  supportContact: "",
+  supportContact: FOUNDER_SUPPORT_PLACEHOLDER,
   supportContactStatus: "PENDING",
   refundPolicyStatus: "PENDING_APPROVAL",
   refundPolicyText: undefined,
@@ -50,6 +54,17 @@ describe("Founder readiness is one written-down conjunction", () => {
   it("reports no gap for a fully configured offer", () => {
     expect(founderReadinessGaps(readyOffer)).toEqual([]);
     expect(isFounderPaymentReady(readyOffer)).toBe(true);
+  });
+
+  it("reports no gap when a complete offer is padded with characters this engine trims", () => {
+    const padded = {
+      ...readyOffer,
+      upiId: `\u00A0${readyOffer.upiId}\u00A0`,
+      payeeName: `\u3000${readyOffer.payeeName}\u2000`,
+      supportContact: `\uFEFF${readyOffer.supportContact}\u2028`,
+    };
+    expect(founderReadinessGaps(padded)).toEqual([]);
+    expect(isFounderPaymentReady(padded)).toBe(true);
   });
 
   // Each row changes exactly one stored field from the ready offer, so the
@@ -67,12 +82,25 @@ describe("Founder readiness is one written-down conjunction", () => {
     ["payee name missing", { ...readyOffer, payeeName: "  " }, ["payee-missing"]],
     ["support status pending", { ...readyOffer, supportContactStatus: "PENDING" }, ["support-pending"]],
     ["support address unusable", { ...readyOffer, supportContact: "ab" }, ["support-contact-unusable"]],
+    ["support address is only whitespace", { ...readyOffer, supportContact: " \t " }, ["support-contact-unusable"]],
+    // D-S8-6: the sentence the column ships with is thirty characters long, so a
+    // length rule accepted it as a contact address the moment the status flipped.
+    ["support address is the shipped placeholder", { ...readyOffer, supportContact: FOUNDER_SUPPORT_PLACEHOLDER }, ["support-contact-unusable"]],
+    ["support address is the padded placeholder", { ...readyOffer, supportContact: `  ${FOUNDER_SUPPORT_PLACEHOLDER}  ` }, ["support-contact-unusable"]],
+    // The blank-detection rule is "blank to this engine", not "blank to a SQL
+    // whitespace class". A value of nothing but non-breaking spaces has to report the
+    // same gap, because the database now normalises with this same set of characters.
+    ["support address is five non-breaking spaces", { ...readyOffer, supportContact: "\u00A0\u00A0\u00A0\u00A0\u00A0" }, ["support-contact-unusable"]],
+    ["payee name is ideographic spaces", { ...readyOffer, payeeName: "\u3000\u3000" }, ["payee-missing"]],
+    ["refund text is only non-breaking spaces", { ...readyOffer, refundPolicyText: "\u00A0".repeat(40) }, ["refund-policy-text-missing"]],
+    // And not one character further: U+200B is not whitespace to JavaScript, so an
+    // address carrying it is malformed rather than blank, exactly as the database
+    // reads it. tests/stage8-founder-contracts.test.ts pins the two classes together.
+    ["VPA carries a zero-width space", { ...readyOffer, upiId: "\u200Bdueweave-test@upi" }, ["vpa-malformed"]],
     ["refund policy awaiting approval", { ...readyOffer, refundPolicyStatus: "PENDING_APPROVAL" }, ["refund-policy-pending"]],
     ["refund policy approved without text", { ...readyOffer, refundPolicyText: undefined }, ["refund-policy-text-missing"]],
     ["refund text shorter than the reviewed minimum", { ...readyOffer, refundPolicyText: "Refunds on request." }, ["refund-policy-text-too-short"]],
     ["disclosures not approved", { ...readyOffer, disclosuresStatus: "PENDING" }, ["disclosures-pending"]],
-    // The delivered row fails four gates at once; the destination and support
-    // fields are blank for the same reason, so the pair is expected together.
     ["support address blank though status says CONFIGURED", { ...readyOffer, supportContact: "" }, ["support-contact-unusable"]],
   ];
 
@@ -145,11 +173,40 @@ describe("VPA shape validation", () => {
   it("accepts a well-formed address and ignores surrounding space", () => {
     expect(isUsableVpa("dueweave-test@upi")).toBe(true);
     expect(isUsableVpa("  synthetic-merchant@dueweave.invalid  ")).toBe(true);
+    // Every character this engine trims counts as padding, not as part of the address.
+    expect(isUsableVpa("\u00A0dueweave-test@upi\u00A0"), "non-breaking space").toBe(true);
+    expect(isUsableVpa("\u3000dueweave-test@upi\u2000"), "ideographic and en quad").toBe(true);
+    expect(isUsableVpa("\uFEFFdueweave-test@upi\u2028"), "byte-order mark and line separator").toBe(true);
   });
 
   it("refuses missing, blank and structurally broken addresses", () => {
-    for (const value of [undefined, "", "   ", "no-at-sign", "@upi", "merchant@", "a@b", "two @ signs@upi", "spaced handle@upi"]) {
-      expect(isUsableVpa(value), String(value)).toBe(false);
+    for (const value of [undefined, "", "   ", "\u00A0\u00A0\u00A0", "no-at-sign", "@upi", "merchant@", "a@b", "two @ signs@upi", "spaced handle@upi", "\u200Bdueweave-test@upi"]) {
+      expect(isUsableVpa(value), JSON.stringify(value)).toBe(false);
+    }
+  });
+});
+
+describe("Support contact usability", () => {
+  // The term asks one question: did a person publish something a customer could use?
+  // It deliberately does not ask what kind of contact that is, because nothing in the
+  // product contract requires an email specifically and the value is rendered as text.
+  it("accepts whatever an owner publishes, in any contact form", () => {
+    for (const value of ["support@example.invalid", "+91 98765 43210", "DueWeave on X", "ask us from the profile page", "\u00A0ask us from the profile page\u3000"]) {
+      expect(isUsableSupportContact(value), JSON.stringify(value)).toBe(true);
+    }
+  });
+
+  it("refuses blank, whitespace-only, too short, and the sentence the column ships with", () => {
+    for (const value of [undefined, "", " \t\n ", "\u00A0\u00A0\u00A0", "\u2028\u2029\u202F", "ab", FOUNDER_SUPPORT_PLACEHOLDER, `  ${FOUNDER_SUPPORT_PLACEHOLDER}\t`]) {
+      expect(isUsableSupportContact(value), JSON.stringify(value)).toBe(false);
+    }
+  });
+
+  it("keeps the customer copy gate and the readiness term answering the same way", () => {
+    for (const value of ["support@example.invalid", FOUNDER_SUPPORT_PLACEHOLDER, "", "ab", "  padded contact  "]) {
+      const offer = { ...readyOffer, supportContact: value };
+      expect(founderReadinessGaps(offer).includes("support-contact-unusable"), JSON.stringify(value))
+        .toBe(!isUsableSupportContact(value));
     }
   });
 });

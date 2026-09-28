@@ -47,6 +47,11 @@ function executable(sql: string) {
   return sql.split(/\r?\n/).filter((line) => !line.trimStart().startsWith("--")).join("\n");
 }
 
+/** A character named by codepoint, so a whitespace failure says U+00A0 and not " ". */
+function codeHex(character: string) {
+  return character.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0");
+}
+
 const migrations = readdirSync(migrationsDir)
   .filter((file) => file.endsWith(".sql"))
   .map((file) => ({ file, sql: executable(readFileSync(path.join(migrationsDir, file), "utf8")) }));
@@ -206,9 +211,11 @@ describe("Stage 8 Founder monetization contracts", () => {
 
     const states = [...checklist.matchAll(/^ {4}default_state: (clear|placeholder|gap|not-applicable)$/gm)].map((match) => match[1]);
     expect(states, "every checklist item must state its delivered default").toHaveLength(gapKinds.length);
-    // The delivered row reports exactly these, which the live suite measures against
-    // the database in tests/stage8-local-founder-readiness.test.ts.
-    expect(states.filter((state) => state === "gap")).toHaveLength(6);
+    // Seven, not the six the pre-repair authority could see: the shipped support
+    // sentence is long enough to satisfy a length rule and reaches no person, so it
+    // was always a missing term. The live suite measures the same seven against the
+    // database in tests/stage8-local-founder-readiness.test.ts.
+    expect(states.filter((state) => state === "gap")).toHaveLength(7);
     expect(checklist).toContain("NOT READY");
     // PHASE 66: the checklist is read by a person and answered with SQL. It must not
     // describe a control that performs activation.
@@ -220,8 +227,116 @@ describe("Stage 8 Founder monetization contracts", () => {
     }
   });
 
+  // D-S8-5 / D-S8-6 and the whitespace follow-up: the client documents itself as the
+  // written-down copy of a conjunction the database owns, so the two texts have to be
+  // the same rule. The behaviour is proved against the running database in
+  // tests/stage8-local-founder-readiness.test.ts and supabase/tests/stage8_01_offer_readiness.sql;
+  // this pin is what stops one side being edited without the other, which is exactly
+  // how the two boundaries drifted apart in the first place.
+  it("states the readiness conjunction in one rule, not two that merely resemble it", () => {
+    // Comments in migrations quote refused states and the retired rule, so the SQL
+    // side is read from executable lines only — otherwise a stale comment could keep
+    // a deleted term looking present.
+    const sql = executable(read("supabase/migrations/20260928090000_current_stage8_readiness_parity.sql"));
+    const body = sql.match(/create or replace function public\.founder_offer_payment_ready[\s\S]*?\$ready\$;/)?.[0] ?? "";
+    expect(body, "the readiness conjunction must live in one named function").not.toBe("");
+
+    const terms: Array<[string, RegExp]> = [
+      ["offer-disabled", /\bc\.enabled\b/],
+      ["destination-not-live", /c\.payment_destination_status = 'LIVE'/],
+      ["price-not-canonical", /c\.amount_paise = 49900/],
+      ["vpa-missing", /char_length\(v_upi\) > 0/],
+      ["vpa-malformed", /v_upi ~\* '\^\[a-z0-9._-\]\{2,\}@\[a-z0-9.-\]\{2,\}\$'/],
+      ["payee-missing", /char_length\(v_payee\) > 0/],
+      ["support-pending", /c\.support_contact_status = 'CONFIGURED'/],
+      ["support-contact-unusable", /char_length\(v_support\) >= 3/],
+      ["support-placeholder", /v_support is distinct from 'Support contact not configured'/],
+      ["refund-policy-pending", /c\.refund_policy_status = 'APPROVED'/],
+      ["refund-policy-text", /char_length\(v_refund\) >= 40/],
+      ["disclosures-pending", /c\.disclosures_status = 'APPROVED'/],
+    ];
+    for (const [name, probe] of terms) {
+      expect(body, `the database no longer states the ${name} term`).toMatch(probe);
+    }
+
+    // The VPA shape and the placeholder sentence are each stated twice, once per
+    // boundary. Byte equality is the whole contract: a divergent copy is the defect.
+    const clientPattern = readinessLib.match(/const VPA_PATTERN = \/([\s\S]*?)\/i;/)?.[1] ?? "";
+    expect(clientPattern, "the client VPA pattern could not be read").not.toBe("");
+    const sqlPattern = sql.match(/~\* '(\^[^']*?)'/)?.[1] ?? "";
+    expect(sqlPattern, "the database VPA pattern could not be read").not.toBe("");
+    expect(clientPattern, "the two boundaries parse addresses differently").toBe(sqlPattern);
+    expect(readinessLib).toContain('export const FOUNDER_SUPPORT_PLACEHOLDER = "Support contact not configured";');
+
+    // Whitespace. The client normalises with String.prototype.trim(), so its class is
+    // whatever this engine trims; the database normalises with an explicit character
+    // list. Both directions are pinned: nothing the client trims may survive the SQL
+    // class, and nothing the SQL class strips may be something the client keeps.
+    const classLiteral = sql.match(/c_ws constant text :=([\s\S]*?);/)?.[1] ?? "";
+    expect(classLiteral, "the database's trim class must be spelled out in one named constant").not.toBe("");
+    const decoded = [...classLiteral.matchAll(/E'([^']*)'/g)]
+      .map((match) => match[1])
+      .join("")
+      .replace(/\\u([0-9a-f]{4})/gi, (_, hex) => String.fromCharCode(Number.parseInt(hex, 16)))
+      .replace(/\\t/g, "\t")
+      .replace(/\\n/g, "\n")
+      .replace(/\\f/g, "\f")
+      .replace(/\\v/g, "\v")
+      .replace(/\\r/g, "\r");
+    const sqlClass = new Set([...decoded]);
+    expect(sqlClass.size, "the SQL trim class must not be empty").toBeGreaterThan(0);
+    for (const character of sqlClass) {
+      expect(character.trim(), `the SQL class strips U+${codeHex(character)}, which JavaScript keeps`).toBe("");
+    }
+    // The ECMAScript WhiteSpace and LineTerminator production, by codepoint.
+    const jsTrims = [
+      0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x20, 0xa0, 0x1680,
+      0x2000, 0x2001, 0x2002, 0x2003, 0x2004, 0x2005, 0x2006, 0x2007, 0x2008, 0x2009, 0x200a,
+      0x2028, 0x2029, 0x202f, 0x205f, 0x3000, 0xfeff,
+    ].map((code) => String.fromCharCode(code));
+    for (const character of jsTrims) {
+      expect(character.trim(), `U+${codeHex(character)} is not actually trimmed by this engine`).toBe("");
+      expect(sqlClass.has(character), `the database does not strip U+${codeHex(character)}, which the client does`).toBe(true);
+    }
+    // The class was matched to the client, not widened until every odd-looking
+    // character was blank: U+200B stays significant at both boundaries.
+    expect("\u200Bx\u200B".trim()).toBe("\u200Bx\u200B");
+    expect(sqlClass.has("\u200B"), "the SQL class strips a character JavaScript keeps").toBe(false);
+  });
+
+  // The operator runbooks carry a hand-written copy of the gap read, so their SQL is
+  // only true as long as it matches the conjunction the readiness function actually
+  // enforces. These pins check that the runbooks state the terms the repair added —
+  // the shipped support sentence as unusable, and the VPA matched case-insensitively
+  // against a trimmed value — rather than the weaker rules they once carried.
+  it("keeps the operator gap reads on the enforced contract", () => {
+    const readiness = executable(read("supabase/migrations/20260928090000_current_stage8_readiness_parity.sql"));
+    const functionBody = readiness.match(/create or replace function public\.founder_offer_payment_ready[\s\S]*?\$ready\$;/)?.[0] ?? "";
+    expect(functionBody, "the readiness function disappeared").not.toBe("");
+
+    const runbooks = ["docs/OPERATOR_BOOTSTRAP.md", "docs/FOUNDER_LIVE_ACTIVATION_CHECKLIST.md"]
+      .map((file) => ({ file, text: read(file) }));
+    for (const { file, text } of runbooks) {
+      // The support term, as the runbooks enumerate it, has to name the shipped
+      // sentence; a length-only row is the D-S8-6 read that shipped broken.
+      const supportRow = text.match(/\(8,'support-contact-unusable',[\s\S]*?\n {4}\(9,/)?.[0] ?? "";
+      expect(supportRow, `${file} no longer enumerates the support term`).not.toBe("");
+      expect(supportRow).toContain("Support contact not configured");
+      // The VPA row has to test a trimmed value with the authority's own operator, so
+      // a case-sensitive `~` on the raw column cannot be called the same rule.
+      const vpaRow = text.match(/'vpa-malformed',[\s\S]*?\n +'?\(6,'/)?.[0] ?? "";
+      expect(vpaRow, `${file} no longer enumerates the VPA shape`).not.toBe("");
+      expect(vpaRow.replace(/\s+/g, " ")).toMatch(/btrim\([^)]*\) !~\* '\^\[a-z0-9\._-\]\{2,\}@\[a-z0-9\.-\]\{2,\}\$'/);
+      expect(vpaRow, `${file} matches addresses case-sensitively`).not.toMatch(/[^!]~ '/);
+      // And it must remain the identical pattern string the authority uses.
+      const sqlPattern = functionBody.match(/~\* '(\^[^']*?)'/)?.[1] ?? "";
+      expect(vpaRow, `${file} parses addresses differently from the authority`).toContain(sqlPattern);
+    }
+  });
+
   const bundlePresent = existsSync(distDir) && statSync(distDir).isDirectory();
   it.skipIf(!bundlePresent)("carries no payable destination in the built bundle", () => {
+
     const bundle = filesIn(distDir, [".js", ".mjs", ".css", ".html"]).map((file) => readFileSync(file, "utf8")).join("\n");
 
     // The URI template is code and ships; a destination is data and never does. A

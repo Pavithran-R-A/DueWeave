@@ -145,7 +145,7 @@ The password-recovery journey reads the reset mail from the local Inbucket inbox
 
 ## Founder workflow
 
-Founder Lifetime is manual-verification infrastructure, not a payment processor, and payments are not live. The delivered offer is an enabled `PLACEHOLDER` with no UPI destination, no configured support address, no approved refund text and no approved disclosures, so the customer page shows a setup notice and nothing payable. Support, refund and disclosure states are fail-closed prerequisites: the database re-checks each of them inside the claim RPCs, so an unconfigured or unapproved term closes the workflow whether or not the page agrees.
+Founder Lifetime is manual-verification infrastructure, not a payment processor, and payments are not live. The delivered offer is an enabled `PLACEHOLDER` with no UPI destination, a support column still holding the shipped "Support contact not configured" sentence, no approved refund text and no approved disclosures, so the customer page shows a setup notice and nothing payable. Support, refund and disclosure states are fail-closed prerequisites: both claim RPCs evaluate one stored readiness conjunction, `public.founder_offer_payment_ready()`, so an unconfigured or unapproved term closes the workflow whether or not the page agrees — including the shipped support sentence, which a length-only rule used to read as configured.
 
 The current contract is ₹499.00 one time, stored as the integer `49900` paise, and the readiness conjunction refuses to open the workflow on any other amount. The price, the payee name and the VPA each have to be configured and independently verified before anything is payable.
 

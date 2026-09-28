@@ -7,7 +7,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { FOUNDER_PRICE_PAISE, founderReadinessGaps } from "../client/src/lib/founder-readiness";
+import { FOUNDER_PRICE_PAISE, FOUNDER_SUPPORT_PLACEHOLDER, founderReadinessGaps } from "../client/src/lib/founder-readiness";
 import type { FounderOffer } from "../client/src/types/domain";
 
 const url = process.env.VITE_SUPABASE_URL ?? "";
@@ -391,9 +391,20 @@ describeLocalStack("Stage 8 local Founder readiness: real accounts, one shared l
     const delivered = state.delivered!;
     expect(delivered.paymentDestinationStatus).toBe("PLACEHOLDER");
     expect(delivered.upiId).toBeUndefined();
-    const gaps = founderReadinessGaps(delivered);
-    expect(gaps.length).toBeGreaterThan(0);
-    observed("readiness-gate", "delivered offer gaps", gaps.join(","));
+    // Seven, not six: the shipped `support_contact` sentence is long enough to pass
+    // a length rule and reaches no person, so it was always a missing term. The
+    // parity repair made the authority see what the client already did.
+    expect(founderReadinessGaps(delivered)).toEqual([
+      "destination-not-live",
+      "vpa-missing",
+      "support-pending",
+      "support-contact-unusable",
+      "refund-policy-pending",
+      "refund-policy-text-missing",
+      "disclosures-pending",
+    ]);
+    expect(delivered.supportContact).toBe(FOUNDER_SUPPORT_PLACEHOLDER);
+    observed("readiness-gate", "delivered offer gaps", founderReadinessGaps(delivered).join(","));
   });
 
   it("starts every account on FREE, which is what makes a missing grant meaningful", async () => {
@@ -502,6 +513,153 @@ describeLocalStack("Stage 8 local Founder readiness: real accounts, one shared l
       writeOffer(READY_OFFER);
     });
   }
+
+  // D-S8-5 / D-S8-6 — the readiness-parity repair. Every case above removes a
+  // precondition; these keep all of them in place and weaken only how a stored value
+  // is *judged*. Both shapes below are storable, because the table checks measure
+  // length and never meaning, so what is under test is the authority itself: does the
+  // RPC refuse the value the client already refuses, and does it still accept the
+  // values the client accepts? One account serves the refusal cases because a gated
+  // request creates nothing, and each case re-asserts that afterwards.
+  const parityAccount: { current?: Account } = {};
+  async function parity() {
+    if (!parityAccount.current) parityAccount.current = await bootstrap("parity");
+    return parityAccount.current;
+  }
+
+  const malformedVpaCases: Array<[string, string]> = [
+    ["no at-sign at all", "not-a-vpa"],
+    ["spaces inside the address", "not a vpa"],
+    ["an empty provider part", "merchant@"],
+    ["an empty local part", "@upi"],
+    ["both parts under the two-character floor", "a@b"],
+    ["two at-signs", "x@y@z"],
+    ["a payment page URL instead of an address", "https://dueweave.invalid/pay"],
+    // Not a whitespace case: JavaScript's trim() keeps U+200B, so this value is
+    // malformed at both boundaries. It is here to prove the trim class was matched
+    // to the client rather than widened until every odd character was refused.
+    ["a zero-width space welded to the front", "\u200Bdueweave-test@upi"],
+  ];
+
+  for (const [index, [label, value]] of malformedVpaCases.entries()) {
+    it(`refuses a stored malformed VPA — ${label} — in the claim RPCs, not only in the client`, async () => {
+      const account = await parity();
+      try {
+        writeOffer({ ...READY_OFFER, upiId: value });
+        const stored = offerRow();
+        const created = await account.client.rpc("create_founder_claim");
+        const submitted = await account.client.rpc("submit_founder_payment", {
+          p_claim_id: "DW-F-NONE0000000",
+          p_utr_reference: utrFor(`V${index}`),
+          p_payer_name: "Parity Payer",
+        });
+        // Recorded before either assertion, so a run that fails on one side still
+        // states what the other side actually did.
+        observed("readiness-gate", `malformed VPA ${label}: client gap set`, founderReadinessGaps(stored).join(",") || "none");
+        observed("readiness-gate", `malformed VPA ${label}: create_founder_claim`, created.error ? `refused ${created.error.message}` : "accepted");
+        observed("readiness-gate", `malformed VPA ${label}: submit_founder_payment`, submitted.error ? `refused ${submitted.error.message}` : "accepted");
+        expect(stored.upiId, "the value must be storable, or this tests the write and not the gate").toBe(value);
+        expect(founderReadinessGaps(stored)).toEqual(["vpa-malformed"]);
+        blocked("readiness-gate", `malformed VPA ${label}: create_founder_claim`, denial("parity", created, NOT_READY));
+        blocked("readiness-gate", `malformed VPA ${label}: submit_founder_payment`, denial("parity", submitted, NOT_READY_TO_SUBMIT));
+        unchanged("readiness-gate", `no claim row was created for a malformed VPA (${label})`, claimFingerprint([account.email]), []);
+      } finally {
+        writeOffer(READY_OFFER);
+      }
+    });
+  }
+
+  const unusableSupportCases: Array<[string, string]> = [
+    // The first row is the literal column default the repository ships with; the
+    // others prove the rule normalises instead of merely comparing one string.
+    ["the sentence the column ships with", FOUNDER_SUPPORT_PLACEHOLDER],
+    ["that sentence with padding around it", `  ${FOUNDER_SUPPORT_PLACEHOLDER}  `],
+    ["only tabs", "\t\t\t"],
+    ["a space and two tabs", " \t\t"],
+    ["two characters", "ab"],
+    // The customer boundary trims this to nothing and so reports the gap; a class
+    // limited to ASCII whitespace reads five characters of it as a published
+    // contact, which is the same fail-open shape as the placeholder above.
+    ["five non-breaking spaces", "\u00A0\u00A0\u00A0\u00A0\u00A0"],
+  ];
+
+  for (const [index, [label, value]] of unusableSupportCases.entries()) {
+    it(`refuses an unusable support contact — ${label} — while its status reads CONFIGURED`, async () => {
+      const account = await parity();
+      try {
+        writeOffer({ ...READY_OFFER, supportContact: value, supportContactStatus: "CONFIGURED" });
+        const stored = offerRow();
+        const created = await account.client.rpc("create_founder_claim");
+        const submitted = await account.client.rpc("submit_founder_payment", {
+          p_claim_id: "DW-F-NONE0000000",
+          p_utr_reference: utrFor(`S${index}`),
+          p_payer_name: "Parity Payer",
+        });
+        observed("readiness-gate", `unusable support ${label}: client gap set`, founderReadinessGaps(stored).join(",") || "none");
+        observed("readiness-gate", `unusable support ${label}: create_founder_claim`, created.error ? `refused ${created.error.message}` : "accepted");
+        observed("readiness-gate", `unusable support ${label}: submit_founder_payment`, submitted.error ? `refused ${submitted.error.message}` : "accepted");
+        expect(stored.supportContact, "the value must be storable, or this tests the write and not the gate").toBe(value);
+        expect(stored.supportContactStatus).toBe("CONFIGURED");
+        expect(founderReadinessGaps(stored)).toEqual(["support-contact-unusable"]);
+        blocked("readiness-gate", `unusable support ${label}: create_founder_claim`, denial("parity", created, NOT_READY));
+        blocked("readiness-gate", `unusable support ${label}: submit_founder_payment`, denial("parity", submitted, NOT_READY_TO_SUBMIT));
+        unchanged("readiness-gate", `no claim row was created for an unusable support contact (${label})`, claimFingerprint([account.email]), []);
+      } finally {
+        writeOffer(READY_OFFER);
+      }
+    });
+  }
+
+  // The repair has to be parity, not severity. Whitespace around a well-formed value
+  // is trimmed by both sides, so a configuration the customer surface calls ready
+  // must still open the claim path — otherwise a passing matrix would only prove the
+  // gate had been made unreachable. The list is every character ECMAScript's
+  // String.prototype.trim() removes: the first three are the ones a plain SQL
+  // whitespace set already covers, and the rest are the ones it silently keeps.
+  const paddingClasses: Array<[string, string]> = [
+    ["tab", "\t"],
+    ["space", " "],
+    ["newline", "\n"],
+    ["non-breaking space", "\u00A0"],
+    ["ogham space mark", "\u1680"],
+    ["en quad", "\u2000"],
+    ["hair space", "\u200A"],
+    ["line separator", "\u2028"],
+    ["paragraph separator", "\u2029"],
+    ["narrow no-break space", "\u202F"],
+    ["medium mathematical space", "\u205F"],
+    ["ideographic space", "\u3000"],
+    ["byte-order mark", "\uFEFF"],
+  ];
+
+  it("still accepts what the client accepts, whatever whitespace surrounds it", async () => {
+    const account = await bootstrap("parity-accept");
+    for (const [label, pad] of paddingClasses) {
+      try {
+        writeOffer({
+          ...READY_OFFER,
+          upiId: `${pad}${FIXTURE_VPA}${pad}`,
+          payeeName: `${pad}${FIXTURE_PAYEE}${pad}`,
+          supportContact: `${pad}${FIXTURE_SUPPORT}${pad}`,
+        });
+        const stored = offerRow();
+        const created = await account.client.rpc("create_founder_claim");
+        observed("readiness-gate", `padded valid config (${label}): client gap set`, founderReadinessGaps(stored).join(",") || "none");
+        observed("readiness-gate", `padded valid config (${label}): create_founder_claim`, created.error ? `refused ${created.error.message}` : "accepted");
+        expect(stored.upiId, `${label}: the padded address must be storable, or this tests the write and not the gate`).toBe(`${pad}${FIXTURE_VPA}${pad}`);
+        expect(founderReadinessGaps(stored), `${label}: the customer surface calls this ready`).toEqual([]);
+        // create_founder_claim evaluates the readiness gate before its "already open"
+        // branch, so from the second round on this returns the DRAFT claim the first
+        // round made — and it can only return anything at all if the gate accepted
+        // this stored config.
+        allowed("readiness-gate", `padded valid config (${label}): create_founder_claim`, created);
+        expect(rowsOf(created.data)[0].status).toBe("DRAFT");
+        expect(Number(rowsOf(created.data)[0].amount_paise)).toBe(FOUNDER_PRICE_PAISE);
+      } finally {
+        writeOffer(READY_OFFER);
+      }
+    }
+  });
 
   it("creates one DRAFT claim that carries the offer's commercial facts", async () => {
     const a = state.customerA!;
@@ -827,9 +985,14 @@ describeLocalStack("Stage 8 local Founder readiness: real accounts, one shared l
     ] as const) {
       blocked("reviewer-boundary", `ordinary user cannot call ${name}`, denial("Outsider", await outsider.client.rpc(name, args as Record<string, unknown>), "Founder review access is not available"));
     }
-    for (const helper of ["assert_founder_admin", "is_founder_admin", "prevent_direct_purchase_claim_change"]) {
+    for (const helper of ["assert_founder_admin", "is_founder_admin", "prevent_direct_purchase_claim_change", "founder_offer_payment_ready"]) {
       blocked("reviewer-boundary", `helper ${helper} is not callable from the browser`, notCallable("Outsider", await outsider.client.rpc(helper)));
     }
+    // The four refusals above only mean something if the API surface is current: an
+    // absent schema cache entry and an ungranted function look identical from here.
+    // So the same role's call to a function that is granted must succeed.
+    const offerRead = await outsider.client.rpc("get_founder_offer");
+    allowed("reviewer-boundary", "the same account does reach a granted Founder function", offerRead);
     const queue = await outsider.client.from("founder_audit_events").select("*");
     blocked("reviewer-boundary", "audit history is not readable from the browser", queue.error ? denial("Outsider", queue) : { blocked: rowsOf(queue.data).length === 0, detail: `outsider read ${rowsOf(queue.data).length} audit rows` });
     const allowlist = await outsider.client.from("founder_admins").select("*");
