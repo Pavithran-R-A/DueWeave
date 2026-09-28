@@ -396,7 +396,7 @@ The one skip is `tests/supabase.public-config.live.test.ts`, which is gated on a
 
 ## PGRST303
 
-12 runs · 0 occurrences · 0 other failures · 0 production masking added. The Stage 4 investigation stands; nothing in Stage 8 adds a retry, a client timeout widening or a looser Postgrest window. The one window D-S8-4 widens is a Vitest per-test timeout inside a test file, which cannot mask server behaviour and whose assertions were left untouched.
+16 runs · 0 occurrences · 0 other failures attributed to it · 0 production masking added. Every `test-run-*.log` in `../stage8-artifacts/` was grepped for the code: none contains it. The Stage 4 investigation stands; nothing in Stage 8 adds a retry, a client timeout widening or a looser Postgrest window. The one window D-S8-4 widens is a Vitest per-test timeout inside a test file, which cannot mask server behaviour and whose assertions were left untouched.
 
 ## LINT
 
@@ -446,7 +446,7 @@ No deploy, no tag, no hosting command, no CDN action.
 8. Same-instant two-tab browser races are not measurable on this machine (D-S8-3), and the Stage 4 two-tab and Stage 6 forms cases are consequently qualified at `--workers=1`. A faster qualification machine should re-run the full battery at a higher worker count; a failure there would be a real signal rather than starvation.
 9. No refund or disclosure wording was authored. The brief forbids inventing legal terms, so those two columns stay empty and unapproved by design, and the checklist says who must fill them.
 10. Readiness is a client-side conjunction over a server read; the database independently re-checks every term inside the RPCs at call time, so the client copy is not the gate. The two are pinned to agree by `tests/stage8-founder-contracts.test.ts:198` and the pgTAP files, not by assumption.
-11. Timeout margin on this machine is thin in general. Only two live files state an explicit window (`tests/stage8-local-founder-readiness.test.ts:360` and, after D-S8-4, `tests/stage7-local-export.test.ts:178`); the rest inherit Vitest's 5 000 ms default. The closest any of them came across the fourteen full-suite runs was `tests/stage5-local-lifecycle.test.ts` at 4 709 ms (`../stage8-artifacts/test-run-final-A.log`), under 300 ms of margin, though the same test measured 2 023 ms when re-run for this report, with that file's slowest case at 2 356 ms (`../stage8-artifacts/sibling-timings.log`). Nothing failed in those files during this stage, so nothing was changed in them — but a slower machine should expect to apply the same explicit window before concluding a regression.
+11. Timeout margin on this machine is thin in general. Only two live files state an explicit window (`tests/stage8-local-founder-readiness.test.ts:360` and, after D-S8-4, `tests/stage7-local-export.test.ts:178`); the rest inherit Vitest's 5 000 ms default. The closest any of them came across the fourteen runs of the settled 604-case suite was `tests/stage5-local-lifecycle.test.ts` at 4 709 ms (`../stage8-artifacts/test-run-final-A.log`), under 300 ms of margin, though the same test measured 2 023 ms when re-run for this report, with that file's slowest case at 2 356 ms (`../stage8-artifacts/sibling-timings.log`). Nothing failed in those files during this stage, so nothing was changed in them — but a slower machine should expect to apply the same explicit window before concluding a regression.
 
 ## OWNER-SIDE BLOCKERS BEFORE LIVE MONEY
 
