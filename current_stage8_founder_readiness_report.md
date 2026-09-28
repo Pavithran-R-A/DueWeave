@@ -400,11 +400,11 @@ The one skip is `tests/supabase.public-config.live.test.ts`, which is gated on a
 
 ## LINT
 
-`pnpm lint` (`eslint client/src tests e2e vite.config.ts --max-warnings=0`) · exit 0 · no output. No warning debt. Re-run on the final tree, after the D-S8-4 edit and its comment (`../stage8-artifacts/gate-lint-closed.log`, then `../stage8-artifacts/gate-lint-closed2.log` after the comment was reworded): exit 0 both times, still no output.
+`pnpm lint` (`eslint client/src tests e2e vite.config.ts --max-warnings=0`) · exit 0 · no output. No warning debt. Re-run on the final tree, after the D-S8-4 edit and its comment (`../stage8-artifacts/gate-lint-closed.log`, then `gate-lint-closed2.log` after the comment was reworded), and again after each subsequent `docs:` commit (`gate-lint-push.log`, `gate-lint-push2.log`): exit 0 every time, still no output.
 
 ## TYPECHECK
 
-`pnpm check` (`tsc --noEmit`) · exit 0. Re-run on the final tree (`../stage8-artifacts/gate-check-closed.log`, `../stage8-artifacts/gate-check-closed2.log`): exit 0 both times.
+`pnpm check` (`tsc --noEmit`) · exit 0. Re-run on the final tree (`../stage8-artifacts/gate-check-closed.log`, `gate-check-closed2.log`) and after each subsequent `docs:` commit (`gate-check-push.log`, `gate-check-push2.log`): exit 0 every time.
 
 ## BUILD
 
