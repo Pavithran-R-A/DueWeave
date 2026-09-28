@@ -171,7 +171,11 @@ async function seedLedger(businessName: string) {
   return { noisy, quiet, open, second, promise, evidence, madeOn, promisedDate };
 }
 
-describeLocalStack("Stage 7 data export against the live local database", () => {
+// These two fingerprinting tests call localAdmin(), whose execFileSync blocks the event loop, so
+// Vitest's 5000ms per-test timer can only fire at an await boundary. The result is load-dependent
+// rather than behaviour-dependent: the same test passed at 9 054ms and timed out at 6 904ms. The
+// window below is the one the Stage 8 live suite already uses; no assertion is touched.
+describeLocalStack("Stage 7 data export against the live local database", { timeout: 45_000, hookTimeout: 90_000 }, () => {
   const exporter = new SupabaseDataExportRepository();
   const founder = new SupabaseFounderRepository();
   let ownerIdA = "";
