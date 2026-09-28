@@ -26,6 +26,7 @@ const founderAdminRepository = readFileSync(resolve(root, "client/src/data/supab
 const founderPage = readFileSync(resolve(root, "client/src/pages/FounderPurchase.tsx"), "utf8");
 const founderAdminPage = readFileSync(resolve(root, "client/src/pages/FounderAdmin.tsx"), "utf8");
 const founderPaymentHelper = readFileSync(resolve(root, "client/src/lib/founder-payment.ts"), "utf8");
+const founderReadinessHelper = readFileSync(resolve(root, "client/src/lib/founder-readiness.ts"), "utf8");
 const sheets = readFileSync(resolve(root, "client/src/components/sheets.tsx"), "utf8");
 const whatsappLib = readFileSync(resolve(root, "client/src/lib/whatsapp.ts"), "utf8");
 const dataExportLib = readFileSync(resolve(root, "client/src/lib/data-export.ts"), "utf8");
@@ -288,7 +289,10 @@ describe("Stage 2 Supabase security contract", () => {
   });
 
   it("keeps the customer payment interface truthful and excludes payment credentials, card collection, and client-side approval", () => {
-    expect(founderPaymentHelper).toMatch(/offer\.paymentDestinationStatus === "LIVE"/);
+    expect(founderReadinessHelper).toMatch(/offer\.paymentDestinationStatus !== "LIVE"/);
+    expect(founderPaymentHelper).toMatch(/import \{ isFounderPaymentReady[^\n]*from "\.\/founder-readiness"/);
+    expect(founderPaymentHelper).toMatch(/if \(!isFounderPaymentReady\(offer\)/);
+    expect(founderPaymentHelper).not.toMatch(/paymentDestinationStatus/);
     expect(founderPage).toMatch(/Do not send money yet/);
     expect(founderPage).toMatch(/Founder-approved refund terms/);
     expect(founderPage).toMatch(/We do not request, store, or view your UPI PIN, OTP, banking password, card details, or bank credentials/);

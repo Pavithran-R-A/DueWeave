@@ -130,13 +130,30 @@ STAGE7_LOCAL_E2E=1 npx playwright test e2e/stage7-local               # terminal
 
 The preview server serves `dist/`, so a browser run only measures the code you just wrote if `pnpm build` ran after it.
 
+### Stage 8 Founder monetization journeys
+
+Stage 8's specs measure the payment boundary instead of describing it. `e2e/stage8-local-founder-customer.spec.ts` proves the delivered build shows no destination, QR, UPI link or copy action at all; with a synthetic ready offer it compares the QR on screen pixel for pixel against a reference rendered independently from the canonical payment URI, and proves that opening that link leaves the claim a draft, the account Free and the history unchanged. `e2e/stage8-local-founder-reviewer.spec.ts` shows the queue is refused until one allowlist row exists, shows the last seat taken once with the next review refused as full and its claim left pending, and shows a card another review already settled refuses as already reviewed. Two reviews arriving at the same instant is proven against two concurrent authenticated clients in `tests/stage8-local-founder-readiness.test.ts`, not in the browser: a backgrounded tab on the qualification machine was measured issuing its approval 37.3s after its twin, so a two-tab race measures the queue's serialisation rather than the lock. Both gate behind `STAGE8_LOCAL_E2E=1`, and because they share the single `FOUNDER_V1` row they run with `--workers=1`.
+
+```bash
+pnpm build && pnpm preview --port 3000 --strictPort --host 127.0.0.1   # terminal one
+STAGE8_LOCAL_E2E=1 pnpm test:e2e:stage8                               # terminal two
+```
+
+`pnpm test:stage8` runs the live contracts against the local database, and `pnpm test:db` runs the pgTAP catalog pins, including the Founder readiness and reviewer-boundary files. The journeys write a payment-ready offer only while running and restore the snapshot taken before the run, in an unconditional teardown, so a finished run leaves the placeholder behind. See [the readiness contract](docs/FOUNDER_PAYMENT_READINESS.md), [the activation checklist](docs/FOUNDER_LIVE_ACTIVATION_CHECKLIST.md) and [the configuration order of work](docs/STAGE_4_2_OPERATOR_CONFIGURATION.md).
+
 The password-recovery journey reads the reset mail from the local Inbucket inbox (`STAGE6_INBOX_URL`, default `http://127.0.0.1:54324`). That proves the app's handling of a real recovery link on a local mail catcher only; `supabase/config.toml` disables signup confirmation, so nothing here verifies hosted SMTP, a hosted Site URL, or a redirect allow-list.
 
 ## Founder workflow
 
-Founder Lifetime is a manual-verification flow, not a payment processor. The configured offer currently remains an enabled **PLACEHOLDER** with no UPI destination. A customer can create a protected claim only when payment instructions are configured. A submitted reference is checked manually against business bank history by an allowlisted reviewer, who can approve, reject, revoke, or—after an explicit recheck—reconsider a rejected claim. The database prevents self-activation, duplicate UTR reuse, unapproved changes, and non-atomic seat-cap bypasses. Claim and audit history are preserved.
+Founder Lifetime is manual-verification infrastructure, not a payment processor, and payments are not live. The delivered offer is an enabled `PLACEHOLDER` with no UPI destination, no configured support address, no approved refund text and no approved disclosures, so the customer page shows a setup notice and nothing payable. Support, refund and disclosure states are fail-closed prerequisites: the database re-checks each of them inside the claim RPCs, so an unconfigured or unapproved term closes the workflow whether or not the page agrees.
 
-The Free plan's active-receivable limit remains database-enforced. The application translates an authoritative limit rejection into a direct `/founder` conversion path; it does not pretend that a client-side state change grants entitlement.
+The current contract is ₹499.00 one time, stored as the integer `49900` paise, and the readiness conjunction refuses to open the workflow on any other amount. The price, the payee name and the VPA each have to be configured and independently verified before anything is payable.
+
+A customer who starts a claim submits their own payment reference. Nothing about opening UPI proves anything: an intent, a scanned QR, a returned app, a focus change or a reload leaves the claim a draft, because payment success is only ever a reviewer's conclusion. A submitted reference reaches `/admin/founder-claims`, where an allowlisted reviewer compares it against business bank history held outside DueWeave and approves, rejects, or after an explicit recheck reconsiders a rejected claim. Taking access back is a separate server-side action, `revoke_founder_entitlement()`, and the review screen offers no control for it. The database prevents self-activation, duplicate UTR reuse, unapproved changes and non-atomic seat-cap bypasses, and preserves claim and audit history.
+
+The application stores the payer name and reference a customer supplies, the configured offer amount, the verification status and review timestamps. It never stores and never asks for a UPI PIN, OTP, banking password, internet-banking login, card number, CVV or gateway key, and no field for any of them exists in the flow.
+
+The Free plan's active-receivable limit remains database-enforced. The application translates an authoritative limit rejection into a direct `/founder` conversion path; it does not pretend that a client-side state change grants entitlement. No money is being collected here, and nothing in this repository accepts a payment.
 
 ## Operator and release runbooks
 

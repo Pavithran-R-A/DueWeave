@@ -23,6 +23,8 @@
     "test:e2e:stage2": "playwright test e2e/stage2-local-auth.spec.ts",
     "test:e2e:stage3": "playwright test e2e/stage3-local-isolation.spec.ts",
     "test:e2e:stage6": "playwright test e2e/stage6-local",
+    "test:stage8": "vitest run tests/stage8-local-founder-readiness.test.ts tests/stage8-founder-contracts.test.ts",
+    "test:e2e:stage8": "playwright test e2e/stage8-local-founder-customer.spec.ts e2e/stage8-local-founder-reviewer.spec.ts --workers=1",
     "verify:stage2": "pnpm db:reset:local && pnpm db:types && pnpm test:stage2"
   },
   "dependencies": {

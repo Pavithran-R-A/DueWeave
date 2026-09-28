@@ -1,0 +1,68 @@
+-- Stage 8 (current roadmap) — D-S8-2: retire the stale duplicate destination
+-- check so the documented Founder readiness state is actually expressible.
+--
+-- Forward-only. Drops one check constraint. Creates no object, changes no
+-- privilege, no policy, no RLS setting, no function, no row, and no default.
+-- Nothing is re-granted because nothing new exists for the Stage 3 fail-closed
+-- default-privileges model to cover.
+--
+-- Why this is a defect and not a preference
+-- ------------------------------------------
+-- Stage 4.2A (20260814110000) widened the destination vocabulary to
+-- PLACEHOLDER / TEST / LIVE and added `founder_offer_config_payment_destination_ready_check`
+-- to pair a destination with a VPA. It replaced only the enum-style check and
+-- the pairing check it named; the original table-level
+-- `founder_offer_config_check`, written when the third state was spelled
+-- CONFIGURED rather than LIVE, was left in place. Both still exist on the
+-- delivered 21-migration database:
+--
+--   founder_offer_config_check
+--     CHECK ( (status = 'PLACEHOLDER' and upi_id is null)
+--             or (status in ('TEST','CONFIGURED') and length(trim(coalesce(upi_id,''))) between 3 and 160) )
+--   founder_offer_config_payment_destination_ready_check
+--     CHECK ( (status = 'PLACEHOLDER' and upi_id is null)
+--             or (status in ('TEST','LIVE')       and length(trim(coalesce(upi_id,''))) between 3 and 160) )
+--
+-- Executed against the local stack, inside transactions that were rolled back:
+--
+--   update ... set payment_destination_status = 'TEST', upi_id = 'dueweave-test@upi'
+--     -> UPDATE 1
+--   update ... set payment_destination_status = 'LIVE', upi_id = 'dueweave-test@upi'
+--     -> ERROR: new row for relation "founder_offer_config" violates check
+--        constraint "founder_offer_config_check"
+--
+-- So `LIVE` cannot be stored at all, and the retired `CONFIGURED` value cannot
+-- be stored either because the surviving vocabulary check refuses it. The
+-- consequence is not cosmetic: Stage 8's readiness model defines a payment as
+-- reachable only when a conjunction that includes `destination = LIVE` holds,
+-- every one-missing-precondition case in the readiness matrix is therefore
+-- vacuously "missing", and the documented activation step would fail with a raw
+-- constraint error. The current fail-closed posture is real but accidental — it
+-- comes from a leftover constraint rather than from the gate — and an accidental
+-- gate cannot be trusted to still be there after the next change.
+--
+-- Why dropping it weakens nothing
+-- -------------------------------
+-- The remaining conjunction is strictly implied by what is left on the table:
+--
+--   vocabulary: `founder_offer_config_payment_destination_status_check`
+--               allows exactly PLACEHOLDER / TEST / LIVE.
+--   pairing:    `founder_offer_config_payment_destination_ready_check`
+--               keeps PLACEHOLDER => upi_id IS NULL and TEST/LIVE => a trimmed
+--               VPA of 3..160 characters.
+--
+-- Together those two state everything the dropped one asserted about the two
+-- states that were legal for it, and nothing more. What changes is only that a
+-- third state — the one the operator is supposed to be able to reach — stops
+-- being refused. `supabase/tests/stage8_01_offer_readiness.sql` pins both
+-- halves: the four destination/VPA refusals now name the readiness check as
+-- their author, so if a later change removed that guard the assertions would
+-- fail loudly instead of passing on an unrelated constraint.
+--
+-- This migration does not turn anything on. The delivered row stays
+-- PLACEHOLDER with no VPA, support PENDING, refund PENDING_APPROVAL and
+-- disclosures PENDING, and the customer claim RPCs still refuse a payment claim
+-- unless the whole readiness conjunction holds at call time.
+
+alter table public.founder_offer_config
+    drop constraint founder_offer_config_check;

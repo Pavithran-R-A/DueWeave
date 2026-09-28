@@ -1,39 +1,114 @@
-# Stage 4.2A: Fail-Closed Founder Payment Engineering
+# Founder Payment Configuration: Order of Work
 
-## Purpose and current state
+This file keeps the route map written at Stage 4.2A and brings it up to date with
+what Stage 8 actually measured. The file name is unchanged because other documents
+and reports refer to it.
 
-Stage 4.2A delivers payment **infrastructure only**. It authorizes neither a payment, public sale, customer acquisition, deployment, real Founder activation, nor Stage 5. The live `FOUNDER_V1` offer remains `PLACEHOLDER`, has no UPI destination, has no configured support contact, has no approved public refund terms, and has no Founder-review operator.
+## What this repository delivers
 
-The database and browser both fail closed. A customer cannot start a claim, submit a payment reference, see a payable QR, open a UPI app, or copy a UPI intent unless a future trusted operator has explicitly configured every live prerequisite. A `TEST` status is allowed only in isolated engineering fixtures and is never accepted by customer claim RPCs.
+Founder monetization is engineering only. Nothing in this repository authorizes a
+payment, a public sale, customer acquisition, a deployment, a real Founder
+activation, or the next roadmap stage.
 
-| Control | Stage 4.2A state | Future live prerequisite |
-|---|---|---|
-| Payment destination | `PLACEHOLDER`; VPA is `NULL` | A business-controlled VPA and `LIVE` status |
-| Price | ₹499.00 data contract | Exact integer amount `49900` paise |
-| Payee | Not publicly configured | Truthful display name |
-| Support | Not publicly configured | Public support address |
-| Refund terms | Draft only; not published as a promise | Founder-approved publication text |
-| Disclosures | Pending | Trusted approval of required disclosures |
-| Reviewer | No allowlisted operator | Normal signed-in reviewer UUID allowlisted server-side |
+The delivered `FOUNDER_V1` row is a non-payable placeholder:
 
-## Stage 4.2A payment-readiness evaluator
+| Column | Delivered value |
+|---|---|
+| `enabled` | `true` |
+| `payment_destination_status` | `PLACEHOLDER` |
+| `upi_id` | `NULL` |
+| `payee_name` | `DueWeave` |
+| `amount_paise` | `49900` |
+| `founder_cap` | `50` |
+| `support_contact_status` | `PENDING` |
+| `support_contact` | `Support contact not configured` |
+| `refund_policy_status` | `PENDING_APPROVAL` |
+| `refund_policy_text` | `NULL` |
+| `disclosures_status` | `PENDING` |
 
-Payment is ready only when all of the following are true: the offer is enabled, `payment_destination_status = 'LIVE'`, a valid VPA and payee name exist, the price equals `49900` paise, support is configured, refund terms are approved and present, and disclosures are approved. Any missing or malformed value results in no QR, no mobile intent, no copy action, no claim creation, and no payment-reference submission.
+Against the twelve-term readiness conjunction in `FOUNDER_PAYMENT_READINESS.md`,
+that row reports six gaps, so a customer sees no payment instructions, no QR, no
+UPI link, no copy action, and no claim button.
 
-The reusable URI layer is deliberately generic. Its isolated test fixture uses `dueweave-test@upi` with an explicit TEST note; it is not stored in the live offer and can never become a production fallback.
+The database refuses the same way the browser does. `create_founder_claim()` and
+`submit_founder_payment()` both re-check readiness inside the transaction, so the
+UI is not the gate.
 
-## Future operator path — not authorized in Stage 4.2A
+## Fixtures are not configuration
 
-Only a separately authorized **Stage 4.2B** may accept the following inputs: a real reviewer account, a business-controlled VPA, a payee display name, a public support address, and final founder-approved refund terms. It must not request or accept a UPI PIN, OTP, banking password, bank login, card number, payment-gateway key, service-role key, or any other banking credential.
+Stage 8's browser journeys temporarily write a payment-ready row to reach the parts
+of the workflow that only open when ready. That fixture sets
+`payment_destination_status = 'LIVE'` with `upi_id = 'dueweave-test@upi'`, payee
+`DueWeave Test Fixture`, and support `founder-support+fixture@example.invalid`, and
+the run restores the snapshot taken before it started, in an unconditional teardown.
+The live suite does the same in `tests/stage8-local-founder-readiness.test.ts`.
 
-When that authorization exists, the owner-controlled administrative path must resolve a normal authenticated reviewer account to its immutable UUID, add it to the server-controlled `founder_admins` allowlist, and configure the single `FOUNDER_V1` record to `LIVE` only after independently checking completeness. The operator must independently decode the generated QR and compare the VPA, payee name, exact amount **₹499.00**, currency `INR`, and note against founder-provided public payment instructions. This validates payload generation only; it does not establish bank-account ownership or routing.
+A `TEST` destination status exists in the vocabulary so an engineering fixture can
+exercise the URI builder, and customer claim RPCs reject it: only `LIVE` opens the
+workflow. No fixture value is a production default, and none may be reused as one.
+
+## Order of work for a future live configuration
+
+The steps below are the safe order. This stage does not execute any of them.
+
+1. The intended reviewer creates a normal account through the ordinary sign-up
+   flow, and the owner reads that account's immutable `auth.users.id` UUID in the
+   Supabase dashboard. An email address is never the authorization key.
+2. The owner adds that UUID to the server-controlled `founder_admins` allowlist
+   through an owner-controlled SQL session. See `OPERATOR_BOOTSTRAP.md`.
+3. A public support address is chosen, published, and configured with
+   `support_contact_status = 'CONFIGURED'`.
+4. The owner approves the refund terms that will actually be published, writes the
+   approved text, and sets `refund_policy_status = 'APPROVED'`.
+5. The owner approves the consumer disclosures and sets
+   `disclosures_status = 'APPROVED'`.
+6. A business-controlled VPA is verified independently against the business bank
+   account, outside DueWeave.
+7. A truthful payee display name is verified independently against the name the
+   bank statement shows.
+8. The exact price is verified as `49900` paise, which is the only amount the
+   product advertises.
+9. Only then is `payment_destination_status` set to `LIVE`.
+10. The operator reads back the readiness state and confirms zero gaps, using the
+    diagnostics query in `OPERATOR_BOOTSTRAP.md` and
+    `FOUNDER_LIVE_ACTIVATION_CHECKLIST.md`.
+11. The operator generates the payment URI and QR for one claim and decodes the QR
+    independently, comparing VPA, payee name, amount `499.00`, currency `INR`, and
+    note against the founder-provided public instructions. This validates payload
+    generation only; it does not establish bank-account ownership or routing.
+12. Customer copy is read on the built page, and only then is a controlled test
+    payment considered, and only with explicit founder authorization.
+
+Steps 3 through 9 are direct writes to the single `FOUNDER_V1` row by a trusted
+operator. There is no browser control, admin screen, or one-click toggle that
+performs them, and Stage 8 adds none.
+
+Nothing in this order requests or accepts a UPI PIN, OTP, banking password,
+internet-banking login, card number, CVV, payment-gateway key, or service-role key.
+The application never stores any of those.
 
 ## Review and customer boundaries
 
-If a later authorized live test is approved, a customer must sign in normally, be redirected from the Free-plan active-receivable limit to `/founder`, and create a private claim only after visible payment instructions are live. The restricted reviewer uses `/admin/founder-claims` and manually compares a submitted reference with business bank history outside DueWeave. An ordinary user must remain denied by the same reviewer RPCs. A claim outcome may be `Payment not found`, `Duplicate reference`, `Reference could not be verified`, `Rejected`, `Under review`, or `Founder activated`; none are automatic bank-detection outcomes.
+A customer signs in normally, reaches `/founder` from the Free-plan active-receivable
+limit, and creates a private claim only while payment instructions are live. The
+restricted reviewer works in `/admin/founder-claims` and compares a submitted
+reference against business bank history held outside DueWeave. An ordinary account
+is denied by the same reviewer RPCs.
 
-The application stores only the payer name and payment reference supplied, configured offer amount, verification status, and review timestamps. It never stores UPI PINs, OTPs, bank passwords, internet-banking logins, or card credentials. Any refund decision remains a manual operator outcome and does not alter applicable statutory rights.
+A UPI intent, a scanned QR, a returned app, a focus change, or a page reload is not
+payment evidence. Every outcome the product reports comes from a customer-submitted
+reference plus a reviewer's manual bank check. Claim outcomes are `Payment not
+found`, `Duplicate reference`, `Reference could not be verified`, `Rejected`,
+`Under review`, or `Founder activated`; none of them is an automatic bank detection.
 
-## Stage 4.2A stop boundary
+Refunds remain a manual operator decision recorded against the claim, and do not
+change any statutory right. This document states the product's mechanics, not a
+legal conclusion: the refund and disclosure text must be written and approved by the
+owner with their own advice.
 
-At the end of this stage, the offer must still be `PLACEHOLDER`, `upi_id` must be `NULL`, no reviewer may be allowlisted, approved real Founder customers must be zero, and real money collected must be **₹0**. Do not deploy, collect payment, start Stage 4.2B, or start Stage 5.
+## Stop boundary
+
+At the end of this stage the offer is still `PLACEHOLDER`, `upi_id` is `NULL` in the
+delivered state, no reviewer is allowlisted, approved real Founder customers are
+zero, and real money collected is ₹0. Do not deploy, collect payment, or start the
+next stage from this document.

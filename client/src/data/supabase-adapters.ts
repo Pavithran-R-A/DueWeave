@@ -111,10 +111,19 @@ export function userFacingDataError(message?: string, code?: string) {
   if (normalized.includes("payment instructions are not ready")) return "UPI instructions are not ready for payment submission yet.";
   if (normalized.includes("payment reference has already")) return "That payment reference has already been submitted.";
   if (normalized.includes("payment claim")) return "This Founder payment claim is not available in this account.";
+  // The review queue is shared, so a card can move on between loading it and
+  // acting on it. Each of those states has a different fix, and "try again" is
+  // not one of them: the reviewer has to be told to look at the queue again.
+  if (normalized.includes("founder claim is not available")) return "That claim is no longer in the review queue. Refresh to see its current state.";
+  if (normalized.includes("only a pending founder claim")) return "That claim has already been reviewed. Refresh to see its current state.";
+  if (normalized.includes("only a rejected founder claim")) return "Only a previously rejected claim can be reconsidered. Refresh to see the current queue.";
+  if (normalized.includes("no longer matches the configured offer")) return "This claim no longer matches the configured Founder offer. Refresh before reviewing it.";
+  if (normalized.includes("confirm bank-history verification")) return "Confirm the bank-history check before reconsidering this claim.";
+  if (normalized.includes("no active founder entitlement")) return "This account has no active Founder entitlement to revoke.";
   if (normalized.includes("payer name")) return "Enter the payer name used for the payment.";
   if (normalized.includes("payment reference with")) return "Enter a valid UTR or payment reference.";
   if (normalized.includes("founder access is not available")) return "The Founder offer is unavailable right now.";
-  if (normalized.includes("review note") || normalized.includes("revocation reason")) return "Add a short review reason before continuing.";
+  if (normalized.includes("review note") || normalized.includes("reconsideration note") || normalized.includes("revocation reason")) return "Add a short review reason before continuing.";
   if (normalized.includes("free plan allows")) return "Your Free plan allows up to three active receivables. Close or settle one before adding another.";
   if (normalized.includes("within the remaining balance")) return "The amount must be greater than zero and no more than the remaining balance.";
   if (normalized.includes("valid positive receivable amount") || normalized.includes("amount greater than zero")) return "Enter a valid amount greater than zero.";

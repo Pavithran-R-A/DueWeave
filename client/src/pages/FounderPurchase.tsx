@@ -6,7 +6,8 @@ import { feedback } from "@/components/ui/sonner";
 import { SupabaseFounderRepository } from "@/data/supabase-founder-repository";
 import { ErrorState, LoadingState } from "@/components/finance-ui";
 import { formatINR } from "@/lib/finance";
-import { buildFounderUpiPayload, isFounderPaymentDestinationReady } from "@/lib/founder-payment";
+import { buildFounderUpiPayload } from "@/lib/founder-payment";
+import { isFounderPaymentReady } from "@/lib/founder-readiness";
 import type { FounderClaim, FounderEntitlement, FounderOffer } from "@/types/domain";
 import "../founder-disclosures.css";
 
@@ -75,7 +76,7 @@ export default function FounderPurchase() {
   if (error || !data) return <div className="app-shell founder-shell"><ErrorState onRetry={() => { void refresh(); }} /></div>;
 
   const { offer, claim, entitlement } = data;
-  const paymentReady = isFounderPaymentDestinationReady(offer);
+  const paymentReady = isFounderPaymentReady(offer);
   const supportCopy = offer.supportContactStatus === "CONFIGURED" && offer.supportContact.trim().length > 2
     ? `For payment or refund questions, contact ${offer.supportContact} with your claim ID.`
     : "Support contact will be available before payments open.";

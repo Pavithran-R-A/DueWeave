@@ -9,6 +9,5 @@ export const BRAND = {
   texture: "/brand/thread-texture.svg",
   promiseIllustration: "/brand/promise-illustration.svg",
   supportName: "DueWeave Founder Support",
-  founderPricePaise: 49900,
 } as const;
 

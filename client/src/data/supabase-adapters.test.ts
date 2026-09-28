@@ -134,6 +134,34 @@ describe("Supabase domain adapters", () => {
     expect(userFacingDataError("A payment cannot be dated in the future")).toMatch(/payment/i);
   });
 
+  // PHASE 78. Each raw string below is a message a Founder review RPC really
+  // raises (supabase/migrations/20260813030000_stage4_founder_monetization.sql and
+  // 20260814090000_stage4_1_founder_claim_reconsideration.sql). A reviewer working
+  // from a card that has moved on must be told which state it moved into, not that
+  // saving failed.
+  it("gives every Founder review refusal its own truthful state", () => {
+    const cases: Array<[string, RegExp]> = [
+      ["This Founder claim is not available", /no longer in the review queue/i],
+      ["Only a pending Founder claim can be approved", /already been reviewed/i],
+      ["Only a pending Founder claim can be rejected", /already been reviewed/i],
+      ["Only a rejected Founder claim can be reconsidered", /only a previously rejected claim/i],
+      ["This Founder claim no longer matches the configured offer", /no longer matches the configured founder offer/i],
+      ["Confirm bank-history verification before reconsidering this claim", /confirm the bank-history check/i],
+      ["Keep the reconsideration note concise", /short review reason/i],
+      ["Keep the review note concise", /short review reason/i],
+      ["No active Founder entitlement is available for revocation", /no active founder entitlement/i],
+      ["The verified Founder offer is currently full", /founder offer is currently full/i],
+      ["Founder review access is not available for this account", /founder review access is not available/i],
+      ["Provide a concise revocation reason", /short review reason/i],
+    ];
+    for (const [raw, expected] of cases) {
+      const message = userFacingDataError(raw);
+      expect(message, `the database said "${raw}"`).toMatch(expected);
+      expect(message, `the database said "${raw}"`).not.toMatch(/SQLSTATE|P0001|constraint|function|public\.|raise_exception/i);
+      expect(message, `the database said "${raw}"`).not.toBe("We could not save that change. Please try again.");
+    }
+  });
+
   it("keeps a server-side refusal in the calm fallback instead of quoting it", () => {
     for (const raw of ["permission denied for table clients", "new row violates row-level security policy for table \"receivables\"", "duplicate key value violates unique constraint \"clients_pkey\""]) {
       const message = userFacingDataError(raw, "42501");
