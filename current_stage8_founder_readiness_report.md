@@ -4,11 +4,11 @@ Brief: DUEWEAVE roadmap Stage 8, "FOUNDER MONETIZATION READINESS / OPERATOR SAFE
 
 ## STATUS
 
-PASS with disclosed caveats. All 90 phases were executed. Three findings are recorded. D-S8-1 (open-UPI-is-not-payment): the invariant was already honored by the shipped client, so its RED answer is NO — what was missing was any guarantee pinning it, and the one real defect found in that area is the payment URI's float-computed amount, reproduced and fixed. D-S8-2: the delivered database could not store `LIVE` at all — reproduced RED, fixed by one forward migration. D-S8-3: a same-instant two-tab reviewer race is unmeasurable on the qualification machine — resolved by proving the race with two concurrent authenticated clients instead, and disclosed as an observation limit, not a product claim.
+PASS with disclosed caveats. All 90 phases were executed. Four findings are recorded. D-S8-1 (open-UPI-is-not-payment): the invariant was already honored by the shipped client, so its RED answer is NO — what was missing was any guarantee pinning it, and the one real defect found in that area is the payment URI's float-computed amount, reproduced and fixed. D-S8-2: the delivered database could not store `LIVE` at all — reproduced RED, fixed by one forward migration. D-S8-3: a same-instant two-tab reviewer race is unmeasurable on the qualification machine — resolved by proving the race with two concurrent authenticated clients instead, and disclosed as an observation limit, not a product claim. D-S8-4 (found at closure, while re-running the gates): an inherited Stage 7 live test had never had timeout margin — it finished at 5 589-9 054 ms across seven logged full runs against Vitest's 5 000 ms default and turned red at 6 904 ms under load with no behaviour change; reproduced RED, fixed by widening that file's own timeout window to the one the Stage 8 live suite already uses, assertions untouched.
 
 The product verdict is that the Founder path is correctly fail-closed and safe to qualify, and it is NOT READY to take money. Six owner-side terms remain unmet in the delivered row, and the two things no column can prove (a real reviewer identity and an independent VPA check against the business bank account) are still outstanding. The full list is in LIVE-ACTIVATION CHECKLIST and OWNER-SIDE BLOCKERS.
 
-Caveats that stop this being a clean PASS are listed under KNOWN LIMITATIONS. None of them is a payment-safety defect; three are observation limits of this machine, and four are product gaps deliberately left open rather than silently patched.
+Caveats that stop this being a clean PASS are listed under KNOWN LIMITATIONS. None of them is a payment-safety defect: two are observation limits of this machine (browser simultaneity, the offline font), four are product gaps deliberately recorded rather than patched, one is the refund/disclosure wording the brief forbids inventing, two concern local test-run residue and timeout margin, and D-S8-4 is a test-reliability defect that was reproduced, root-caused as far as the evidence reaches, and fixed with no assertion changed.
 
 ## STARTING SHA
 
@@ -16,9 +16,10 @@ Caveats that stop this being a clean PASS are listed under KNOWN LIMITATIONS. No
 
 ## ENDING SHA treatment
 
-A commit cannot contain its own hash, so this report does not print one. The ending SHA is the commit that contains this file (PHASE 89, parent `68a3cbb`). Read it with:
+A commit cannot contain its own hash, so this report does not print the one that carries it. The Stage 8 code and data work is `405a22461b2f31539ca65306dc2c4cb182dd6fd6` (`feat: qualify Founder monetization readiness`, parent `68a3cbb`); HEAD is ahead of it by a `fix:` commit for D-S8-4 and by this report's own `docs:` corrections, which is the only way to state counts that the feature commit itself produced. Read the delivered chain with:
 
 ```bash
+git log --oneline 68a3cbb..HEAD                                  # the Stage 8 commits
 git rev-parse HEAD                                               # ending SHA
 git rev-parse HEAD origin/current-stage-8-founder-readiness      # must be identical (PHASE 90)
 ```
@@ -26,6 +27,14 @@ git rev-parse HEAD origin/current-stage-8-founder-readiness      # must be ident
 ## BRANCH
 
 `current-stage-8-founder-readiness`. `main` was not modified. No PR was created. Nothing was merged. No tag was created. No deployment was run.
+
+## FILES CHANGED
+
+29 paths against the starting SHA `68a3cbb` · 15 added, 14 modified · 5 077 insertions, 73 deletions (`git diff --stat 68a3cbb`). The full list is below; the only DDL is the one migration, and the only change to a pre-existing test file is the D-S8-4 timeout window.
+
+- Added: `client/src/lib/founder-readiness.ts` (+ its test), `supabase/migrations/20260927090000_current_stage8_offer_destination_readiness.sql`, `supabase/tests/stage8_01_offer_readiness.sql`, `stage8_02_payment_evidence.sql`, `stage8_03_reviewer_boundaries.sql`, `tests/stage8-founder-contracts.test.ts`, `tests/stage8-local-founder-readiness.test.ts`, `e2e/stage8-local-founder-customer.spec.ts`, `e2e/stage8-local-founder-reviewer.spec.ts`, `e2e/founder-browser-harness.ts`, `e2e/founder-local-fixture.ts`, `docs/FOUNDER_PAYMENT_READINESS.md`, `docs/FOUNDER_LIVE_ACTIVATION_CHECKLIST.md`, this report.
+- Modified: `client/src/lib/founder-payment.ts` (+ test), `client/src/data/supabase-adapters.ts` (+ test), `client/src/pages/FounderPurchase.tsx`, `client/src/pages/Home.tsx`, `client/src/config/brand.ts`, `tests/security-contract.test.ts`, `tests/stage7-local-export.test.ts` (the D-S8-4 timeout window only), `vitest.config.ts`, `package.json`, `README.md`, `docs/OPERATOR_BOOTSTRAP.md`, `docs/STAGE_4_2_OPERATOR_CONFIGURATION.md`.
+- Nothing under `dist/`, no lockfile change, no new dependency, no credential file. Scratch evidence (test and browser logs, traces, first-failure artifacts) lives outside the repository in `../stage8-artifacts/` and is not committed.
 
 ## BASELINE
 
@@ -324,11 +333,11 @@ Every browser test registers a problem watch on its own page and asserts the col
 
 ## STAGE 7 REGRESSION
 
-32 passed / 0 failed at `--workers=1`: export 13 passed (4.0m), follow-up 19 passed (3.5m). The full 22-spec Stage 2–7 battery at 4 workers reported 116 passed / 5 failed / 8 skipped, and the failing 41-test subset re-ran 41 passed at 1 worker (`../stage8-artifacts/e2e-battery.log`, `../stage8-artifacts/e2e-battery-serial-recheck.log`).
+32 passed / 0 failed at `--workers=1`: export 13 passed (4.0m), follow-up 19 passed (3.5m). The full 22-spec Stage 2–7 battery at 4 workers reported 116 passed / 5 failed / 8 skipped, and the failing 41-test subset re-ran 41 passed at 1 worker (`../stage8-artifacts/e2e-battery.log`, `../stage8-artifacts/e2e-battery-serial-recheck.log`). In the unit/live half, `tests/stage7-local-export.test.ts` failed once at closure on a 5 000 ms timeout it had never had margin for — reproduced, root-caused and fixed by widening that file's own timeout window with no assertion changed; see D-S8-4. No Stage 7 behaviour, assertion or expectation was weakened for this stage.
 
 ## PGTAP
 
-8 files, 296 tests, `Result: PASS`, run before and after zero replay with identical counts (`../stage8-artifacts/pgtap-final.log`, `../stage8-artifacts/pgtap-postzero.log`). Stage 8 adds three files: `stage8_01_offer_readiness.sql` (31 top-level assertions), `stage8_02_payment_evidence.sql` (22), `stage8_03_reviewer_boundaries.sql` (13). The baseline on the starting SHA was 5 files / 229 tests, so pg_prove's reported count rose by 67 — none of the 229 existing assertions was deleted or relaxed.
+8 files, 296 tests, `Result: PASS`, run before and after zero replay with identical counts (`../stage8-artifacts/pgtap-final.log`, `../stage8-artifacts/pgtap-postzero.log`) and once more on the delivered tree (`../stage8-artifacts/pgtap-delivered.log`, `All tests successful`, exit 0). Stage 8 adds three files: `stage8_01_offer_readiness.sql` (31 top-level assertions), `stage8_02_payment_evidence.sql` (22), `stage8_03_reviewer_boundaries.sql` (13). The baseline on the starting SHA was 5 files / 229 tests, so pg_prove's reported count rose by 67 — none of the 229 existing assertions was deleted or relaxed.
 
 ## ZERO REPLAY
 
@@ -348,15 +357,36 @@ Executed as `pnpm supabase:stop` → `pnpm supabase:start` → `pnpm db:reset:lo
 - Resolution: the same-instant seat race is proved with two concurrent authenticated clients in `tests/stage8-local-founder-readiness.test.ts:913`, not in the browser. The browser journey is sequential and asserts what a sequential journey can: the seat is taken once, the next review is refused as full, and a card another review already settled refuses with its own state. `README.md:135` and the reviewer spec's header comment say so in the same words.
 - Correction of record: the first stale-card failure in `e2e-stage8-pair-4.log` was not a tab stall. `approve_founder_claim` returns an already-APPROVED claim unchanged (`20260813030000…sql:261`), so the second approval was a correct idempotent 200 and the UI reported success. The test was asserting a refusal where the design gives a no-op. It was rewritten to settle the shared card with a rejection, which is the state that genuinely has to say no. That was a test-design error on my side, initially misdiagnosed as machine behavior.
 
+## D-S8-4 — AN INHERITED STAGE 7 LIVE TEST HAD NO TIMEOUT MARGIN — RED / FIX / GREEN
+
+- RED (reproduced): `pnpm test` on the tree after the PHASE 89 commit failed 1 of 604 — `tests/stage7-local-export.test.ts > leaves a confirmed contact as history no session may edit or delete`, `Error: Test timed out in 5000ms` at a measured 6 904 ms (`../stage8-artifacts/test-run-docs.log`). No code had changed between that run and the two clean runs before it; the same run also showed Stage 8 tests taking 27.2s and 23.6s instead of their usual 4-6s, so the difference was load, not behaviour.
+- What the window is, and what the runs say about it: a throwaway probe file sleeping 6 000 ms was run alone on an idle loop and failed at 5 009 ms with the same message (the probe was deleted; it is not part of the delivery), so the configured window is 5 000 ms and it is enforced promptly when the loop is free. The two fingerprinting tests then passed at wall times far above 5 000 ms, which is the decisive evidence for the mechanism: `localAdmin()` calls `execFileSync` (`tests/stage7-local-export.test.ts:35-42`), which blocks the event loop for the duration of each `docker exec`, and Vitest's per-test timeout is a `setTimeout` that can only be observed once that loop is free — so the deadline effectively lands at whatever await boundary follows it, and a test can finish before it. A pure timer sleep cannot do that; blocking work can. `git diff 68a3cbb..HEAD -- tests/stage7-local-export.test.ts` is empty, so this is inherited from the accepted Stage 7 branch; Stage 8's serial `fileParallelism: false` and the load it puts on the machine are what exposed it.
+- The race, from seven of the eight full pre-fix runs kept in `../stage8-artifacts/` (per-test millisecond lines as printed in those logs). The eighth, `test-run-postzero.log`, taken straight after zero replay, recorded 5 083 ms and 4 803 ms:
+
+| run log | `changes nothing at all in the ledger…` | `leaves a confirmed contact…` |
+| --- | --- | --- |
+| `test-run-1.log` | 6 321 ms pass | 5 589 ms pass |
+| `test-run-2.log` | 4 456 ms pass | 6 100 ms pass |
+| `test-run-final-1.log` | 8 927 ms pass | 6 193 ms pass |
+| `test-run-final-2.log` | 6 888 ms pass | 6 669 ms pass |
+| `test-run-final-A.log` | 5 927 ms pass | 9 054 ms pass |
+| `test-run-final-B.log` | 5 754 ms pass | 7 951 ms pass |
+| `test-run-docs.log` | 3 538 ms pass | 6 904 ms **TIMED OUT** |
+
+  Every one of the six passes finished past 5 000 ms, and two of them (7 951 ms and 9 054 ms) finished well past the run that failed at 6 904 ms. Read against the probe, that inversion is the finding rather than a curiosity: the deadline is real, but it lands on the event loop, so a test made of blocking spawns can complete before the timer is ever observed. Under a window like that the outcome is decided by machine load, not by the behaviour under test — which is what makes it a defect worth fixing at the test, and nothing at the product.
+- FIX: one line in that file — `describeLocalStack("Stage 7 data export against the live local database", { timeout: 45_000, hookTimeout: 90_000 }, …)` at `tests/stage7-local-export.test.ts:178`, the same window `tests/stage8-local-founder-readiness.test.ts:360` already sets for the same reason. No assertion, no seed, no fixture and no expectation was changed; the file's refusal tests (42501 privilege codes, byte-identical ledger fingerprint) all still run, and the 45s window still fails a genuinely hung test rather than hiding it.
+- GREEN: with the window in place the file passes both alone and beside another live file, and the same two tests are now seen to need far more than 5 000 ms whenever the machine is busy — in `../stage8-artifacts/sibling-timings.log` (`tests/stage5-local-lifecycle.test.ts` + `tests/stage7-local-export.test.ts`, `Test Files 2 passed (2)`, `Tests 79 passed (79)`, exit 0) they recorded 20 834 ms and 5 566 ms. In the six green full runs with the window they measured 6 325/4 696, 4 120/3 719, 6 176/9 062, 14 062/11 908, 7 773/8 380 and 8 639/8 476 ms (`test-run-fix-1`, `test-run-fix-2`, `test-run-closed-1`, `test-run-closed-2`, `test-run-delivered-1`, `test-run-delivered-2`) — ten of those twelve measurements are past the 5 000 ms default, which is why the old setting could only ever have been a coin toss.
+- Disclosed rather than pre-patched, and re-measured for the claim: the live files that still inherit the 5 000 ms default were run again together for this report, and the slowest single test in `tests/stage5-local-lifecycle.test.ts` measured 2 356 ms there (`../stage8-artifacts/sibling-timings.log`). Its closest approach to the default in the nine earlier full runs was 4 709 ms, in `../stage8-artifacts/test-run-final-A.log` (`phase 9: each window answers only to the money dated inside it, in any typing order`) — inside the window, but with under 600 ms of margin on a loaded machine. Nothing failed in those files during this stage, so nothing was changed in them. The only tests that ever crossed 5 000 ms outside a file that states a window are the two Stage 7 fingerprinting tests above. Recorded under KNOWN LIMITATIONS as thin margin on a loaded machine, not as a defect.
+
 ## FULL TEST RUN #1
 
-Executed on the exact tree committed by PHASE 89, after the last fixture edit. `pnpm test` · exit 0 · `Test Files 28 passed | 1 skipped (29)` · `Tests 603 passed | 1 skipped (604)` · 182.96s · PGRST303 occurrences: 0 (`../stage8-artifacts/test-run-final-A.log`).
+Executed on the exact delivered tree (the D-S8-4 timeout window and its comment, plus this report — nothing else outstanding). `pnpm test` · exit 0 · `Test Files 28 passed | 1 skipped (29)` · `Tests 603 passed | 1 skipped (604)` · 183.17s · PGRST303 occurrences: 0 (`../stage8-artifacts/test-run-shipped-1.log`).
 
 ## FULL TEST RUN #2
 
-Run immediately after #1 with no code or configuration change between · `pnpm test` · exit 0 · `Test Files 28 passed | 1 skipped (29)` · `Tests 603 passed | 1 skipped (604)` · 162.61s · PGRST303 occurrences: 0 (`../stage8-artifacts/test-run-final-B.log`). Identical counts to #1.
+Run immediately after #1 with no code or configuration change between · `pnpm test` · exit 0 · `Test Files 28 passed | 1 skipped (29)` · `Tests 603 passed | 1 skipped (604)` · 159.39s · PGRST303 occurrences: 0 (`../stage8-artifacts/test-run-shipped-2.log`). Identical counts to #1.
 
-Earlier on the same branch, before the one test-fixture string was changed, the same pair had already produced these identical counts (`../stage8-artifacts/test-run-final-1.log`, 170.56s, and `../stage8-artifacts/test-run-final-2.log`, 162.03s), and a run straight after zero replay produced them again (`../stage8-artifacts/test-run-postzero.log`, 135.72s). Five runs, same numbers, zero PGRST303 throughout.
+Sixteen full-suite runs were kept for this stage. Before the last Stage 8 tests were added the suite held 602 cases and passed 601 twice (`../stage8-artifacts/test-run-1.log` 149.19s, `../stage8-artifacts/test-run-2.log` 138.37s). Once the suite settled at 604, the 603 passed / 1 skipped / 0 PGRST303 shape reported above was produced in five runs (`../stage8-artifacts/test-run-final-1.log` 170.56s, `../stage8-artifacts/test-run-final-2.log` 162.03s, `../stage8-artifacts/test-run-postzero.log` 135.72s, taken straight after zero replay, `../stage8-artifacts/test-run-final-A.log` 182.96s, `../stage8-artifacts/test-run-final-B.log` 162.61s), then once red (`../stage8-artifacts/test-run-docs.log` 164.64s, 1 failed | 602 passed | 1 skipped — the D-S8-4 timeout, reproduced in that section), then eight times green with the timeout window in place (`test-run-fix-1.log` 174.85s, `test-run-fix-2.log` 150.23s, `test-run-closed-1.log` 176.54s, `test-run-closed-2.log` 171.42s, `test-run-delivered-1.log` 175.85s, `test-run-delivered-2.log` 246.87s, and runs #1 and #2 above), all in `../stage8-artifacts/`. Thirteen green runs at the same counts — five before the fix, eight after it — one red whose only failure is D-S8-4, and the two earlier runs of the smaller 602-case suite: sixteen logs, zero PGRST303 occurrences in every one.
 
 The one skip is `tests/supabase.public-config.live.test.ts`, which is gated on a hosted project by design and must stay skipped locally. No sleeps, no retry-until-green, no JWT leeway were added; nothing was masked to reach these numbers.
 
@@ -366,19 +396,19 @@ The one skip is `tests/supabase.public-config.live.test.ts`, which is gated on a
 
 ## PGRST303
 
-2 runs · 0 occurrences · 0 other failures · 0 production masking added. The Stage 4 investigation stands; nothing in Stage 8 adds a retry or a widened window.
+12 runs · 0 occurrences · 0 other failures · 0 production masking added. The Stage 4 investigation stands; nothing in Stage 8 adds a retry, a client timeout widening or a looser Postgrest window. The one window D-S8-4 widens is a Vitest per-test timeout inside a test file, which cannot mask server behaviour and whose assertions were left untouched.
 
 ## LINT
 
-`pnpm lint` (`eslint client/src tests e2e vite.config.ts --max-warnings=0`) · exit 0 · no output. No warning debt. Re-run on the committed tree after the last fixture edit (`../stage8-artifacts/gate-lint-final.log`): exit 0, still no output.
+`pnpm lint` (`eslint client/src tests e2e vite.config.ts --max-warnings=0`) · exit 0 · no output. No warning debt. Re-run on the final tree, after the D-S8-4 edit and its comment (`../stage8-artifacts/gate-lint-closed.log`, then `../stage8-artifacts/gate-lint-closed2.log` after the comment was reworded): exit 0 both times, still no output.
 
 ## TYPECHECK
 
-`pnpm check` (`tsc --noEmit`) · exit 0. Re-run on the committed tree (`../stage8-artifacts/gate-check-final.log`): exit 0.
+`pnpm check` (`tsc --noEmit`) · exit 0. Re-run on the final tree (`../stage8-artifacts/gate-check-closed.log`, `../stage8-artifacts/gate-check-closed2.log`): exit 0 both times.
 
 ## BUILD
 
-`pnpm build` · exit 0. Re-run on the committed tree: `✓ built in 12.09s`, no warnings (`../stage8-artifacts/gate-build-final.log`). Chunk sizes: `index` 498.18 kB (144.28 kB gzip), `FounderPurchase` 40.69 kB, `FounderAdmin` 10.87 kB, `Home` 85.88 kB, `founder-readiness` 0.90 kB — the readiness gate ships as its own chunk and nothing in the payment path is tree-shaken away.
+`pnpm build` · exit 0. Re-run on the final tree: `✓ built in 12.91s`, no warnings (`../stage8-artifacts/gate-build-closed.log`), and every emitted chunk carries the same content hash and size it had in the run on the committed feature tree (`../stage8-artifacts/gate-build-delivered.log`, `✓ built in 4.16s`) — `index-BeNNSpn5.js` 498.18 kB (144.28 kB gzip), `FounderPurchase-BMTxXOMS.js` 40.69 kB, `FounderAdmin-BAxiLe5k.js` 10.87 kB, `Home-Cb7vAt52.js` 85.88 kB, `founder-readiness-CmA3KOkM.js` 0.90 kB. That is the proof that the D-S8-4 change (a test-file timeout window) reaches no shipped artifact, and that the browser battery ran against the bytes being delivered: the readiness gate ships as its own chunk and nothing in the payment path is tree-shaken away.
 
 ## PRODUCTION AUDIT
 
@@ -386,7 +416,7 @@ The one skip is `tests/supabase.public-config.live.test.ts`, which is gated on a
 
 ## SECRET SCAN
 
-27 paths staged, 4 599 insertions / 72 deletions. Every UPI-shaped string in the delta is `dueweave-test@upi` (the Stage 4.2A synthetic) or an obviously broken negative case (`@upi`, `a@b`, `two @ signs@upi`, `spaced handle@upi`, `leak-me@upi`); one assertion previously used a bank-PSP-style handle suffix and was replaced with `synthetic-merchant@dueweave.invalid` so the fixture is unmistakably synthetic. `merchant@…`-shaped real addresses: none. No 15–16 digit card-like value. No `service_role`, `sb_secret_`, JWT or API-key literal in any staged file; the only `service_role` matches are assertions that production code does not contain it (`tests/security-contract.test.ts:183`, `:304`). No `supabase.co` URL, project ref, `supabase link` or `db push` in code. `.env.local` is gitignored (`.gitignore:12`) and `.env.example` carries only loopback config plus a written prohibition on putting a service-role or payment credential in a `VITE_*` variable. Account fixtures are `stage8e2e-*@dueweave.local` and `stage8-*@dueweave.local`.
+29 paths across the branch (28 in the feature commit `405a224`, plus the Stage 7 test file whose timeout window D-S8-4 required — that file's delta is one changed line and four comment lines). Every UPI-shaped string in the delta is `dueweave-test@upi` (the Stage 4.2A synthetic) or an obviously broken negative case (`@upi`, `a@b`, `two @ signs@upi`, `spaced handle@upi`, `leak-me@upi`); one assertion previously used a bank-PSP-style handle suffix and was replaced with `synthetic-merchant@dueweave.invalid` so the fixture is unmistakably synthetic. `merchant@…`-shaped real addresses: none. No 15–16 digit card-like value; the long digit strings in this report are migration timestamps and the deliberate `45035996273704960` drift sample. No `service_role`, `sb_secret_`, JWT or API-key literal in any staged file; the only `service_role` matches are assertions that production code does not contain it (`tests/security-contract.test.ts:183`, `:304`) and the sentence describing the local role grant map. No `supabase.co` URL, project ref, `supabase link` or `db push` in code. `.env.local` is gitignored (`.gitignore:12`) and `.env.example` carries only loopback config plus a written prohibition on putting a service-role or payment credential in a `VITE_*` variable. Account fixtures are `stage8e2e-*@dueweave.local` and `stage8-*@dueweave.local`. This report was scanned on the same terms after it was written: its only VPA-shaped string is `dueweave-test@upi`. The throwaway timeout probe used during D-S8-4 was deleted before staging, and `git status` shows no leftover.
 
 ## REMOTE SUPABASE MUTATIONS: NONE
 
@@ -416,6 +446,7 @@ No deploy, no tag, no hosting command, no CDN action.
 8. Same-instant two-tab browser races are not measurable on this machine (D-S8-3), and the Stage 4 two-tab and Stage 6 forms cases are consequently qualified at `--workers=1`. A faster qualification machine should re-run the full battery at a higher worker count; a failure there would be a real signal rather than starvation.
 9. No refund or disclosure wording was authored. The brief forbids inventing legal terms, so those two columns stay empty and unapproved by design, and the checklist says who must fill them.
 10. Readiness is a client-side conjunction over a server read; the database independently re-checks every term inside the RPCs at call time, so the client copy is not the gate. The two are pinned to agree by `tests/stage8-founder-contracts.test.ts:198` and the pgTAP files, not by assumption.
+11. Timeout margin on this machine is thin in general. Only two live files state an explicit window (`tests/stage8-local-founder-readiness.test.ts:360` and, after D-S8-4, `tests/stage7-local-export.test.ts:178`); the rest inherit Vitest's 5 000 ms default. The closest any of them came across the fourteen full-suite runs was `tests/stage5-local-lifecycle.test.ts` at 4 709 ms (`../stage8-artifacts/test-run-final-A.log`), under 300 ms of margin, though the same test measured 2 023 ms when re-run for this report, with that file's slowest case at 2 356 ms (`../stage8-artifacts/sibling-timings.log`). Nothing failed in those files during this stage, so nothing was changed in them — but a slower machine should expect to apply the same explicit window before concluding a regression.
 
 ## OWNER-SIDE BLOCKERS BEFORE LIVE MONEY
 
@@ -433,7 +464,7 @@ None of these can be cleared from a browser, an admin screen or a one-click cont
 
 PASS WITH DISCLOSED CAVEATS, and NOT READY FOR LIVE MONEY — which is the correct delivered state. The Founder path is qualified as designed: a claim is only a claim until a human with an allowlist row compares a typed reference against business bank history; nothing the browser can observe is treated as payment; the QR and the link are the same string; the seat cap cannot be exceeded by two concurrent writers; every refusal is stated in product language without leaking the database; and revocation, rejection and reconsideration all preserve the history they are judged on. The gate is closed for the right reason now — the readiness conjunction, not a leftover constraint.
 
-The caveats are two observation limits (browser simultaneity, the font CDN), one product gap that is an owner's decision (the missing approval-time verification flag), and three UI honesty gaps (no revoke control, the no-op success toast, cap-unaware draft) recorded rather than patched. Nothing here weakens authorization, invents payment success, or places a real payment destination in the repository.
+The caveats are two observation limits (browser simultaneity, the font CDN), one product gap that is an owner's decision (the missing approval-time verification flag), three UI honesty gaps (no revoke control, the no-op success toast, cap-unaware draft) recorded rather than patched, and one test-reliability defect inherited from Stage 7 that was reproduced, root-caused and fixed at closure (D-S8-4) with no assertion changed. Nothing here weakens authorization, invents payment success, or places a real payment destination in the repository.
 
 ## NEXT RECOMMENDED STAGE
 
@@ -441,13 +472,10 @@ Stage 9 is recommended only on the strength of this PASS: whatever the roadmap h
 
 ## WORKING TREE CLEAN
 
-`git status --short` after the PHASE 89 commit shows no modified and no untracked paths. Scratch evidence, traces and first-failure artifacts live outside the repository in `../stage8-artifacts/` and are not committed.
+`git status --short` shows no modified and no untracked paths once the stage's commits are in. Scratch evidence, traces, the first-failure artifacts and the deleted timeout probe live outside the repository, in `../stage8-artifacts/`, and are not committed.
 
 ## PUSHED TO GITHUB / REMOTE SHA / PR
 
 `current-stage-8-founder-readiness` is pushed; `git rev-parse HEAD` and `git rev-parse origin/current-stage-8-founder-readiness` are identical. No PR was created. Nothing was merged. `main` was not modified.
 
-```
-git rev-parse HEAD
-git rev-parse origin/current-stage-8-founder-readiness
-```
+The stage is delivered as forward commits on one parent chain, no amend and no rewrite: `405a224 feat: qualify Founder monetization readiness` (PHASE 89, parent `68a3cbb`, 28 paths), then a `fix:` carrying D-S8-4's timeout window for the inherited Stage 7 live file, then `docs:` corrections to this report, whose delivered counts could not be known before the feature commit existed. `git log --oneline 68a3cbb..HEAD` shows all three.
