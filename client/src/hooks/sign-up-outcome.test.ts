@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { GENERIC_AUTH_FAILURE, interpretSignUpResponse } from "./useSupabaseAuth";
+import { GENERIC_AUTH_FAILURE, interpretSignUpResponse } from "@/lib/auth-outcome";
 
 // Local Supabase confirms sign-ups immediately, so a browser journey can only ever
 // exercise one of the three endings a provider can give. The screen's whole promise

@@ -20,6 +20,10 @@ const homePage = readFileSync(resolve(root, "client/src/pages/Home.tsx"), "utf8"
 const appShell = readFileSync(resolve(root, "client/src/App.tsx"), "utf8");
 const authPage = readFileSync(resolve(root, "client/src/pages/Auth.tsx"), "utf8");
 const authHook = readFileSync(resolve(root, "client/src/hooks/useSupabaseAuth.ts"), "utf8");
+// The tri-state reading of a sign-up reply moved out of the hook so the static release
+// gate can test it without a configured client. The rules are asserted against the module
+// that now holds them, and against the hook for still routing through it.
+const authOutcome = readFileSync(resolve(root, "client/src/lib/auth-outcome.ts"), "utf8");
 const dashboardRepository = readFileSync(resolve(root, "client/src/data/supabase-dashboard-repository.ts"), "utf8");
 const activityRepository = readFileSync(resolve(root, "client/src/data/supabase-activity-repository.ts"), "utf8");
 const founderRepository = readFileSync(resolve(root, "client/src/data/supabase-founder-repository.ts"), "utf8");
@@ -88,7 +92,8 @@ describe("Stage 2 Supabase security contract", () => {
     expect(authHook).toMatch(/signOut\(/);
     expect(authHook).toMatch(/resetPasswordForEmail/);
     expect(authHook).toMatch(/updateUser\(\{ password \}\)/);
-    expect(authHook).toMatch(/We could not complete that request\. Please try again\./);
+    expect(authHook).toMatch(/friendlyAuthError\(error\.message\)/);
+    expect(authOutcome).toMatch(/We could not complete that request\. Please try again\./);
     expect(authPage).toMatch(/Forgot password\?/);
     expect(authPage).toMatch(/Create an account/);
     expect(authHook).toMatch(/auth\/update-password/);
@@ -97,8 +102,9 @@ describe("Stage 2 Supabase security contract", () => {
 
   it("tells the truth about sign-up, recovery and pending states on the auth screens", () => {
     // A sign-up that returned no session must never read like an open ledger.
-    expect(authHook).toMatch(/status: "confirmation-required"/);
-    expect(authHook).toMatch(/if \(response\.data\?\.session\) return \{ status: "session" \};/);
+    expect(authOutcome).toMatch(/status: "confirmation-required"/);
+    expect(authOutcome).toMatch(/if \(response\.data\?\.session\) return \{ status: "session" \};/);
+    expect(authHook).toMatch(/return interpretSignUpResponse\(response\);/);
     expect(authPage).toMatch(/Confirm your email to open your ledger\./);
     expect(authPage).not.toMatch(/account is ready/i);
 
