@@ -10,12 +10,12 @@ after Stage 9 closes.
 | Item | Command (read-only) | Measured value |
 | --- | --- | --- |
 | Base branch | `git ls-remote origin refs/heads/main` | `58f0cc76ca560bdac08bdbd19e237aa4a413686b` |
-| Candidate branch | `git branch --show-current` | `current-stage-9-security-ci`, expected start `ccc44382…` (the accepted Stage 8 head) |
-| Candidate on remote | `git ls-remote origin refs/heads/current-stage-9-security-ci` | no ref at the 2026-09-29 opening measurement; **now pushed** — re-measured at delivery, `99c120f528a86af2f46b9e42cbbfc30fd6b5bdd5` |
+| Candidate branch | `git branch --show-current` | `current-stage-9-security-ci`, start `ccc443825adcba1e479963b66ea5bae941e154a6` (the accepted Stage 8 head) |
+| Candidate on remote | `git ls-remote origin refs/heads/current-stage-9-security-ci` | no ref at the opening measurement; **pushed during Stage 9** — verified after each push, most recently `cfd76fc52f3d534f3ed356c279d79ae793855e46`. Read it again immediately before opening the PR. |
 | merge-base | `git merge-base main HEAD` | `58f0cc76…` — equal to `main`, so `main` has not moved since the fork point. Re-confirmed at delivery: `main` still `58f0cc76ca560bdac08bdbd19e237aa4a413686b`. |
-| Commits | `git rev-list --left-right --count main...HEAD` | `0  40` → 40 ahead, **0 behind** at the opening measurement; `0  43` at delivery (the three Stage 9 delivery commits). Still **0 behind**, so the one-directional-diff conclusion below still holds. |
-| Files | `git diff --shortstat $(git merge-base main HEAD) HEAD` | 236 files changed, 37141 insertions(+), 12933 deletions(-) at the opening measurement; **263 files changed, 41818 insertions(+), 12934 deletions(-)** at delivery. |
-| Stage 9 work in progress | `git status --porcelain` | 14 modified + 23 untracked paths, not yet in the 236 at the opening measurement. Delivered by the three forward commits; the only path still flagged at delivery is `client/src/types/database.generated.ts`, whose `M` is the `core.autocrlf=true` phantom (`git diff --numstat` empty) and which is deliberately not committed. |
+| Commits | `git rev-list --left-right --count main...HEAD` | `0  40` → 40 ahead, **0 behind** at the opening measurement; `0  45` at the closing measurement (five Stage 9 commits, plus this file's own closing commit, which cannot be counted in its own diff). Still **0 behind**, so the one-directional-diff conclusion below holds as long as `main` does not move. |
+| Files | `git diff --shortstat $(git merge-base main HEAD) HEAD` | 236 files changed, 37141 insertions(+), 12933 deletions(-) at the opening measurement; **263 files changed, 41831 insertions(+), 12934 deletions(-)** at the closing measurement. Within Stage 9 alone (`git diff --shortstat ccc4438..HEAD` at the closing measurement): 44 files, 4774 insertions(+), 85 deletions(-), of which **zero** are migration files. |
+| Stage 9 work in progress | `git status --porcelain` | 14 modified + 23 untracked paths, not yet in the 236 at the opening measurement. All delivered by forward commits; the only path still flagged at closure is `client/src/types/database.generated.ts`, whose `M` is the `core.autocrlf=true` phantom (`git diff --numstat` empty) and which is deliberately not committed. |
 | Repository | `gh api repos/…project-ar1 --jq .private` | `true` (private), `owner.type = User` |
 
 ## Conflict risk

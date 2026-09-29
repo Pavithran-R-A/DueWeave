@@ -68,8 +68,9 @@ even when not applicable to the commit set.
 ## Order of operations (operator actions, each a separate decision)
 
 **Status of step 1 as measured on 2026-09-29: done and blocked.** The branch was pushed
-(`current-stage-9-security-ci`; executable head `c682827`, docs-closure head `99c120f`), runs
-`36533797727` and `36535054827` each reached `completed/failure` in 2 seconds with
+(`current-stage-9-security-ci`; executable head `c682827`, documentation heads `99c120f` and
+`cfd76fc`), runs
+`36533797727`, `36535054827` and `36535564240` each reached `completed/failure` in 2-4 seconds with
 `runner_id = 0` and zero steps for both `Static verification` and `Database
 contracts`, and `Browser release smoke` was `skipped`; GitHub's annotation on each failed job
 reads *"The job was not started because recent account payments have failed or your spending
