@@ -158,7 +158,7 @@ mechanisms hold that line: `tests/credential-boundary.contract.test.ts` and
 `pnpm verify:secrets` (`scripts/verify-secrets.mjs`), which scans 11 credential shapes
 (`service_role` JWTs, `sb_secret_`, Supabase service keys, database URLs/passwords, UPI/payment
 secrets, private keys, generic assignment shapes) across the tracked tree **and** `dist/` — measured
-227 files (207 tracked + 20 bundle artefacts), no finding. Its allowlist is dead-exemption-proof: an
+228 files (208 tracked + 20 bundle artefacts), no finding. Its allowlist is dead-exemption-proof: an
 allowlisted path that no longer matches a finding fails the scan, so the exception list cannot rot,
 and the `HARD` shapes cannot be allowlisted away at all. The scanner reports shape names and file
 locations, never a key value.

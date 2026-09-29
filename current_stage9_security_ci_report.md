@@ -220,9 +220,10 @@ under `continue-on-error: true` and blocks on the production high-and-above gate
 
 ## SECRET SCAN (PHASE 37)
 
-`pnpm verify:secrets` → "Scanned 227 files for 11 credential shapes. No privileged credential
-found in the tracked tree or the built bundle." `exit=0`. Scope is the tracked tree **plus**
-`dist/` (207 tracked + 20 bundle artefacts) — measured, not assumed, by the falsification in
+`pnpm verify:secrets` → "Scanned 228 files for 11 credential shapes. No privileged credential
+found in the tracked tree or the built bundle." `exit=0`, re-measured on the docs-closure head.
+Scope is the tracked tree **plus** `dist/` (208 tracked + 20 bundle artefacts; the tracked count is
+227→228 between the earlier and this measurement because this report became a tracked file) — measured, not assumed, by the falsification in
 PHASE 28 above. 11 shapes: `service_role` JWTs, `sb_secret_`, Supabase service keys, database
 URLs, database passwords, UPI/payment secrets, private keys, and the generic assignment shapes;
 the HARD subset cannot be allowlisted at all, values are reported as shape + location + length and

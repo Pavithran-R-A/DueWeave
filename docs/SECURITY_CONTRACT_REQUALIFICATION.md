@@ -31,7 +31,7 @@ Row 8 is executed rather than argued: the browser suites are handed only
 `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`, so a `service_role` dependency would be a hard
 failure of the run, not a code-reading judgement. The complementary static proof — that no
 privileged key reaches the shipped bundle — is `tests/credential-boundary.contract.test.ts` plus
-`pnpm verify:secrets`, which measured 227 files (207 tracked + 20 bundle artefacts) against 11 credential
+`pnpm verify:secrets`, which measured 228 files (208 tracked + 20 bundle artefacts) against 11 credential
 shapes with no finding, and whose HARD rules cannot be allowlisted away.
 
 ## What this stage did **not** execute
