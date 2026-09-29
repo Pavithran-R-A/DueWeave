@@ -12,12 +12,18 @@ runs:
     - name: Enable pnpm at the version package.json declares
       uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
 
+    # No `cache: pnpm`. That input talks to GitHub's hosted cache service, which does not
+    # exist for a self-hosted runner (`Cache Provider could not be found`), and a restore
+    # failure there fails the step rather than falling back to a plain install. The
+    # persistent runner's own pnpm store under $XDG_DATA_HOME replaces it: the same
+    # content-addressable reuse, without a service this repository cannot reach. The
+    # correctness property is untouched — the install below is still frozen.
     - name: Install Node 22
       uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
       with:
         node-version: "22"
-        cache: pnpm
 
     - name: Install the locked dependencies
       shell: bash
       run: pnpm install --frozen-lockfile
+

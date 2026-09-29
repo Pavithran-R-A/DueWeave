@@ -1,0 +1,33 @@
+name: Release local CI state
+description: >
+  Give back what a DueWeave qualification job borrowed on this persistent runner: the local
+  Supabase stack and any preview server started from this checkout. The sweep is scoped on
+  purpose — `supabase stop` is keyed to this repository's own project id, and the process
+  pass only touches listeners on this project's two preview ports whose working directory
+  is the workspace. This host also runs other projects' containers and the developer's own
+  sessions, so a global prune would be damage rather than cleanup.
+
+runs:
+  using: composite
+  steps:
+    # Non-blocking by design, and self-healing: the stack is stopped again by every job
+    # before it starts one, so a failure here delays reuse at worst and never turns an
+    # executed green gate red.
+    - name: Stop this repository's local Supabase stack
+      shell: bash
+      run: |
+        pnpm supabase stop --no-backup \
+          || echo "::warning::DueWeave's local stack was not released by this job; the next job releases it before starting."
+
+    - name: Stop preview servers started from this workspace
+      shell: bash
+      run: |
+        for port in 3000 3100; do
+          for pid in $(ss -Htlnp "sport = :$port" 2>/dev/null | grep -oE 'pid=[0-9]+' | cut -d= -f2 | sort -u); do
+            cwd=$(readlink "/proc/$pid/cwd" 2>/dev/null || true)
+            if [ -n "$cwd" ] && [ "$cwd" = "$GITHUB_WORKSPACE" ]; then
+              echo "Releasing port $port (pid $pid, started from this workspace)"
+              kill "$pid" || true
+            fi
+          done
+        done

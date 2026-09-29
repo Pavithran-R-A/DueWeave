@@ -18,12 +18,35 @@ concurrency:
 permissions:
   contents: read
 
+# WHY THESE JOBS ARE NOT ON `ubuntu-latest`.
+#
+# GitHub has not allocated a GitHub-hosted runner to this repository since 2026-08-14.
+# Every run since — including Stage 9's seven pushes on 2026-09-29 — reports
+# `runner_id: 0`, `steps: []` and the account-level billing annotation. That is a
+# spending state, not a defect in this file, and no change to a workflow can repair it.
+# The previous zero-step hosted runs stay on the branch as evidence; nothing was deleted.
+#
+# So the three named gates below execute on the repository-level self-hosted runner
+# `dueweave-local-ci` (labels `self-hosted, linux, x64, dueweave-ci`), an Ubuntu 26.04
+# WSL2 host driven by the machine's own Docker engine. A self-hosted job consumes no
+# GitHub-hosted minutes.
+#
+# WHAT THAT TRADES AWAY, STATED PLAINLY: the gate now runs on a developer laptop that
+# holds unrelated personal data, so it no longer has the clean-room independence of a
+# freshly imaged hosted runner, and it is only online while this machine is. That is why
+# the condition below is load-bearing rather than decorative:
+#
+#   A `pull_request` gets a runner only when its head is this repository. Code pushed by
+#   someone outside this repository never executes here. `push` and an explicit
+#   `workflow_dispatch` are by definition this repository's own code. `contents: read`
+#   remains the only permission, and no personal credential is exposed to a job: the
+#   suites are qualified against a loopback Docker Supabase whose keys the stack itself
+#   generates.
 jobs:
   static:
     name: Static verification
-    runs-on: ubuntu-latest
-    # PHASE 18: 10 minutes was smaller than the install plus build it has to run, so a
-    # job could time out without ever reaching an assertion.
+    runs-on: [self-hosted, linux, x64, dueweave-ci]
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -61,7 +84,8 @@ jobs:
 
   database:
     name: Database contracts
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, dueweave-ci]
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -85,10 +109,14 @@ jobs:
       - name: Database-backed contract suites
         run: pnpm test:live
 
+      - uses: ./.github/actions/release-local-ci-state
+        if: ${{ always() }}
+
   browser:
     name: Browser release smoke
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, dueweave-ci]
     needs: [static, database]
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -97,14 +125,32 @@ jobs:
       # inlines those values into the bundle the journeys then drive.
       - uses: ./.github/actions/local-supabase
 
-      - name: Cache the Chromium download
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'package.json') }}
+      # A persistent host has no fresh filesystem between runs, so the state a cancelled
+      # or failed job leaves behind has to be cleared explicitly. Scoped to DueWeave and
+      # to this checkout: only processes whose working directory is inside this workspace
+      # are touched, and only this checkout's two preview ports. Never a global `docker
+      # system prune` — this machine runs other projects' containers too.
+      - name: Clear servers and reports a previous DueWeave job left behind
+        shell: bash
+        run: |
+          for port in 3000 3100; do
+            for pid in $(ss -Htlnp "sport = :$port" 2>/dev/null | grep -oE 'pid=[0-9]+' | cut -d= -f2 | sort -u); do
+              cwd=$(readlink "/proc/$pid/cwd" 2>/dev/null || true)
+              if [ -n "$cwd" ] && [ "$cwd" = "$GITHUB_WORKSPACE" ]; then
+                echo "Stopping DueWeave server left on port $port (pid $pid)"
+                kill "$pid"
+              fi
+            done
+          done
+          rm -rf test-results playwright-report
 
+      # The Chromium build system libraries come from the runner host (installed once,
+      # outside CI), so the browser download itself needs no elevation: `--with-deps`
+      # shells out to `sudo apt-get`, which is not available to an unattended job. Nothing
+      # is lost by that swap — if the browser is absent the journeys fail at launch, and a
+      # suite that launches nothing cannot report a pass.
       - name: Install the Chromium build the suite launches
-        run: pnpm exec playwright install --with-deps chromium
+        run: pnpm exec playwright install chromium
 
       - name: Build the bundle the suite drives
         run: pnpm build
@@ -139,6 +185,12 @@ jobs:
         run: |
           node scripts/verify-secrets.mjs --dir test-results
           node scripts/verify-secrets.mjs --dir playwright-report
+
+      # The stack and the bundle belong to this job, not to the host: leaving them running
+      # would make the next run inherit them, and would hold the loopback ports the
+      # developer's own `pnpm supabase:start` needs.
+      - uses: ./.github/actions/release-local-ci-state
+        if: ${{ always() }}
 
       - name: Upload failure evidence
         if: ${{ failure() }}

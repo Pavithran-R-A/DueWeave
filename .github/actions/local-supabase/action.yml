@@ -14,6 +14,15 @@ inputs:
 runs:
   using: composite
   steps:
+    # On a persistent runner the stack from an earlier job (or from the developer's own
+    # `pnpm supabase:start`, which shares this machine's Docker engine) would otherwise be
+    # inherited, and a suite cannot tell a replayed schema from a half-replayed one. This
+    # is keyed to this checkout's project id, so it stops DueWeave's stack and nothing
+    # else on the host. Nothing running is not an error.
+    - name: Release any DueWeave stack a previous job left running
+      shell: bash
+      run: pnpm supabase stop --no-backup >/dev/null 2>&1 || true
+
     - name: Start the local Supabase stack
       shell: bash
       run: pnpm supabase:start
