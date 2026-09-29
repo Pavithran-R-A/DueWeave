@@ -11,7 +11,7 @@ after Stage 9 closes.
 | --- | --- | --- |
 | Base branch | `git ls-remote origin refs/heads/main` | `58f0cc76ca560bdac08bdbd19e237aa4a413686b` |
 | Candidate branch | `git branch --show-current` | `current-stage-9-security-ci`, start `ccc443825adcba1e479963b66ea5bae941e154a6` (the accepted Stage 8 head) |
-| Candidate on remote | `git ls-remote origin refs/heads/current-stage-9-security-ci` | no ref at the opening measurement; **pushed during Stage 9** — verified equal to the local head after each of the five pushes, most recently `0400610afcff69b4cd5a42ce01c15c412cf0bdba`. Read it again immediately before opening the PR; the push that delivers this row moves it once more. |
+| Candidate on remote | `git ls-remote origin refs/heads/current-stage-9-security-ci` | no ref at the opening measurement; **pushed during Stage 9** — the remote value was verified equal to the local head after **every** push, the last such reading written here being `6b83848ef8d66befa7c922788aa3dea0269c24e0`. Read it again immediately before opening the PR: the push that delivers this row moves it once more, and `git rev-list --count origin/current-stage-9-security-ci..HEAD` must be `0`. |
 | merge-base | `git merge-base main HEAD` | `58f0cc76…` — equal to `main`, so `main` has not moved since the fork point. Re-confirmed at delivery: `main` still `58f0cc76ca560bdac08bdbd19e237aa4a413686b`. |
 | Commits | `git rev-list --left-right --count main...HEAD` | `0  40` at the opening measurement and `0  47` when this row was last read. The left number does not move on its own, and the right one is not a fixed target: **every further commit to this branch, including the one that edits this sentence, adds 1.** The property that matters for the PR is the left one — measured **0 behind** at every reading, so the diff stays one-directional as long as `main` does not move. |
 | Files | `git diff --shortstat $(git merge-base main HEAD) HEAD` | 236 files changed, 37141 insertions(+), 12933 deletions(-) at the opening measurement; **263 files changed, 41836 insertions(+), 12934 deletions(-)** when this row was last read. The file count (236 → 263) is the real growth: Stage 9's new tests, docs and composite actions. The line totals shift by a few dozen per documentation commit, so read them from the command before the PR. |
@@ -64,9 +64,7 @@ operator must sequence around:
 - Re-taken across the whole run history, the same measurement gives a sharper picture: the last
   run that executed anything is `31825803438` (`stage-4-2-operator-readiness`, `6d99651`,
   2026-08-14T17:49:47Z, `success`, `runner_id = 1000000214`, 14 steps). Every run after that —
-  `36062418596` on 2026-09-24 and Stage 9's own five pushes on 2026-09-29 — `36533797727`
-  (head `c682827`), `36535054827` (`99c120f`), `36535564240` (`cfd76fc`), `36535840587`
-  (`275e2f5`) and `36536245051` (`0400610`) — has
+  `36062418596` on 2026-09-24 and **every one of Stage 9's pushes** on 2026-09-29 — has
   `runner_id = 0`, zero steps, and the identical billing annotation. **Actions has not allocated
   a runner to this repository since 2026-08-14, and the blocker is account-level, not
   code-level.** `gh api repos/…/actions/permissions` still answers `enabled: true`,
