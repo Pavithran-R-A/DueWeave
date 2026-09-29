@@ -108,9 +108,11 @@ model as it was measured on the running database.
 pnpm lint      # ESLint 10 flat config, --max-warnings=0
 pnpm check     # tsc --noEmit
 pnpm build     # the bundle the browser half and the bundle contracts both read
-pnpm test:unit # 23 files / 359 tests: money/date helpers, domain rules, repository+adapter
+pnpm test:unit # 25 files / 368 tests (24 / 363 as executed by CI runs 18–19): money and date
+               # helpers, domain rules, repository+adapter
                # contracts, and the boundary contracts (no demo import, no privileged
-               # credential in source or in dist/, production module graph, gate manifests)
+               # credential in source or in dist/, production module graph, gate manifests,
+               # CI job-log credential redaction)
 pnpm verify:secrets                     # 11 secret shapes over the tracked tree and dist/
 pnpm audit --prod --audit-level=high    # runtime dependency graph
 ```
@@ -164,12 +166,16 @@ browser half at all. That is closed:
 `.github/workflows/ci.yml` has three jobs — `Static verification`, `Database contracts`,
 `Browser release smoke` — and it does start a disposable Supabase in CI (`.github/actions/local-supabase`
 replays the committed migrations) and does run the browser journeys. The workflow receives no
-secrets: no service-role key, no hosted project credential, no payment credential.
+secrets: no service-role key, no hosted project credential, no payment credential. Because the stack
+it starts prints its own generated keys, the start step pipes that output through
+`scripts/redact-cli-secrets.mjs` before it reaches the job log (D-S9-7) — a retained log is not a
+tracked file, so the `verify:secrets` gate could otherwise never see it.
 
 The three jobs run on `[self-hosted, linux, x64, dueweave-ci]`, which today means
 `dueweave-local-ci` — a repository-scoped runner on a WSL2 Ubuntu workstation, with budgets of
-25/40/45 minutes. Measured on 2026-09-29, run `36555102272` at head `ec868e8` passed all three jobs
-there (1 m 32 s / 7 m 18 s / 18 m 07 s, `retries: 0`, zero hosted minutes consumed). Two properties
+25/40/45 minutes. Measured on 2026-09-29, runs `36555102272` (head `ec868e8`) and `36560985637`
+(head `f4bcc61`) each passed all three jobs there (1 m 32 s / 7 m 18 s / 18 m 07 s and 2 m 07 s /
+6 m 52 s / 17 m 47 s, `retries: 0`, zero hosted minutes consumed). Two properties
 follow from that choice and both are deliberate: GitHub's hosted runner refusal on this account stops
 blocking the gates, and a green check now depends on that machine being online, so
 `.github/actions/release-local-ci-state` releases only this repository's stack and only preview

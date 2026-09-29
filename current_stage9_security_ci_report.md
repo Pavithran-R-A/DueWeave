@@ -10,8 +10,10 @@ executing — is now green and read from GitHub's own job, step and log data: ru
 `success`, on runner `dueweave-local-ci` with labels `self-hosted, linux, x64, dueweave-ci`. The
 earlier verdict in this file was BLOCKED, because GitHub refused to allocate a *hosted* runner to the
 account; that history is preserved below, unedited, and the resolution — moving the identical gates
-onto a self-hosted runner, plus the two repository defects that a real run then exposed — is
-recorded beside it. Where a number could not be measured, it says so.
+onto a self-hosted runner, plus the three repository defects that a real run then exposed — is
+recorded beside it. Two of those three were found by a job failing; the third (`D-S9-7`, a
+privileged key inside the log of a job that had already passed) exists only because the logs were
+read as text rather than trusted as green. Where a number could not be measured, it says so.
 
 ---
 
@@ -31,13 +33,17 @@ recorded beside it. Where a number could not be measured, it says so.
 
 | Field | Value |
 | --- | --- |
-| CI DESIGN | Three jobs with unique, human-meaningful check names, each a different environment class, so that a required-status-check rule can name them individually and a job that omits a gate cannot present itself as a job that ran it. `browser` depends on `static` and `database`; the workflow is secret-free by design (it receives no Supabase credentials, no privileged key, no payment credential). The database and browser jobs replay the **committed** migrations onto a disposable loopback Supabase started by a composite action rather than trusting a recorded schema. All three jobs run on `[self-hosted, linux, x64, dueweave-ci]` with `timeout-minutes` 25 / 40 / 45 (`ci.yml:48,87,117`), a `concurrency` group, `permissions: contents: read`, and a fork guard (`if: github.event_name != 'pull_request' \|\| github.event.pull_request.head.repo.full_name == github.repository`) so a pull request from a fork cannot reach the machine. |
+| CI DESIGN | Three jobs with unique, human-meaningful check names, each a different environment class, so that a required-status-check rule can name them individually and a job that omits a gate cannot present itself as a job that ran it. `browser` depends on `static` and `database`; the workflow is secret-free by design (it receives no
+Supabase credentials, no privileged key, no payment credential — `gh api …/actions/secrets` and
+`…/actions/variables` both return `[]`, measured). What it did *emit* is a different matter: until
+`D-S9-7` was repaired the stack-start step printed the local stack's generated privileged key into
+the log the platform retains, which no receiving-side check could have caught. The database and browser jobs replay the **committed** migrations onto a disposable loopback Supabase started by a composite action rather than trusting a recorded schema. All three jobs run on `[self-hosted, linux, x64, dueweave-ci]` with `timeout-minutes` 25 / 40 / 45 (`ci.yml:48,87,117`), a `concurrency` group, `permissions: contents: read`, and a fork guard (`if: github.event_name != 'pull_request' \|\| github.event.pull_request.head.repo.full_name == github.repository`) so a pull request from a fork cannot reach the machine. |
 | CI RUNNER | `dueweave-local-ci` — a repository-level runner (version 2.337.0) on WSL2 Ubuntu on this workstation, labels `self-hosted, linux, x64, dueweave-ci` exactly as run 18's job payload reports them (`gh api …/actions/jobs/<id>` → `"labels":["self-hosted","linux","x64","dueweave-ci"]`, `"runner_name":"dueweave-local-ci"`), systemd unit `actions.runner.Pavithran-R-A-project-ar1.dueweave-local-ci.service` (`active` + `enabled`, measured after the run), workspace `/home/pavithran_r_a/actions-runner-dueweave/_work/project-ar1/project-ar1`. It is registered for **this repository only** — `_work/` contains `project-ar1` and no other checkout — and it consumes no GitHub-hosted minutes, which is what made the account-level refusal in the history below irrelevant to the gates themselves. Its registration token was entered once through the runner's own interactive config and is not printed, stored or quoted anywhere in this stage's outputs. Re-checked after the run: `status = online`, `busy = false`. |
 | CI WORKFLOW FILES | `.github/workflows/ci.yml` (204 lines now; the self-hosted conversion changed it in `6250a32`); `.github/actions/setup-toolchain/action.yml` (new, 29 lines — pnpm + Node 22 + frozen install, deliberately no `cache:` because the hosted cache service does not exist for self-hosted runners); `.github/actions/local-supabase/action.yml` (new, 43 lines — release a previous job's stack, start, write env, replay from zero, prove loopback); `.github/actions/release-local-ci-state/action.yml` (new, 33 lines — DueWeave-scoped stack stop plus a preview-port sweep limited to processes whose cwd is the workspace, never a global prune). No other workflow file exists in the repository. `main` carries **no** CI workflow at all (`git show main:.github/workflows/ci.yml` → "path exists on disk, but not in 'main'"), so the workflow ships *with* this branch. |
-| CI RUN IDS | Eight pushed heads of this branch, each with one `event: push` run of workflow `CI`, attempt 1, each observed to completion. Runs 11-17 were GitHub-hosted and every one of them failed in 2-4 seconds without executing a step: `36533797727` (head `c682827`, 06:57:00Z), `36535054827` (`99c120f`, 07:10:11Z), `36535564240` (`cfd76fc`, 07:15:27Z), `36535840587` (`275e2f5`, 07:18:20Z), `36536245051` (`0400610`, 07:22:31Z), `36537222211` (`6b83848`, 07:32:17Z), `36537823621` (`0bb851b`, 07:38:16Z). Run 18, `36555102272` (head `ec868e8`, created 10:21:54Z, completed 10:49:02Z, **success**), is the first self-hosted run and the first run of this workflow ever to execute anything. `389fba5` has no run of its own — measured with `gh api "repos/Pavithran-R-A/project-ar1/actions/runs?head_sha=<full sha>"`, which returns `total_count = 0` for `389fba5f09de79cc0ff0c3c830d22b63fcb87683` while the same query returns `1` for `cfd76fc52f3d…` and `0400610afcff…` (a control, because the filter matches a full SHA, not a prefix). Compared against history: `36062418596` (2026-09-24, `pull_request`, head `1bb2f38`, also zero-step) and the last run that executed anything before this one, `31825803438` (2026-08-14T17:49:47Z, head `6d99651`, `success`, hosted). |
-| CI HEAD SHA | Run 18's `head_sha` was read back from the remote rather than from local state: `git ls-remote origin refs/heads/current-stage-9-security-ci` → `ec868e8e71ae62c9f5eda83d126c4e70c539aa0e`, identical to the API's value and to local HEAD. **A commit cannot record the CI result of its own SHA** — delivering that result needs another commit, which moves the head again; the head this file now records is therefore the head the run proved, and this file's own commit (documentation only) is the next one. |
+| CI RUN IDS | Nine pushed heads of this branch, each with one `event: push` run of workflow `CI`, attempt 1, each observed to completion. Runs 11-17 were GitHub-hosted and every one of them failed in 2-4 seconds without executing a step: `36533797727` (head `c682827`, 06:57:00Z), `36535054827` (`99c120f`, 07:10:11Z), `36535564240` (`cfd76fc`, 07:15:27Z), `36535840587` (`275e2f5`, 07:18:20Z), `36536245051` (`0400610`, 07:22:31Z), `36537222211` (`6b83848`, 07:32:17Z), `36537823621` (`0bb851b`, 07:38:16Z). Run 18, `36555102272` (head `ec868e8`, created 10:21:54Z, completed 10:49:02Z, **success**), is the first self-hosted run and the first run of this workflow ever to execute anything. Run 19, `36560985637` (head `f4bcc61`, started 11:19:10Z, completed 11:46:21Z, **success**), is the second and is reported job-by-job above; it doubles as the reproduction of D-S9-7 on an independent head. `389fba5` has no run of its own — measured with `gh api "repos/Pavithran-R-A/project-ar1/actions/runs?head_sha=<full sha>"`, which returns `total_count = 0` for `389fba5f09de79cc0ff0c3c830d22b63fcb87683` while the same query returns `1` for `cfd76fc52f3d…` and `0400610afcff…` (a control, because the filter matches a full SHA, not a prefix). Compared against history: `36062418596` (2026-09-24, `pull_request`, head `1bb2f38`, also zero-step) and the last run that executed anything before this one, `31825803438` (2026-08-14T17:49:47Z, head `6d99651`, `success`, hosted). |
+| CI HEAD SHA | Run 18's `head_sha` was read back from the remote rather than from local state: `git ls-remote origin refs/heads/current-stage-9-security-ci` → `ec868e8e71ae62c9f5eda83d126c4e70c539aa0e`, identical to the API's value and to local HEAD, and run 19's was read the same way (`f4bcc615ffd08e53dc8925568ce3f2b85dd03113`). **A commit cannot record the CI result of its own SHA** — delivering that result needs another commit, which moves the head again; the head this file now records is therefore the head the run proved, and this file's own commit (documentation only) is the next one. |
 | CI JOBS | `Static verification` (`static`), `Database contracts` (`database`), `Browser release smoke` (`browser`). |
-| CI RESULTS | Runs 11-17 (hosted): `Static verification` and `Database contracts` **failure** with `runner_id: 0` and `steps: []`, `Browser release smoke` **skipped** — 2-4 s each, no log blob (`404 BlobNotFound`), the same billing annotation on all seven. Enumerated with job ids and verbatim text in the history section below. **Run 18 (self-hosted, head `ec868e8`): all three jobs `completed/success`, 39 of 39 executed steps `success`, no job skipped, and the one non-success step being `Upload failure evidence` = `skipped`, which is a `if: failure()` step with nothing to upload.** |
+| CI RESULTS | Runs 11-17 (hosted): `Static verification` and `Database contracts` **failure** with `runner_id: 0` and `steps: []`, `Browser release smoke` **skipped** — 2-4 s each, no log blob (`404 BlobNotFound`), the same billing annotation on all seven. Enumerated with job ids and verbatim text in the history section below. **Run 18 (self-hosted, head `ec868e8`): all three jobs `completed/success`, 39 of 39 executed steps `success`, no job skipped, and the one non-success step being `Upload failure evidence` = `skipped`, which is a `if: failure()` step with nothing to upload. Run 19 (self-hosted, head `f4bcc61`): the same shape — 3 of 3 jobs `completed/success`, 40 of 40 executed steps `success`, 1 `skipped` (`Upload failure evidence`, same reason), 0 timeouts, 0 retries, 0 skipped tests, 0 did-not-run, no job skipped, artifacts `total_count = 0`.** |
 
 ### History: why the GitHub-hosted runs failed — GitHub's own words, measured
 
@@ -165,6 +171,53 @@ The `browser` job used 18 m 07 s of its 45-minute budget, `database` 7 m 18 s of
 1 m 32 s of 25 — so the budgets are now carried by an observed number rather than by the local
 estimate this file previously had to describe as unvalidated.
 
+**Run 19 (`36560985637`), head `f4bcc61`, `event: push`, started 11:19:10Z, completed 11:46:21Z,
+conclusion `success`, 27 m 11 s wall clock.** This head is the documentation-only commit that
+followed `ec868e8`, so run 19 is the second full self-hosted pass and the first that had to be
+observed rather than inferred — read from
+`GET /repos/…/actions/runs/36560985637/jobs` (conclusion and timestamps for all 41 step entries),
+its logs from `GET /repos/…/actions/runs/36560985637/logs` (43 files when expanded — 40 step logs,
+one `system.txt` per job, and no file for the one skipped step; run 18's local copies had been masked
+at capture, run 19's initially were not and were masked in place afterwards — the audit of both sets
+is limitation 17), and its check
+entries from `GET /repos/…/commits/f4bcc61…/check-runs`.
+
+| Job | job id | runner | labels | window | elapsed / budget | steps | conclusion |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `Database contracts` | `109381523445` | `dueweave-local-ci` (group `Default`) | `self-hosted, linux, x64, dueweave-ci` | 11:19:10Z → 11:26:02Z | 6 m 52 s / 40 m | 13 executed, 13 `success` | **success** |
+| `Static verification` | `109381523710` | `dueweave-local-ci` | same | 11:26:04Z → 11:28:11Z | 2 m 07 s / 25 m | 13 executed, 13 `success` | **success** |
+| `Browser release smoke` | `109384660129` | `dueweave-local-ci` | same | 11:28:24Z → 11:46:11Z | 17 m 47 s / 45 m | 14, 13 `success` + 1 `skipped` (`Upload failure evidence`, `if: failure()`, nothing to upload) | **success** |
+
+The three jobs ran **sequentially in 11:19 → 11:46**, which is what one runner does: `static` took
+the second slot here rather than the first, so queue order is not a gate and no step depends on it.
+`runner_name` is `dueweave-local-ci` on all three again — no hosted fallback — and the check-runs
+endpoint shows all three names `completed/success` at `f4bcc61`. Artifacts: `total_count = 0`
+(`gh run download` → "no valid artifacts found to download"), consistent with the failure-scoped
+upload step.
+
+Re-executed counts from this run's own log lines, all matching run 18 where the head changed nothing
+executable: unit `24 files / 363 tests`; live `9 files / 307 tests` in 161.63 s; pgTAP
+`Files=8, Tests=364 … Result: PASS`; `Migrations on disk: 23. Applied in the local database: 23.`;
+types `matches the local schema (38326 bytes)`; lint `No schema errors found`; secret scan
+`Scanned 231 files for 11 credential shapes.` with no finding; production audit `No known
+vulnerabilities found`; development audit `38 vulnerabilities found` with its
+`##[error]Process completed with exit code 1.` inside a `continue-on-error` step (recorded, not
+blocking, and not presented as a pass); browser `79 passed (13.1m)` and the warning gate
+`3 passed (41.4s)`; both artefact scans clean. **Failure markers: 0 `PGRST303`, 0 SQLSTATE `40001`,
+0 test timeouts, 0 `retrying`, 0 skipped or did-not-run tests** across the 43 step files — the only
+lines matching "skipped" are pnpm's `Lockfile is up to date, resolution step is skipped` in each
+`setup-toolchain` step, and the only line matching "exceed" is a passing test's own title
+(`races two approvals for one remaining seat and never exceeds the cap`, 2719 ms).
+
+Run 19 also **reproduced D-S9-7 on a second, independent head**: `sb_secret_…` appears exactly once
+in each environment job's step-4 log (`Database contracts/4_…local-supabase.txt:90` at
+`11:21:53.065Z`, `Browser release smoke/4_…:90` at `11:31:11.303Z`), zero times in the static job,
+and — newly measurable because run 19's values were hashed before the masking pass described in
+limitation 17 — the two jobs of the
+same run emitted the **same** privileged value (sha-256 prefix `fb2ac9b4e9c45803` for both). So the
+defect is deterministic per project rather than a one-run accident, which is the property that makes
+it worth a filter instead of an excuse.
+
 ### Local dry run of the same three jobs, on the same Linux/WSL topology, before the push
 
 Because a first real run on a new runner topology is exactly where an unvalidated budget or a
@@ -201,7 +254,17 @@ Four things were measured rather than assumed, on `ec868e8`:
    `Wrote browser-safe local config to .env.local`, `Replay every committed migration` (23 unique),
    `Finished supabase db reset…`, `Local stack present and loopback-only: http://127.0.0.1:54321`.
    Nothing downstream reads a value the job did not just produce.
-3. **Nothing leaked.** After the run: `docker ps -a` lists **no DueWeave container and no DueWeave
+   State preservation cuts the other way too, and this is where D-S9-7 came from: the publishable
+   key the `database` job's banner printed at 10:25:45Z is **character-for-character the same one
+   the `browser` job printed at 10:32:44Z** (both `sb_publishable_ACJWlz…`, prefix only, the same
+   value the `.env.local` step then wrote), so this stack's key set survives a stop/start on this
+   machine instead of being regenerated per job. Run 18's local copies had already been masked, so
+   the paired secret key could not be compared there; run 19's were hashed before masking, and the
+   two environment jobs of that run carry the **same** `sb_secret_` value (sha-256 prefix
+   `fb2ac9b4e9c45803` in both) — the stability of the privileged key is therefore measured, not
+   inferred, and the consequence is stated in the defect table: a privileged value printed by a job
+   is not per-run noise on a persistent runner, it recurs in every log that runner produces.
+3. **Nothing leaked into the engine or the workspace.** After the run: `docker ps -a` lists **no DueWeave container and no DueWeave
    volume** (the only containers on the engine belong to an unrelated project and were not touched,
    pruned or restarted); no listener on 3000, 3100 or 54321; `git status --porcelain` inside the
    runner workspace is **empty** and its HEAD is `ec868e8`, so no job modified a tracked file;
@@ -209,7 +272,11 @@ Four things were measured rather than assumed, on `ec868e8`:
    residue does remain, by design and bounded: `.env.local`, `dist/`, `test-results/`,
    `playwright-report/` (workspace 472 M, whole runner directory 1.4 G) — each one either rewritten
    by the next job or explicitly cleared (`rm -rf test-results playwright-report` is the browser
-   job's own first write-step), and none of it tracked or uploaded.
+   job's own first write-step), and none of it tracked. It is not uploaded on a green run either —
+   the only upload step is `Upload failure evidence` with `if: failure()` (`ci.yml:195-203`), so a
+   *red* run does carry `test-results` and `playwright-report` off the machine as a retained
+   artefact. Worth stating beside D-S9-7: the thing that actually leaked was the job **log**, which
+   the platform retains whether the job passes or fails, and which no artefact-scope gate inspects.
 4. **The runner is DueWeave-only and stayed alive.** `_work/` contains `project-ar1` and the runner's
    own `_tool/_temp/_actions/_PipelineMapping` directories, and nothing else; after completion
    `GET /repos/…/actions/runners` reports `status=online busy=false`, the systemd unit is
@@ -221,6 +288,24 @@ Four things were measured rather than assumed, on `ec868e8`:
    7 737 MiB total with peak 3 581 MiB used during the instrumented browser dry run. **No resource
    setting was changed on this machine during this recovery** — no `.wslconfig` was created or
    edited, no memory or disk was added, no Docker pruning was run.
+
+The same four checks were re-run after **run 19**, because a second observation is what shows whether
+the first one depended on a freshly-created workspace. All of them held: the runner workspace's HEAD
+is `f4bcc61` with `git status --porcelain` **empty** (41 step entries, no tracked file touched by any
+of them); `.env.local` `dist/` `test-results/` `playwright-report/` are present again and each is
+dated inside run 19's own window (11:31:13Z / 11:32:07Z / 11:45:58Z / 11:45:58Z), i.e. rewritten by
+this run rather than inherited; workspace 473 M, whole runner directory 1.4 G; `docker ps -a` and
+`docker volume ls` grepped for `dueweave|project-ar1` → **0 and 0**, with the same five unrelated
+`localvivaahvarnam` containers up and untouched; no listener on 3000/3100/54321/54322 in the Ubuntu
+namespace; the systemd unit `active` throughout (same `MainPID 2002`, started 09:15:15Z, so the
+runner survived both runs without a restart); host memory at measurement 1 707 MiB used of
+7 737 MiB, 6 030 MiB available, swap 141 MiB of 2 048, disk unchanged at 6.5 G / 950 G.
+
+A third pass of the machine-state check came from the D-S9-7 verification itself, which had to start
+a stack locally: it was run in the throwaway qualification clone, its containers and volumes were
+gone again when the script finished (`dueweave|project-ar1` → none on the engine, no listener on the
+CI ports), the unrelated stack was never touched, and the two scratch logs it created were masked in
+place before being left behind.
 
 The residual risk that this cannot retire: one machine, one workspace, one Docker engine. The
 topology, measured rather than described: Ubuntu 26.04 LTS under WSL2 (kernel
@@ -366,6 +451,8 @@ same suite under a shared host's load, not a superseded one.
 | FULL TEST RUN #1 | `Test Files 32 passed \| 1 skipped (33)`, `Tests 666 passed \| 1 skipped (667)`, 217.97 s, started 12:00:44. |
 | FULL TEST RUN #2 | `Test Files 32 passed \| 1 skipped (33)`, `Tests 666 passed \| 1 skipped (667)`, 208.84 s, started 12:04:38. |
 | SAME MANIFEST, EXECUTED BY CI (run 18, head `ec868e8`) | `Test Files 24 passed (24)` / `Tests 363 passed (363)` in the `static` job's unit split, and `Test Files 9 passed (9)` / `Tests 307 passed (307)` in the `database` job's live split — 33 executed files and 670 tests, **0 skipped, 0 did-not-run** across the two jobs. |
+| SAME MANIFEST, EXECUTED BY CI (run 19, head `f4bcc61`) | Identical figures re-measured on a second head: `Test Files 24 passed (24)` / `Tests 363 passed (363)` in `static`, `Test Files 9 passed (9)` / `Tests 307 passed (307)` in `database`, 0 skipped and 0 did-not-run. The manifest is therefore reproducible across pushed heads, not a one-run observation. |
+| MANIFEST AFTER THE D-S9-7 REPAIR (not yet executed by CI) | With `tests/ci-log-credential-redaction.contract.test.ts` (5 cases) added to the unit half, the local unit split is `Test Files 25 passed (25)` / `Tests 368 passed (368)`. That split is what the next head's `static` job must report; this row stays open until a real run prints it, because a commit cannot record the run its own SHA generates. |
 
 Identical counts, no code or config change between them. The 1 skipped test is
 `tests/supabase.public-config.live.test.ts` (class E: it addresses a hosted project and this stage
@@ -434,6 +521,17 @@ those two CI log lines overstate their own scope. Recorded as known limitation 4
 action; not patched here, because editing `scripts/verify-secrets.mjs` would move the executable
 head off the SHA this green run proves.
 
+**What this section's scope did not cover is the log stream itself, and that gap is D-S9-7.** The
+`database` and `browser` jobs each printed the local stack's generated `sb_secret_…` value into the
+job log while printing `Scanned 231 files … No privileged credential found` two steps later. Those
+two sentences are not in contradiction: the scanner looks at the tracked tree and `dist/`, and the
+key it declared absent is generated at run time by Docker and never committed, so the gate was
+answering its own question correctly. The unanswered question was whether the *output* of a
+release job is credential-bearing — nothing in the repository's scanning scope could ask it, because
+a retained log is not a tracked file. After D-S9-7's filter the start step's own output is masked
+before it reaches the log; what remains outside the gate is GitHub's already-retained history, which
+is owner action 11.
+
 Added/modified lines were scanned separately for the non-credential content PHASE 37 lists. Over
 `git diff ccc4438 HEAD` restricted to `+` lines, zero matches for: `upi://pay?pa=`, `sb_secret_`,
 JWT-shaped `eyJ….…`, `service_role`, `postgres://user:pass@`, `support@<domain>`, and a 10-digit
@@ -475,8 +573,10 @@ matched none of those paths, and `.github/workflows/ci.yml` scans artefacts befo
 
 Eight of these are skip-classification defects and carry their RED/GREEN measurements in
 [docs/TEST_SKIP_CLASSIFICATION.md](docs/TEST_SKIP_CLASSIFICATION.md) F1–F8. The browser-budget
-defects, the documentation defect and the two defects that only a real credential-free,
-artefact-producing CI environment could expose (D-S9-5, D-S9-6) are recorded here.
+defects, the documentation defect and the three defects that only a real, credential-free,
+artefact-producing CI environment could expose (D-S9-5, D-S9-6, D-S9-7) are recorded here. The
+first two were surfaced by a step exiting non-zero; **D-S9-7 was surfaced only by reading the log of
+a green run**, which is the sense in which a passing job is not the same thing as an inspected one.
 
 | ID | Defect | Proof before fix | Fix (test-side only unless stated) |
 | --- | --- | --- | --- |
@@ -487,7 +587,25 @@ artefact-producing CI environment could expose (D-S9-5, D-S9-6) are recorded her
 | **D-S9-4** | `docs/PR_INTEGRATION_PLAN.md` asserted that Actions was functioning, from a run whose jobs had zero steps. | The run's own job payload and annotation, quoted above. | Corrected forward-only in that file with the full history measurement (last executing run 2026-08-14; both runs since then unallocated), and `docs/RELEASE_PROTECTION.md` step 1 marked done-and-blocked. |
 | **D-S9-5** | `pnpm test:unit` — the half the `static` job runs with no database and no credentials — was not credential-free: `client/src/hooks/sign-up-outcome.test.ts` imported the auth hook, which imports the module-scope client builder, which throws at import time. Every laptop run of this stage hid it because this working copy has a gitignored `.env.local`. | Measured twice, and the second time as a falsification on the pre-fix tree with the env file moved aside: collection failed with `Error: DueWeave needs its secure connection configured before it can open.` and 0 tests ran from that file (`Test Files 3 failed \| 21 passed (24)`, `Tests 2 failed \| 356 passed (358)`). The first measurement was the Linux/WSL dry run of the `static` job, which is the run that found it — commit `c3eda13` quotes it. | Pure decision code moved to `client/src/lib/auth-outcome.ts`; the hook and the suite repointed at it; the security-contract assertions follow the rule to the module that now owns it and still pin the hook to routing through it. **`tests/unit-suite-hermeticity.contract.test.ts` (3 cases) checks the property instead of the name:** no suite in the static half may reach the client builder unless it mocks that module in its own file — in the falsification above it is the test that names the offender (`"…only run where credentials are configured: client/src/hooks/sign-up-outcome.test.ts"`). Delivered CI then ran the same command with no credentials at all and reported 24/363 green. |
 | **D-S9-6** | The `browser` job scanned and uploaded an artefact directory nothing produced. Both Playwright configs used the console-only default reporter, so `--dir playwright-report` had no input. | Measured on a *fully green* WSL dry run: `79 passed / 13.6m`, `3 passed / 42.3s`, and `node scripts/verify-secrets.mjs --dir playwright-report` exited 1 with `ENOENT`. So the gate was scanning a path that only exists by accident, and the upload step was pointed at the same nothing. | `playwright.config.ts` and `playwright.react-warnings.config.ts` now declare the html reporter with `open: "never"`. `tests/ci-gate-manifest.contract.test.ts` gained a 10th case pinning that every directory CI scans is one the browser run is configured to produce — a config that drops the report or moves `outputDir` now fails locally instead of in CI. CI run 18 then scanned 1 file in each directory and both passed. |
-| — | Assertion strength | — | **No security assertion was weakened anywhere in this stage.** No expectation was deleted, no `toHaveCount` relaxed, no error-copy assertion loosened, no isolation probe narrowed; the only assertion changes are added waits and larger time budgets, both recorded with the measurement that justified them. `retries` is `0` in both Playwright configs and pinned by a contract test that also rejects `--retries` on the command line. |
+| **D-S9-7** | Both environment jobs printed a live privileged key into the job log the platform retains. `.github/actions/local-supabase/action.yml:28` ran `pnpm supabase:start` with stdout streaming straight into the runner's log, and that CLI's start-up banner prints the stack's generated `sb_secret_…` value next to the browser-safe one. No gate in the repository could have seen it: every credential check looks at the tracked tree, `dist/`, or the two Playwright artefact directories, and CI was green on all three. | Read out of the retained copies of run 18's logs as text, not from a failure: `ci-run18-db.log:290` at `2026-09-29T10:25:45.494Z` and `ci-run18-browser.log:291` at `10:32:44.480Z`, each inside the `##[group]Run pnpm supabase:start` block, each the `🔑 Authentication Keys` box carrying `Publishable │ sb_publishable_…` and `Secret │ «sb_secret_, 41 chars»`. **Reproduced independently on run 19** (a different head, 55 minutes later): the same single occurrence at line 90 of each environment job's step-4 log, `11:21:53.065Z` and `11:31:11.303Z`, and zero in the static job — so this is deterministic behaviour of the step, not a one-run accident. The value is masked in every local copy (`grep` for the shape across all retained files → 0) and is not reproduced anywhere in this report. Two measured aggravations, and one measured limit on severity: (i) the publishable value is **identical in both jobs of both runs**, so this stack hands out a stable key set per project rather than a fresh one per job — the same secret recurs in every run's log; (ii) the log path is not tracked, so the scanning scope could never have covered it; (iii) against that, the tracked tree holds no seed for it — `supabase/config.toml` has no `apikey`,
+`jwt` or `secret` entry of any kind (measured by `grep -niE "key|jwt|secret|token"` over it → no
+lines) and the repository's configured Actions secrets and variables are both empty — so what the
+banner prints is the credential set of *this throwaway stack*, valid only against a loopback
+listener on this workstation, and it was unreachable by the time the value could be read back: the
+`release-local-ci-state` step removed every container of that stack before this report was written
+(`docker ps -a` re-grepped → no DueWeave container). It is nonetheless a privileged-shaped value in
+a log the platform retains, which is the boundary this stage set for itself, and its *stability*
+(i) means every future unfixed run would repeat it. Two further shapes sit in the same banner and are
+deliberately **not** treated as leaks: the database row the runner itself redacts
+(`│ URL │ ***127.0.0.1:54322/postgres`) and the Storage-API S3 pair, whose `Access Key`/`Secret Key`
+values (`625729a08b95bf1b7ff351a663f3a23c` / a 64-hex `850181e4…`) are **byte-identical in runs 18
+and 19 and ship inside the CLI binary itself** (both strings are present in
+`node_modules/.pnpm/@supabase+cli-windows-x64@2.117.0/…/supabase-go.exe` and in no tracked file) —
+published constants of the local stack, not project secrets, and not matching any of the eleven
+credential shapes. Masking them would need a generic long-hex rule that would also erase every build
+digest in a log, and the storage row is the one an operator reaches for when an upload-path test
+fails. | `scripts/redact-cli-secrets.mjs`, a line filter that replaces credential-shaped tokens — the `sb_secret_`/service-role family, JWTs whose decoded payload names a privileged role, and connection-string passwords — with `[redacted-<shape>-<n>-chars]`, keeping URLs, ports and browser-safe values so a stack that fails to start is still diagnosable. The step is now `set -o pipefail` + `pnpm supabase:start 2>&1 \| node scripts/redact-cli-secrets.mjs`. **`tests/ci-log-credential-redaction.contract.test.ts` (5 cases)** does not re-assert the filter against its own list: it feeds the banner shapes through the filter and back into **this repository's existing gate** (`verify-secrets.mjs --dir` on one temp file), requiring exit 1 unfiltered and exit 0 filtered, so the two rule sets cannot drift silently; the fixture is assembled at runtime because a literal of that shape in a tracked file is a HARD finding no allowlist excuses. Two more cases pin `2>&1` and `set -o pipefail` on the step. Falsified both ways: removing the `sb_secret_` rule turned 2 cases RED, and removing `set -o pipefail` turned the step case RED. **Then verified against real CLI output, not fixtures**: the repaired pipeline was run in the WSL qualification clone (HEAD `ec868e8`, its own throwaway `dueweave` stack on ports 54321/54322) with a `tee` of the raw stream — raw capture `80 lines, 1 sb_secret shape, 0 redaction markers`; filtered capture `80 lines, 0 sb_secret shapes, 2 redaction markers`, and those two markers are exactly the two privileged rows of the banner: `│ Secret │ [redacted-sb-secret-key-41-chars] │` and `│ URL │ postgresql://[redacted-db-password]@127.0.0.1:54322/postgres │`. That second raw line is also what identifies the `***` in run 18's CI copy as the credential prefix of this same row — who replaced it there is still not claimed. Everything a diagnosis needs survived: `Publishable`, `Project URL`, `http://127.0.0.1:54321`, the REST path and the `127.0.0.1:54322/postgres` host-port-database tail match the raw capture line for line, and the pipeline exit code was `0`. `scripts/local-supabase-env.mjs` then still read the running stack and wrote `.env.local`, so the mask did not blind the step that follows it. The stack this check started was stopped by the same script, with `docker ps -a`/`docker volume ls` re-grepped for `dueweave\|project-ar1` → none, and no listener on 3000/3100/54321/54322 after it; the unrelated `localvivaahvarnam` stack on the same engine was left running and untouched throughout. The `pipefail` claim was then measured against a **real CLI failure** rather than a synthetic one: invoking the repository's own Supabase binary from a directory with no project makes it exit 1, and running exactly that through the shipped shape gives `rc=1` while deleting only the `set -o pipefail` line gives `rc=0` — i.e. without that line a stack that never started would have marked the step green, silently weakening the gate the repair exists to protect. (The generic form was measured first: `sh -c "exit 42" 2>&1 \| node <filter>` → 42 with pipefail, 0 without.) |
+| — | Assertion strength | — | **No security assertion was weakened anywhere in this stage.** No expectation was deleted, no `toHaveCount` relaxed, no error-copy assertion loosened, no isolation probe narrowed; the only assertion changes are added waits and larger time budgets, both recorded with the measurement that justified them. `retries` is `0` in both Playwright configs and pinned by a contract test that also rejects `--retries` on the command line. The D-S9-7 repair was checked against the opposite failure mode on purpose (`pipefail`, above), because a log filter is exactly the kind of change that turns a failing step into a passing one. |
 
 ## Host-state caveat, disclosed rather than smoothed
 
@@ -512,16 +630,17 @@ local work plus container start, Chromium download and a cold `vite dev`, and th
 "has **not** been validated against a real runner" — that sentence was true when written and is now
 superseded: run 18's `browser` job finished its whole job in **18 m 07 s against that 45-minute
 budget**, with the smoke battery itself measured in CI at `79 passed (13.9m)` and the warning gate
-at `3 passed (43.7s)`. The budgets on all three jobs are now validated against one real execution
-on this runner, on this topology. They are still not validated against a *second* machine or an
-empty Docker image cache, and the budget is a ceiling, not a promise.
+at `3 passed (43.7s)`. The budgets on all three jobs are now validated against two real executions
+on this runner, on this topology (runs 18 and 19, worst browser job 18 m 07 s against 45 m). They
+are still not validated against a *second* machine or an empty Docker image cache, and the budget is
+a ceiling, not a promise.
 
 ## Flakiness, timeouts, PGRST303
 
 | Field | Value |
 | --- | --- |
-| PGRST303 | **0 occurrences, recorded per log as instructed, none rerun away:** `p33-live.log` 0, `p34-battery.log` 0, `p34-battery2.log` 0, `p35-run1.log` 0, `p35-run2.log` 0, `p32-pgtap.log` 0, `p36-testdb.log` 0. **And 0 in each of run 18's three executed CI logs** (`ci-run18-static.log`, `ci-run18-db.log`, `ci-run18-browser.log`), grepped for `PGRST303` and for SQLSTATE `40001` — the real runner saw the condition no more than the laptop did. Postgres serialisation `40001`: 0 in the same logs. The Stage 4 loop and hammer artefacts from the earlier qualification (`stage4-pgrst303-*.txt`) remain the record of the condition's investigation; nothing in Stage 9 re-triggered it. |
-| TIMEOUTS | Closing battery: 0. Baseline battery: 4, all accounted for by D-S9-1/2/3 above (2 × 30 000 ms test, 1 × 30 000 ms `beforeAll`, 1 × 120 000 ms click), 0 after repair. CI run 18: 0 job-level timeouts, 0 test-level timeouts, all three jobs finished inside their budgets (1 m 32 s of 25 m, 7 m 18 s of 40 m, 18 m 07 s of 45 m). |
+| PGRST303 | **0 occurrences, recorded per log as instructed, none rerun away:** `p33-live.log` 0, `p34-battery.log` 0, `p34-battery2.log` 0, `p35-run1.log` 0, `p35-run2.log` 0, `p32-pgtap.log` 0, `p36-testdb.log` 0. **And 0 in each of run 18's three executed CI logs** (`ci-run18-static.log`, `ci-run18-db.log`, `ci-run18-browser.log`), grepped for `PGRST303` and for SQLSTATE `40001` — the real runner saw the condition no more than the laptop did. Postgres serialisation `40001`: 0 in the same logs. **Run 19's three executed logs (head `f4bcc61`) grep 0 for `PGRST303` and 0 for `40001` as well**, so the condition is absent on two independent self-hosted heads. The Stage 4 loop and hammer artefacts from the earlier qualification (`stage4-pgrst303-*.txt`) remain the record of the condition's investigation; nothing in Stage 9 re-triggered it. |
+| TIMEOUTS | Closing battery: 0. Baseline battery: 4, all accounted for by D-S9-1/2/3 above (2 × 30 000 ms test, 1 × 30 000 ms `beforeAll`, 1 × 120 000 ms click), 0 after repair. CI run 18: 0 job-level timeouts, 0 test-level timeouts, all three jobs finished inside their budgets (1 m 32 s of 25 m, 7 m 18 s of 40 m, 18 m 07 s of 45 m). CI run 19: the same, 0 and 0, with margins of 2 m 07 s of 25 m, 6 m 52 s of 40 m and 17 m 47 s of 45 m. |
 | FLAKINESS | Nothing was retried: `retries: 0` in both configs, and the closing battery's 181 slots are 181 distinct ids, so no test appears twice. Two consecutive `pnpm test` runs returned identical 666/1 counts. The three baseline failures were deterministic and reproduced in isolation before being fixed (19 passed / 2.9 m and 9 passed / 3.1 m isolated re-runs after repair). The residual known intermittency is documented, not hidden: concurrency on one port (residual risk 5 in the skip classification) makes two simultaneous browser runs refuse connections mid-flight — that is an operator-environment constraint the runner's `--strictPort` plus the fail-closed guard convert into a hard error rather than a flake. |
 
 ## KNOWN LIMITATIONS
@@ -584,6 +703,61 @@ empty Docker image cache, and the budget is a ceiling, not a promise.
     being up. The runner was observed to flap once (`offline` for under a minute, then
     `online busy=false` again) during this recovery, and `cancel-in-progress: true` means a second
     push to the same ref cancels the in-flight run rather than queueing behind it.
+15. **The repair does not retract what is already on GitHub.** Runs 18 and 19 executed before the
+    filter existed, so their `database` and `browser` job logs on the platform still carry the local
+    stack's privileged key. This stage masked its own downloaded copies and did not delete anything
+    the account shares — no artefact, log or run was removed, which is also the answer to the
+    "deleting logs/caches does not restore hosted minutes" note: deletion was never the point, and
+    retention of a credential-bearing log is the owner's call (owner action 11). What *is* now
+    measured narrows what that call is about: the key belongs to a disposable loopback stack, which
+    is stopped, and it is not machine-specific either — the `Publishable` line printed by a fresh
+    local start in the qualification clone is the same literal the two CI runs printed
+    (`sb_publishable_ACJWlz…`, prefix only — the remainder is deliberately not carried in this file),
+    and nothing in the tracked tree seeds it (`config.toml` has no key/JWT/secret line). What *does*
+    hold the values is the CLI's own gitignored local state: the Windows working copy carries
+    `supabase/.temp/start-secrets/supabase_edge_runtime_dueweave/env/docker.env` (matched by
+    `.gitignore:114 supabase/.temp/`) from a local start, and it is the only place on this machine
+    outside the platform's retained logs where a privileged *value* still sits. An earlier revision
+    of this row said `.temp` "holds only a version stamp"; that was measured before the D-S9-7
+    verification start, and is corrected here — the two Linux-side workspaces
+    (`~/dueweave-qualification`, the runner workspace) do hold only `supabase/.temp/cli-latest`, with
+    zero secret/publishable/db-url shapes in their `.env.local` apart from one browser-safe anon JWT
+    each. So the value is reproducible by anyone who can read this repository and run `pnpm supabase:start`,
+    which is why "rotate it" is not on offer as an action: how the CLI derives it is not established
+    from here, and the only change that would alter it is a different `project_id`, which would break
+    the local stack's own reproducibility. The finding stands on the rule, not on the value: a
+    privileged-shaped credential must not sit in a log the platform retains.
+16. **The log filter is shape-based, so it can only mask what it recognises.**
+    `scripts/redact-cli-secrets.mjs` covers the `sb_secret_`/service-role family, privileged-role
+    JWTs and connection-string passwords; a privileged value the CLI invents in a new format would
+    pass through. The composition test narrows but does not close this: it proves the shapes in its
+    fixture are masked by re-scanning the filtered text with `verify-secrets.mjs`, so if the CLI
+    starts printing a shape the scanner knows and the filter does not, the *next* run of that gate
+    on that text would flag it — but only for the fixture's shapes, not for live output. No CI step
+    scans a job's own log, and GitHub offers no way to do that from inside the job that wrote it.
+17. **Where the evidence copies live, and how they were verified masked.** The three run-18 job logs
+    this file quotes are in the operator's Windows temp directory
+    (`%LOCALAPPDATA%\Temp\wslops\ci-run18-{static,db,browser}.log`), and run 19's are beside them
+    under `%LOCALAPPDATA%\Temp\wslops\run19\extracted\` (43 files: one log per step plus `system.txt`
+    per job). None of it is in the repository: a job log is not a tracked artefact, and committing one
+    would put run output — including, before the redaction, a privileged key — into the release tree.
+    The masking claim in an earlier revision of this row was **wrong when re-measured**: a shape sweep
+    over the whole temp directory found 7 files still carrying privileged shapes — run 19's two
+    environment step-4 logs with the full `sb_secret_` value, the two run-18 logs with the full
+    publishable and the storage-key constant, the D-S9-7 verification capture, and the raw
+    `run19/run19-logs.zip` downloaded from the API. All text copies were then masked in place
+    (`sb_secret_*` → `sb_secret_[MASKED-LOCAL-COPY]`, publishable → same form, 64-hex → `[MASKED-HEX64]`,
+    JWT → `[MASKED-JWT]`, URL passwords → `[MASKED-PASSWORD]`) and the raw zip, being an unmaskable
+    archive of the same content, was deleted — it is this task's own scratch download, and the masked
+    per-step text copies remain. The sweep re-run after masking reports **0 files with privileged
+    shapes** in the Windows temp directory and 0 across the six WSL-side
+    `~/ci-dryrun-*.log` captures (before masking: `ci-dryrun-db.log` and `ci-dryrun-browser.log` each
+    carried 1 secret + 1 publishable + 1 URL password + 1 64-hex; the D-S9-7 raw/filtered pair carried
+    only the hex constant). Counts were taken before masking; no value was ever printed into this
+    file, into chat, or into a commit. A temp directory is not durable evidence, so the durable
+    citations are GitHub's own run/job/step payloads (`gh api`, ids in the CI table) which the numbers
+    were read from, and the retained copies are a convenience. Earlier revisions of this file also said
+    "beside this repository", which was not where they were.
 
 ## STAGE 10 OWNER ACTIONS (nothing below was performed by this stage)
 
@@ -620,6 +794,15 @@ empty Docker image cache, and the budget is a ceiling, not a promise.
    `docs/OPERATOR_BOOTSTRAP.md`, and the Founder live-activation checklist — each a separate,
    explicitly authorized action. Real money stays off until that checklist is executed.
 10. Decide the react-router upgrade, and whether to delete the six superseded legacy specs.
+11. **Decide what to do with the retained logs of runs 18 and 19 — before any merge, this is not
+    Stage 10 work.** Those runs executed the stack-start step before it was filtered, so their
+    `database` and `browser` logs on GitHub still print the disposable local stack's `sb_secret_…`
+    value (limitation 15). The options are to delete those runs' retained logs from the Actions UI,
+    to leave them (the stack is loopback-only and currently stopped, and the repository is private),
+    or to treat the key as burned and rotate the local stack's key set. Nothing here authorises me to
+    delete or rotate on the owner's behalf, and deleting shared artefacts would not have recovered
+    anything else either. Verify the *next* run's two environment logs carry no privileged shape
+    before calling this closed — that check is part of the run-20 observation below.
 
 ## FINAL CURRENT-ROADMAP STAGE 9 VERDICT
 
@@ -634,6 +817,16 @@ event `push`, head `ec868e8e71ae62c9f5eda83d126c4e70c539aa0e`, `status = complet
 failure-scoped artefact upload, retries `0` in both Playwright configs, 0 PGRST303, 0 timeouts, and
 no job skipped that was supposed to run. PHASE 27 asked for exactly that and forbade substituting
 local evidence for it; local evidence is recorded separately above.
+Run `36560985637` (head `f4bcc615ffd08e53dc8925568ce3f2b85dd03113`) repeats it — 3 of 3 jobs
+`completed/success`, 40 of 40 executed steps `success`, same skipped upload step, same runner, 0
+retries — so the verdict does not rest on a single fortunate run.
+
+**Scope limit on this sentence, stated deliberately:** the D-S9-7 repair (the log-stream redactor and
+its composition test) lands on the *next* head, and a commit cannot observe the run its own SHA
+generates. So the PASS above covers the three release gates as executed by runs 18 and 19; the
+redactor's CI-side effect — that a real run's two environment logs contain zero privileged shapes —
+is a claim this stage records only after reading that next run, and its local-equivalent proof is in
+the D-S9-7 row and defect table above.
 
 Still not claimed by this verdict, and each is a real hole rather than a hedge:
 
@@ -699,13 +892,29 @@ it was reverted immediately with `git checkout -- .github/actions/local-supabase
 file at `ec868e8` is the one the green run executed, and `git status --porcelain` was clean of it
 afterwards. No other Stage 9 deliverable was touched by that call.
 
+A second disclosure, from the D-S9-7 segment, because it was a claim in this file that measurement
+refuted: limitation 17 asserted that the retained local copies of *both* runs' environment logs were
+masked. Re-scanning the temp directory for privileged shapes returned 7 files still carrying values
+— run 19's step-4 logs included the full key, and a raw log archive from the same download could not
+be masked at all. The claim was written from the intent to mask rather than from a post-masking
+sweep. The copies are now masked (and the unmaskable archive deleted, this task's own scratch
+download), the re-sweep returns 0, and the wording has been replaced with the before/after counts.
+The same segment also produced two wrong file-name references in commands (`post19-poststate.sh`,
+`ds97-verify-followup.sh` — neither exists; the real scripts are `post19-state.sh` and
+`ds97-followup.sh`), which failed as "No such file or directory" rather than silently doing the
+wrong thing, and one further background-task "completed (exit code 0)" notification for the run-19
+poller, again treated as neither acknowledgement nor evidence. No new prompt-injection attempt was
+acted on in this segment.
+
 ---
 
 *Prepared on 2026-09-29 against the project's own disposable loopback Supabase stack, on the
 project's own self-hosted Linux runner. Every local count above is read from a retained run log or
 from a command whose exit code was captured; every CI count is read from GitHub's own job/step
-payload or from the downloaded job log of run `36555102272`, retained beside this repository as
-`ci-run18-static.log` (735 lines), `ci-run18-db.log` (663) and `ci-run18-browser.log` (608). The
+payload or from the downloaded job log of run `36555102272`, kept in the operator's temp directory as
+`ci-run18-static.log` (735 lines), `ci-run18-db.log` (663) and `ci-run18-browser.log` (608), beside
+run 19's 43 per-step copies — every one of those copies swept for privileged shapes and masked, with
+the before/after counts in limitation 17. The
 numbers in the skip-classification and release-gate documents are the same measurements, not a
 second tradition of them — where a document still quotes a pre-`ec868e8` number, that is corrected
 in the same push as this file.*
