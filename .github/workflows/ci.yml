@@ -1,48 +1,152 @@
 name: CI
 
+# PHASE 2: the previous file triggered on `main` and two Stage 4 branches that were
+# deleted months ago, so the delivered Stage 8 commit had no run at all and `pnpm test`
+# inside CI silently skipped every database-backed suite. These triggers name the
+# branches this roadmap actually uses, and the jobs below run the suites that cannot
+# skip without an environment.
 on:
   pull_request:
   push:
-    branches:
-      - main
-      - stage-4-1-release-hardening
-      - stage-4-2-operator-readiness
+    branches: [main, current-stage-9-security-ci]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
-  verify:
+  static:
     name: Static verification
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # PHASE 18: 10 minutes was smaller than the install plus build it has to run, so a
+    # job could time out without ever reaching an assertion.
+    timeout-minutes: 25
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: ./.github/actions/setup-toolchain
 
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v4
+      # Before the tests: three contracts inspect the built bundle, and without a build
+      # they report "skipped" while the job still goes green.
+      - name: Build the production bundle
+        run: pnpm build
 
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
+      - name: Unit and boundary contracts (no database)
+        run: pnpm test:unit
 
-      - name: Install locked dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Lint
+      - name: ESLint
         run: pnpm lint
 
-      - name: Type-check
+      - name: TypeScript
         run: pnpm check
 
-      - name: Unit and static contracts
-        run: pnpm test
-
-      - name: Independent production build
-        run: pnpm build
+      - name: Secret and privileged-credential scan (source and bundle)
+        run: pnpm verify:secrets
 
       - name: Production dependency audit
         run: pnpm audit --prod --audit-level=high
+
+      # PHASE 9: recorded, not accepted silently. The development tree currently carries
+      # advisories (measured at Stage 9: 38 findings, 2 critical, in vitest/tar/vite
+      # tooling). None of them ship in the browser bundle, and none are reachable from a
+      # `vitest run`/`vite build` that never starts the Vitest UI server or a dev server.
+      # Upgrading the toolchain is a dependency decision this stage does not make, so the
+      # step prints the state of the tree on every run instead of pretending it is clean.
+      - name: Development toolchain audit (recorded, not blocking)
+        continue-on-error: true
+        run: pnpm audit --audit-level=high
+
+  database:
+    name: Database contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: ./.github/actions/setup-toolchain
+      - uses: ./.github/actions/local-supabase
+
+      - name: Generated types match the replayed schema
+        run: pnpm verify:types
+
+      - name: Committed migrations match the applied set
+        run: pnpm verify:migrations
+
+      - name: pgTAP suites inside the local database
+        run: pnpm test:db
+
+      # PHASE 22: the schema linter is blocking. A lint finding is a defect the next
+      # migration inherits, and a non-blocking lint step is a step nobody reads.
+      - name: Schema lint
+        run: pnpm db:lint
+
+      - name: Database-backed contract suites
+        run: pnpm test:live
+
+  browser:
+    name: Browser release smoke
+    runs-on: ubuntu-latest
+    needs: [static, database]
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: ./.github/actions/setup-toolchain
+      # The order is load-bearing: the stack action generates .env.local, and the build
+      # inlines those values into the bundle the journeys then drive.
+      - uses: ./.github/actions/local-supabase
+
+      - name: Cache the Chromium download
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'package.json') }}
+
+      - name: Install the Chromium build the suite launches
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Build the bundle the suite drives
+        run: pnpm build
+
+      # PHASE 17: CI runs the release-critical journeys — the Stage 9 fresh-account and
+      # cross-account journeys, the Stage 7 export and follow-up flows, the Stage 8
+      # customer and reviewer flows, and the accessibility qualification. The full
+      # responsive and interaction battery stays the canonical local command
+      # (`pnpm verify:e2e:local`), and the list lives in package.json so CI and a laptop
+      # cannot drift into claiming different coverage.
+      - name: Release journeys
+        run: pnpm test:e2e:smoke
+
+      # PHASE 16's rule — a release journey that logs a console error, an uncaught error,
+      # an unanswered request or a React warning is a failed journey — is enforced by the
+      # problem watcher inside each suite, so a red run here is a defect, not a flake. The
+      # smoke journeys above watch the production bundle, which carries the minified React
+      # build and therefore cannot emit a warning at all; the warning channel is only
+      # observable against `vite dev`, which is the second config this step runs. Without
+      # it CI would claim PHASE 16 coverage it never measured: the gate existed only on a
+      # laptop. Retries are 0 in both configs, so a failure is reported once and honestly.
+      # Measured locally against the same local stack: 3 passed (1.9m).
+      - name: React warning and console discipline
+        run: pnpm test:e2e:react-warnings
+
+      # PHASE 23: artefacts are what makes a CI red run diagnosable without re-running
+      # it. They are scanned before upload, because a failure screenshot or trace can
+      # carry whatever was on screen; the upload never includes .env.local, the built
+      # bundle (which inlines the local stack's configuration) or any database dump.
+      - name: Scan artefacts before uploading them
+        if: ${{ always() }}
+        run: |
+          node scripts/verify-secrets.mjs --dir test-results
+          node scripts/verify-secrets.mjs --dir playwright-report
+
+      - name: Upload failure evidence
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: browser-smoke-failure-evidence
+          path: |
+            test-results
+            playwright-report
+          if-no-files-found: ignore
+          retention-days: 7

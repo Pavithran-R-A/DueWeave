@@ -1,0 +1,23 @@
+name: Toolchain
+description: >
+  The pinned Node and pnpm the repository is qualified with, and a frozen-lockfile
+  install. Every job runs this so no job can silently verify a different toolchain or
+  resolve dependencies that the lockfile does not name. Third-party actions are pinned to
+  commit SHAs rather than moving tags: a tag can be retargeted after the fact, a commit
+  cannot.
+
+runs:
+  using: composite
+  steps:
+    - name: Enable pnpm at the version package.json declares
+      uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+
+    - name: Install Node 22
+      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      with:
+        node-version: "22"
+        cache: pnpm
+
+    - name: Install the locked dependencies
+      shell: bash
+      run: pnpm install --frozen-lockfile
