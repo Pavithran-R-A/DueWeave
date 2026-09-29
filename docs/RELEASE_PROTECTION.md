@@ -69,13 +69,15 @@ even when not applicable to the commit set.
 
 **Status of step 1 as measured on 2026-09-29: done and blocked.** The branch was pushed
 (`current-stage-9-security-ci`; executable head `c682827`, documentation heads `99c120f`,
-`cfd76fc` and `275e2f5`), and each of those four pushes produced a run —
-`36533797727`, `36535054827`, `36535564240` and `36535840587` — that reached `completed/failure` in
+`cfd76fc`, `275e2f5` and `0400610`), and each of those five pushes produced a run —
+`36533797727`, `36535054827`, `36535564240`, `36535840587` and `36536245051` — that reached
+`completed/failure` in
 2-4 seconds with
 `runner_id = 0` and zero steps for both `Static verification` and `Database
 contracts`, and `Browser release smoke` `skipped`; GitHub's annotation on each failed job
 reads *"The job was not started because recent account payments have failed or your spending
-limit needs to be increased."* Any further push produces the same until that account state changes,
+limit needs to be increased. Please check the 'Billing & plans' section in your settings"*
+(all five messages compared and identical). Any further push produces the same until that account state changes,
 so the head this file describes is not special. Steps 2-5 are written for the operator to execute **after** that
 account-level blocker is cleared, because step 1 cannot complete without a runner and the three
 check names below cannot appear in the picker until a job has actually run. Full measurement:
