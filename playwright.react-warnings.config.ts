@@ -19,6 +19,10 @@ export default defineConfig({
   timeout: 60_000,
   forbidOnly: Boolean(process.env.CI),
   retries: 0,
+  // Same two artefact directories as the release battery, because CI scans and uploads them
+  // after this half of the browser gate too — and a warning-gate failure is exactly the kind
+  // of run a reviewer needs to reopen rather than re-run.
+  reporter: [["list"], ["html", { outputFolder: "playwright-report", open: "never" }]],
   globalSetup: "./e2e/local-stack-setup.mjs",
   webServer: {
     command: "pnpm dev --port 3100 --strictPort --host 127.0.0.1",

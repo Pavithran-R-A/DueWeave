@@ -106,6 +106,34 @@ describe("CI gate manifest", () => {
     }
   });
 
+  // PHASE 23's artefact step is only a gate if there are artefacts. The WSL dry run of the
+  // browser job measured the opposite: `node scripts/verify-secrets.mjs --dir playwright-report`
+  // exited 1 with ENOENT on a fully green run (79 journeys passed, 3 warning-gate tests passed),
+  // because neither Playwright config declares a reporter that writes that directory — the
+  // default reporter prints to stdout and produces only `test-results`. A scan of a directory
+  // the pipeline never builds fails every run, and a scan widened to "tolerate absence" would
+  // silently stop checking the thing it names. So the directories CI scans have to be ones the
+  // browser run is configured to produce.
+  it("scans only artefact directories the browser run is configured to produce", () => {
+    const scanned = [...source.matchAll(/verify-secrets\.mjs --dir ([\w-]+)/g)].map((match) => match[1]);
+    expect(scanned.length, "no artefact scan parsed from ci.yml — the scan pattern is wrong").toBeGreaterThan(1);
+    expect(scanned, "CI scans a Playwright artefact directory under the wrong name").toEqual(
+      expect.arrayContaining(["test-results", "playwright-report"]),
+    );
+    // `test-results` is Playwright's default output directory; a config that moved it would
+    // leave the scan pointing at a folder nothing writes.
+    for (const config of ["playwright.config.ts", "playwright.react-warnings.config.ts"]) {
+      const text = readFileSync(path.join(projectRoot, config), "utf8");
+      expect(text, `${config} moves outputDir away from the directory CI scans`).not.toMatch(/outputDir:/);
+      expect(text, `${config} never writes playwright-report, so CI's scan and upload name a phantom`).toMatch(
+        /\[\s*"html",\s*\{[^}]*outputFolder:\s*"playwright-report"/,
+      );
+      // An auto-opening report would make a failed local journey hang on a browser window,
+      // which is a different failure than the one the gate reports.
+      expect(text, `${config} must not open the report at the end of a run`).toMatch(/open:\s*"never"/);
+    }
+  });
+
   it("keeps every exemption honest", () => {
     const unused = Object.entries(ciEquivalents)
       .filter(([gate]) => !gates.includes(gate))
