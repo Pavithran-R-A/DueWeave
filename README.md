@@ -166,6 +166,16 @@ browser half at all. That is closed:
 replays the committed migrations) and does run the browser journeys. The workflow receives no
 secrets: no service-role key, no hosted project credential, no payment credential.
 
+The three jobs run on `[self-hosted, linux, x64, dueweave-ci]`, which today means
+`dueweave-local-ci` — a repository-scoped runner on a WSL2 Ubuntu workstation, with budgets of
+25/40/45 minutes. Measured on 2026-09-29, run `36555102272` at head `ec868e8` passed all three jobs
+there (1 m 32 s / 7 m 18 s / 18 m 07 s, `retries: 0`, zero hosted minutes consumed). Two properties
+follow from that choice and both are deliberate: GitHub's hosted runner refusal on this account stops
+blocking the gates, and a green check now depends on that machine being online, so
+`.github/actions/release-local-ci-state` releases only this repository's stack and only preview
+servers started from this workspace — it never prunes anything else on the host. See
+`current_stage9_security_ci_report.md` for the full evidence and for what the verdict does not claim.
+
 ### What verification here does not cover
 
 Hosted Supabase (project settings, email confirmation, site URL and redirect allow-list), real

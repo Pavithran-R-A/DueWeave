@@ -72,11 +72,22 @@ operator must sequence around:
   state itself is **UNKNOWN** from here: `GET /users/Pavithran-R-A/settings/billing/actions`
   needs the `user` scope, which this token does not hold (`gist, read:org, repo, workflow`), and
   no payment setting was changed by this stage.
-- Consequence for this plan, stated plainly: the required-check names below cannot be published
-  to GitHub's picker by any means available to this stage, because publishing them requires a job
-  to execute. `docs/RELEASE_PROTECTION.md` step 1 is therefore not completable, and Stage 9 is
-  reported **BLOCKED** rather than PASS even though every local gate is green — the brief's own
-  rule ("If GitHub Actions cannot execute: STATUS = BLOCKED even if all local gates pass").
+- **Consequence for this plan, corrected again by run 18, 2026-09-29.** The bullet written earlier
+  in this section read that the required-check names "cannot be published to GitHub's picker by any
+  means available to this stage", that `docs/RELEASE_PROTECTION.md` step 1 is not completable, and
+  that Stage 9 must therefore be reported **BLOCKED** rather than PASS. All three were true as
+  stated *while only hosted runners were being requested*, and all three are now superseded by
+  measurement: the workflow's `runs-on` was moved to the repository's own self-hosted Linux runner
+  (`dueweave-local-ci`, registered for this repository only, consuming no GitHub-hosted minutes),
+  and run `36555102272` at head `ec868e8e71ae62c9f5eda83d126c4e70c539aa0e` completed with
+  `Static verification`, `Database contracts` and `Browser release smoke` all `success`, every
+  executed step `success`, `retries: 0`. The three check names are published at a head of this
+  branch, so the protection rule in `docs/RELEASE_PROTECTION.md` is actionable, and Stage 9 is
+  reported **PASS on that self-hosted topology** — see that report for what the verdict does not
+  claim (notably: it is not evidence about GitHub's hosted images, and the account-level hosted
+  refusal described above is unchanged by this stage). The gates themselves were not weakened,
+  widened or substituted: the identical three jobs, the same commands, the same composite actions,
+  the same secret-free workflow contract, on a different machine.
 
 Triggers on the delivered file: `pull_request` (any base), `push` to `main` and
 `current-stage-9-security-ci`, and `workflow_dispatch`. Pushing the branch is therefore
@@ -89,7 +100,7 @@ itself a CI run (Stage 9 PHASE 27), which is how the head-SHA proof is obtained.
 | Base | `main` |
 | Head | `current-stage-9-security-ci` |
 | Title | `test: Stage 9 release, security and CI qualification` |
-| Opened only when | every gate in `docs/RELEASE_GATE_MATRIX.md` is green locally **and** a real Actions run for the final head SHA is complete and green (PHASE 27) |
+| Opened only when | every gate in `docs/RELEASE_GATE_MATRIX.md` is green locally **and** a real Actions run for the final head SHA is complete and green (PHASE 27). **Measured status on 2026-09-29:** satisfied for executable head `ec868e8` (run `36555102272`, three jobs `success`, self-hosted); this document's own commit lands after that head, so the operator should read the run for *that* SHA before opening — a documentation push is still a push, and the workflow triggers on this branch. |
 | Body must carry | the Stage 9 report path, the measured per-gate counts and durations, the skip classification (`docs/TEST_SKIP_CLASSIFICATION.md`), the executed security-proof map (`docs/SECURITY_CONTRACT_REQUALIFICATION.md`), and an explicit list of what the release does **not** claim (hosted Supabase, real money, WCAG certification, delivery performance) |
 | Merge | a separate decision after review; this stage never merges |
 | Labels/milestones | none invented; `v1.0.0` is not created by this stage |

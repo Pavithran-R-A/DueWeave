@@ -88,13 +88,18 @@ re-measured 2026-09-29; an earlier replay of the same 79 measured 17.3 min), the
 29.6 min — the spread is host load on a shared machine, not a change in the suite). The 8 are the
 host-credential-gated legacy specs classified in `docs/TEST_SKIP_CLASSIFICATION.md`, none of them in
 the CI subset. The `browser` job therefore carries `timeout-minutes: 45` for roughly 20 minutes of
-expected work plus Docker Supabase start, the Chromium download and a cold `vite dev` start. That
-headroom is **still an estimate**: PHASE 27 pushed the branch and observed the run, and no job of
-it ever started a runner (see the billing block recorded in
-`current_stage9_security_ci_report.md`), so no CI-measured duration exists for this head. If a
-re-run after the account blocker is cleared times out, the budget is raised from the observed
-number rather than from a guess. `retries` stays **0** in both Playwright configs, so a red CI run
-is a defect report, not a retry counter.
+expected work plus Docker Supabase start, the Chromium download and a cold `vite dev` start.
+
+That headroom is **no longer an estimate**. When this section was written it said "no CI-measured
+duration exists for this head", because runs 11-17 never started a runner; run `36555102272` on head
+`ec868e8` executed the job on the repository's own self-hosted Linux runner, and GitHub's own job
+payload gives `started_at 2026-09-29T10:30:54Z → completed_at 10:49:01Z` — **18 m 07 s of the
+45-minute budget** — with the smoke battery inside it measured at `79 passed (13.9m)` and the
+warning gate at `3 passed (43.7s)`, `retries: 0`, 0 timeouts. So the budget is validated by one real
+execution, on one machine (WSL2 Ubuntu, Docker Desktop engine, Node 22), and it is not validated
+against a second machine or a cold Docker image cache. If a future run times out, the budget is
+raised from the observed number rather than from a guess. `retries` stays **0** in both Playwright
+configs, so a red CI run is a defect report, not a retry counter.
 
 ### One budget was wrong, and how it was found
 

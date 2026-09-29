@@ -67,21 +67,30 @@ even when not applicable to the commit set.
 
 ## Order of operations (operator actions, each a separate decision)
 
-**Status of step 1 as measured on 2026-09-29: done and blocked.** The branch was pushed
-(`current-stage-9-security-ci`; executable head `c682827`, documentation heads after it through
-`6b83848`), and **every push since produced one `push` run that reached `completed/failure` in
-2-4 seconds** with `runner_id = 0` and zero steps for both `Static verification` and `Database
-contracts`, and `Browser release smoke` `skipped`; GitHub's annotation on each failed job
-reads *"The job was not started because recent account payments have failed or your spending
-limit needs to be increased. Please check the 'Billing & plans' section in your settings"*
-(the messages from seven such jobs compare identical). Each observed run id, head SHA and job id is
-enumerated in `current_stage9_security_ci_report.md`, which is the authoritative list — this file
-deliberately carries no run count, because every further push would make one stale. Any further
-push produces the same until that account state changes, so the head this file describes is not
-special. Steps 2-5 are written for the operator to execute **after** that
-account-level blocker is cleared, because step 1 cannot complete without a runner and the three
-check names below cannot appear in the picker until a job has actually run. Full measurement:
-`current_stage9_security_ci_report.md`.
+**Status of step 1 as measured on 2026-09-29: done, then blocked, now done-green.** The branch was
+pushed (`current-stage-9-security-ci`), and **seven pushes (through head `0bb851b`) each produced one
+`push` run that reached `completed/failure` in 2-4 seconds** with `runner_id = 0` and zero steps for
+both `Static verification` and `Database contracts`, and `Browser release smoke` `skipped`; GitHub's
+annotation on each failed job reads *"The job was not started because recent account payments have
+failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in
+your settings"* (the messages from seven such jobs compare identical). That was the state this
+paragraph described when it said steps 2-5 had to wait for the account-level blocker, because the
+three check names could not appear in the picker until a job had actually run.
+
+**That obstruction no longer holds, and it was cleared without touching the billing state.** The
+workflow now runs on `dueweave-local-ci`, the repository's own self-hosted Linux runner, and run
+`36555102272` at executable head `ec868e8e71ae62c9f5eda83d126c4e70c539aa0e` completed with all three
+jobs `success`. Concretely for the operator: `Static verification`, `Database contracts` and
+`Browser release smoke` are now published check runs *at a head of this branch*, so they are
+selectable in the picker — steps 2 onward are actionable now rather than after a billing change.
+Two consequences of the substitution are stated in the same terms as the rule they affect: the
+runner is a persistent machine, not a fresh container, so a required-status check here attests to
+this repository's gates on this workstation (see the machine-state measurements in
+`current_stage9_security_ci_report.md`); and `dueweave-local-ci` is registered for this repository
+only, so no other project can be required to pass it. Each observed run id, head SHA and job id, and
+the full self-hosted job/step evidence, is enumerated in `current_stage9_security_ci_report.md`,
+which is the authoritative list — this file deliberately carries no run count, because every further
+push would make one stale. Full measurement: `current_stage9_security_ci_report.md`.
 
 1. Push `current-stage-9-security-ci` and let `CI` run to completion on the final head SHA;
    record run id, event, head SHA, the three job names, conclusions and durations
