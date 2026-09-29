@@ -1,6 +1,7 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { databaseSuites } from "./suite-manifest";
 
 const root = resolve(import.meta.dirname, "..");
 const baseMigration = readFileSync(resolve(root, "supabase/migrations/20260812150500_secure_foundation.sql"), "utf8");
@@ -319,5 +320,71 @@ describe("Stage 2 Supabase security contract", () => {
     expect(stage42PaymentReadinessMigration).toMatch(/v_offer\.refund_policy_status <> 'APPROVED'/i);
     expect(stage42PaymentReadinessMigration).toMatch(/revoke all on function public\.get_founder_offer\(\) from public/i);
     expect(founderRepository).not.toMatch(/founder_offer_config["']\)\.update/);
+  });
+});
+
+// PHASE 10's one hard rule: "No source-text-only claim may replace executed DB behavior
+// where execution is possible." Everything above reads migration SQL — cheap, useful, and
+// no proof whatever that a running database enforces it. So the block below audits the
+// *executed* proofs instead: docs/SECURITY_CONTRACT_REQUALIFICATION.md must cite, for each
+// of the nine properties, a test that really opens a client against the local Postgres (or
+// asserts inside it, or drives the browser), and each citation must still name a test that
+// exists at the line claimed, in a suite a release command runs. A proof that is renamed,
+// deleted, or moved out of the release gate fails here rather than in an incident.
+const EXECUTED_PROOF = /`(tests\/[\w.-]+\.test\.ts|supabase\/tests\/[\w.-]+\.sql|e2e\/[\w.-]+\.spec\.ts):(\d+)` "([^"]+)"/;
+const EXECUTED_PROOFS = new RegExp(EXECUTED_PROOF.source, "g");
+const proofMapPath = resolve(root, "docs", "SECURITY_CONTRACT_REQUALIFICATION.md");
+
+function proofMap(): string {
+  if (!existsSync(proofMapPath)) throw new Error(`${proofMapPath} is missing — PHASE 10 asks for the executed-proof map`);
+  return readFileSync(proofMapPath, "utf8");
+}
+
+describe("Stage 9 PHASE 10 — every security property has an executed proof", () => {
+  const smokeSpecs = (JSON.parse(readFileSync(resolve(root, "package.json"), "utf8")).scripts["test:e2e:smoke"] as string)
+    .split(/\s+/)
+    .filter((token) => token.startsWith("e2e/"));
+  const propertyRows = existsSync(proofMapPath) ? proofMap().split(/\r?\n/).filter((line) => /^\| \d+ \|/.test(line)) : [];
+
+  it("lists the nine properties, each with at least one executed citation", () => {
+    expect(existsSync(proofMapPath), `${proofMapPath} is missing`).toBe(true);
+    expect(propertyRows.length, "the property table must carry the nine PHASE 10 rows").toBe(9);
+    for (const row of propertyRows) {
+      expect(row, `a property row cites no executed test: ${row.slice(0, 70)}`).toMatch(EXECUTED_PROOF);
+    }
+  });
+
+  it("cites tests that exist, at the line they claim", () => {
+    const drift: string[] = [];
+    for (const [, file, line, title] of proofMap().matchAll(EXECUTED_PROOFS)) {
+      const absolute = resolve(root, file);
+      if (!existsSync(absolute)) {
+        drift.push(`${file} does not exist`);
+        continue;
+      }
+      const hits = readFileSync(absolute, "utf8")
+        .split(/\r?\n/)
+        .map((text, index) => (text.includes(title) ? index + 1 : 0))
+        .filter(Boolean);
+      if (!hits.length) drift.push(`${file} no longer contains "${title}"`);
+      else if (!hits.some((at) => Math.abs(at - Number(line)) <= 5)) drift.push(`${file}: "${title}" is now at ${hits.join(" or ")}, the map claims ${line}`);
+    }
+    expect(drift, `the executed-proof map has drifted:\n${drift.join("\n")}`).toEqual([]);
+  });
+
+  it("cites only proofs a release command executes", () => {
+    const notRun = [...proofMap().matchAll(EXECUTED_PROOFS)]
+      .map(([, file]) => file)
+      .filter((file) =>
+        file.startsWith("tests/")
+          ? !databaseSuites.includes(file)
+          : file.startsWith("e2e/")
+            ? !smokeSpecs.includes(file)
+            : !/^supabase\/tests\/[\w.-]+\.sql$/.test(file),
+      );
+    expect(
+      [...new Set(notRun)],
+      `cited but not executed by \`pnpm test:live\`, \`pnpm test:db\` or \`pnpm test:e2e:smoke\`: ${[...new Set(notRun)].join(", ")}`,
+    ).toEqual([]);
   });
 });

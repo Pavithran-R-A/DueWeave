@@ -133,6 +133,51 @@ describe("ledger search over clients", () => {
   });
 });
 
+// Stage 9 PHASE 11: the search box is a public input, and the only honest answer it can
+// give is a literal one. These are the shapes that make a filter lie — a wildcard that
+// quietly matches the whole ledger, a quote that closes an expression, markup a renderer
+// might act on, a query written in the filter language of the API behind the app, a path
+// traversal, an escape sequence typed as text, an invisible bidi control, and a query
+// long enough to make the page unusable.
+const ABUSE_NEEDLES = ["%", "_", "*?", "%_%", "' OR 1=1--", '"; DROP TABLE receivables;--', "<script>alert(1)</script>", "<img src=x onerror=alert(1)>", "or(id.gt.0)", "id=eq.1", "select(*)", "..\\..\\..\\etc\\passwd", "${client.name}", "\\u0000", "‮moonlight", "x".repeat(10_000)];
+
+function describeNeedle(needle: string) {
+  return needle.length > 28 ? `${needle.slice(0, 28)}… (${needle.length} characters)` : needle;
+}
+
+describe("search abuse strings stay literal filters", () => {
+  const receivables = [makeReceivable("r1", { title: "Moonlight Reel Grade", invoiceRef: "INV-2026-041" }), makeReceivable("r2", { title: "Colour Grading", clientId: "client-a" })];
+
+  it("finds nothing for any of them, rather than matching the whole ledger", () => {
+    for (const needle of ABUSE_NEEDLES) {
+      expect(idsOf(selected(receivables, "all", needle)), `a receivable query of ${describeNeedle(needle)} matched rows`).toEqual([]);
+      expect(idsOf(selectClients(clients, needle)), `a client query of ${describeNeedle(needle)} matched clients`).toEqual([]);
+    }
+  });
+
+  it("never throws, whatever is typed", () => {
+    for (const needle of ABUSE_NEEDLES) {
+      expect(() => selected(receivables, "all", needle), describeNeedle(needle)).not.toThrow();
+      expect(() => selectClients(clients, needle), describeNeedle(needle)).not.toThrow();
+    }
+  });
+
+  // The control that keeps the two assertions above from being vacuous: a ledger row
+  // whose title really does contain `%`, `^`, `*` or `'` has to be found by that query.
+  // Without it, "every abuse string returns nothing" would be equally satisfied by a
+  // filter that had silently stopped working.
+  it("still finds a value that genuinely contains those characters", () => {
+    const odd = [makeReceivable("pct", { title: "100% reel ^grade" }), makeReceivable("quote", { title: "O'Brien *shoot*" })];
+    const oddClients = [makeClient("c-pct", { name: "50% Deposit" }), makeClient("c-script", { name: "<b>Studio</b>" })];
+    expect(idsOf(selected(odd, "all", "%"))).toEqual(["pct"]);
+    expect(idsOf(selected(odd, "all", "^"))).toEqual(["pct"]);
+    expect(idsOf(selected(odd, "all", "*"))).toEqual(["quote"]);
+    expect(idsOf(selected(odd, "all", "'"))).toEqual(["quote"]);
+    expect(idsOf(selectClients(oddClients, "%"))).toEqual(["c-pct"]);
+    expect(idsOf(selectClients(oddClients, "<b>"))).toEqual(["c-script"]);
+  });
+});
+
 describe("tab counts agree with the filters", () => {
   const receivables = [makeReceivable("open-1"), makeReceivable("open-2", { status: "PARTIALLY_PAID", outstandingPaise: 100 }), makeReceivable("paid-1", { status: "PAID", outstandingPaise: 0 }), makeReceivable("paid-2", { status: "OPEN", outstandingPaise: 0 }), makeReceivable("cancelled-zero", { status: "CANCELLED", outstandingPaise: 0 }), makeReceivable("cancelled-balance", { status: "CANCELLED", outstandingPaise: 250 })];
 

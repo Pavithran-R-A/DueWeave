@@ -88,10 +88,21 @@ const rawFailures: Array<{ label: string; error: RawError }> = [
   { label: "expired token", error: { code: "PGRST301", message: "JWSError JWSInvalidSignature" } },
   { label: "network", error: { message: "Failed to fetch" } },
   { label: "internal", error: { code: "XX000", message: 'internal error: null value in column "owner_id" of relation "clients" violates not-null constraint' } },
+  // The three shapes Stage 9 measured itself leaving the database when a malformed
+  // id is submitted through the browser role (tests/stage9-abuse-matrix.test.ts).
+  // They are here because a refusal that never reaches the copy layer cannot be
+  // proven calm: the uuid parse error quotes whatever the caller typed, so it is
+  // the one reply that can carry an attacker's own SQL-ish payload into a toast.
+  { label: "malformed id", error: { code: "22P02", message: 'invalid input syntax for type uuid: "\'); DROP TABLE payments; --"', details: "" } },
+  { label: "unresolvable operator", error: { code: "42883", message: "operator does not exist: uuid ~~ unknown", details: "No operator matches the given name and argument types. You might need to add explicit type casts." } },
+  { label: "missing table privilege", error: { code: "42501", message: "permission denied for table receivables", hint: "Grant the required privileges to the current role with: GRANT INSERT ON public.receivables TO authenticated;" } },
   { label: "unexpected", error: {} },
 ];
 
-const technicalLanguage = /PGRST|SQLSTATE|JWSError|JWT|row-level|not-null|check constraint|unique constraint|violates|relation "|public\.|raise_exception|schema cache|new row|duplicate key|\b2350[45]\b|\b23514\b|\b42501\b|\b40001\b|\bP0002\b|owner_id|request_id/i;
+// Widened for the Stage 9 refusals: `not.toContain(message)` only proves the whole
+// sentence is absent, while a reader is equally leaked to by half of it. A product
+// never says "uuid", "permission denied" or "operator does not exist" to a user.
+const technicalLanguage = /PGRST|SQLSTATE|JWSError|JWT|row-level|not-null|check constraint|unique constraint|violates|relation "|public\.|raise_exception|schema cache|new row|duplicate key|permission denied|operator does not exist|invalid input syntax|uuid|\b2350[45]\b|\b23514\b|\b42501\b|\b40001\b|\bP0002\b|\b22P02\b|\b42883\b|owner_id|request_id/i;
 
 describe("Stage 6 user-facing error copy", () => {
   for (const failure of rawFailures) {

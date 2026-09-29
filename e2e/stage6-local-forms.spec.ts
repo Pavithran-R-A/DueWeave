@@ -183,6 +183,16 @@ test.describe("Stage 6 forms, keyboard and toast lifetime", () => {
     await expect(withdraw).toBeHidden();
     await expect(page.getByRole("button", { name: /Withdraw active promise/ })).toBeHidden();
 
+    // Measured on this build: the withdrawal confirmation rests at [896,108,356,92] and the
+    // first row action scrolls into view at [1173,166,34,34] — inside that band. A click
+    // hit-tests the control's centre, so this one retried for the whole 4.5s success lifetime
+    // (5552ms and 4547ms observed), and once the retrying pointer landed on the toast sonner
+    // paused its dismiss (data-expanded false -> true) and the wait stopped being bounded:
+    // 53 retries and a 120s timeout in the battery. Park the pointer clear of the stack and
+    // let it drain first, which is what the accepted Stage 9 warnings suite already does.
+    await page.mouse.move(0, 0);
+    await expect(toastItems(page)).toHaveCount(0, { timeout: 10_000 });
+
     await page.getByRole("button", { name: "Snooze follow-up" }).first().click();
     const snooze = await openSheet(page, "Snooze follow-up");
     await snooze.getByLabel("Bring this back on").fill("2020-01-01");

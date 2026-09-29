@@ -102,7 +102,13 @@ describeLocalStack("Stage 2 local foundation: auth, profile, and data contracts"
     expect(error!.message).toMatch(/positive receivable amount/i);
   });
 
-  it("rejects a direct negative-paise receivable write from the browser", async () => {
+  it("refuses the browser role a direct receivable write at all, so no negative amount can reach the table", async () => {
+    // Measured, and the wording matters. This probe was written when the browser role
+    // could insert into `receivables` and the amount CHECK was what stopped it; Stage
+    // 3's privilege hardening took the table away first, so the refusal this test now
+    // observes is SQLSTATE 42501, not the constraint. The amount rule is still proven —
+    // one test above, through the RPC the product actually uses — and claiming it twice
+    // from a path that never reaches it would let the CHECK rot unnoticed.
     const { error } = await fixture.client!.from("receivables").insert({
       owner_id: fixture.userId!,
       client_id: fixture.clientId!,
@@ -112,6 +118,13 @@ describeLocalStack("Stage 2 local foundation: auth, profile, and data contracts"
       due_date: "2026-09-30",
     });
     expect(error).not.toBeNull();
+    // 42501 rather than a check-violation code (23514) is the whole point: it says the
+    // write died at the privilege wall and the amount was never looked at. That refusal
+    // carries a hint meaning an operator should GRANT the table back; the reader never
+    // sees it because repositories drop `hint` — tests/stage6-error-copy.test.ts pins
+    // that drop against this exact sentence, so it is asserted here only as a code.
+    expect(error!.code, "the browser role must be refused by privilege, not by a value rule").toBe("42501");
+    expect(error!.message).toMatch(/permission denied for table/i);
     const { count } = await fixture
       .client!.from("receivables")
       .select("*", { count: "exact", head: true })

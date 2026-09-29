@@ -300,4 +300,34 @@ test.describe("Stage 6 password recovery and sign-out", () => {
     await expect(page.locator("body")).not.toContainText(clientName);
     await expect(page.locator("body")).not.toContainText(receivableLabel);
   });
+
+  test("returns a browser whose stored session was removed to the gateway, not an error screen", async ({ page }) => {
+    test.slow();
+    const account = newAccount("lost-session");
+    await signUp(page, account);
+    await expect(page.getByLabel("Primary navigation")).toBeVisible();
+
+    // This is what an expired session looks like to the client: the storage keeps its
+    // shape, but the token the SDK would present is gone. e2e/auth-lifecycle-limits.spec.ts
+    // has always performed exactly this attack and has always been gated on hosted
+    // credentials, so no release gate ever ran it; the behaviour belongs to the local
+    // stack, so it lives here now.
+    await page.evaluate(() => {
+      for (const key of Object.keys(window.localStorage)) {
+        if (key.startsWith("sb-") && key.endsWith("-auth-token")) window.localStorage.removeItem(key);
+      }
+    });
+    await page.reload();
+
+    await expect(page).toHaveURL(/\/auth$/, { timeout: 20_000 });
+    await expect(page.getByRole("heading", { name: "Your follow-ups, in one calm place." })).toBeVisible();
+    await expect(page.locator("body")).not.toContainText(/PGRST|SQLSTATE|postgrest|gotrue|constraint|policy/i);
+
+    // The account itself is untouched — only this browser lost its session.
+    await page.getByLabel("Email address").fill(account.email);
+    await page.getByLabel("Password").fill(account.password);
+    await page.getByRole("button", { name: "Sign in", exact: true }).click();
+    await expect(page).toHaveURL(/\/$/, { timeout: 20_000 });
+    await expect(page.getByLabel("Primary navigation")).toBeVisible();
+  });
 });

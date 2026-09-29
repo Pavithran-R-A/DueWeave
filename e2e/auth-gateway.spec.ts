@@ -27,11 +27,3 @@ test.describe("DueWeave protected authentication gateway", () => {
     await expect(page.getByText("If that email belongs to a DueWeave account, a reset link is on its way.")).toBeVisible();
   });
 });
-
-test.describe("controlled authenticated ledger workflow", () => {
-  test.skip(
-    "requires a locally supplied confirmed Supabase QA account",
-    "The full signup/login, CRUD, payment, persistence, and free-plan journey is deliberately not executed without E2E_EMAIL and E2E_PASSWORD supplied through a local ignored environment. Supabase email confirmation remains enabled.",
-    async () => {},
-  );
-});

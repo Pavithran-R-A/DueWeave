@@ -323,4 +323,31 @@ test.describe("Stage 6 targeted accessibility qualification", () => {
     await page.keyboard.press("Escape");
     await expect(sheet).toBeHidden();
   });
+
+  test("still marks the keyboard stop when the browser asks for reduced motion", async ({ page }) => {
+    // The only accessibility behaviour that existed solely in a suite no gate ever ran:
+    // e2e/accessibility-smoke.spec.ts is gated on a hosted E2E_EMAIL/E2E_PASSWORD pair,
+    // so its reduced-motion walk has been reporting "skipped" for every stage of this
+    // roadmap. PHASE 14 asks Stage 9 to retain the accepted Stage 6 coverage, and a
+    // retained claim cannot rest on a test that always skips — so the walk now runs
+    // against the local stack, in the suite CI already executes.
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto("/auth");
+    const emailInput = page.getByLabel("Email address");
+    await emailInput.focus();
+    await expect(emailInput).toBeFocused();
+    await expect.poll(() => emailInput.evaluate((element) => getComputedStyle(element).boxShadow)).not.toBe("none");
+    await expect
+      .poll(() => page.evaluate(() => Number.parseFloat(getComputedStyle(document.body).transitionDuration) * 1000))
+      .toBeLessThanOrEqual(0.001);
+
+    await signIn(page);
+    await expect
+      .poll(() => page.evaluate(() => Number.parseFloat(getComputedStyle(document.body).transitionDuration) * 1000))
+      .toBeLessThanOrEqual(0.001);
+    const action = page.locator(".page-header__actions button.button-primary").first();
+    await action.focus();
+    await expect(action).toBeFocused();
+    await expect.poll(() => action.evaluate((element) => getComputedStyle(element).boxShadow)).not.toBe("none");
+  });
 });

@@ -42,6 +42,26 @@ function newAccount(role: "owner" | "stranger"): Account {
   };
 }
 
+// A write's confirmation toast is how this suite learns the database accepted it. The default
+// 5s expect was measured failing on a healthy local stack: across eight two-tab samples the
+// `update_client` RPC itself answered in 101-160ms every single time, while click -> toast
+// ranged from 765ms to 14.4s. Instrumenting request-start times placed the gap between the
+// resolved mutation and the render, not in Postgres or PostgREST, and peak same-origin
+// in-flight requests stayed at 5, so the write was never queued behind a read burst. 30s is
+// about twice the worst observation and still inside every budget in this file, so a write
+// that genuinely never settles is still distinguishable from this machine's jitter. The add
+// flows below get the same budget: same shape (one mutation, one toast, five refresh reads).
+const writeConfirmed = { timeout: 30_000 };
+
+// Worker setup is once per suite and does the whole sign-up journey, so it is budgeted where
+// it is actually spent. `test.describe.configure({ timeout })` cannot reach a `beforeAll`:
+// proven twice on this branch — the battery reported `"beforeAll" hook timeout of 30000ms
+// exceeded` with a 60s describe configured, and a probe hook that called
+// `test.setTimeout(2_000)` then slept reported `"beforeAll" hook timeout of 2000ms exceeded`.
+// Isolated setup measured 5.8-7.1s; in-battery it overran 30s. 90s is deliberate headroom for
+// a setup step that masks nothing — if it cannot finish, the suite reports failure either way.
+const workspaceSetup = 90_000;
+
 async function signUp(page: Page, account: Account) {
   await page.goto("/auth");
   await page.getByRole("button", { name: "Create an account" }).click();
@@ -80,7 +100,7 @@ async function addClientThroughUi(page: Page, account: Account) {
   await page.getByLabel("Email").fill(`ap${account.token}@stage4.example`);
   await page.getByLabel("Note").fill("Opened through the Stage 4 browser journey.");
   await page.getByRole("button", { name: "Save client" }).click();
-  await expect(page.getByText("Client added", { exact: true })).toBeVisible();
+  await expect(page.getByText("Client added", { exact: true })).toBeVisible(writeConfirmed);
 }
 
 async function addReceivableThroughUi(page: Page, account: Account) {
@@ -93,7 +113,7 @@ async function addReceivableThroughUi(page: Page, account: Account) {
   await page.getByLabel("What is this for?").fill(account.receivableLabel);
   await page.getByLabel("Invoice or reference").fill(`S4E-${account.token.slice(0, 6)}`);
   await page.getByRole("button", { name: "Save receivable" }).click();
-  await expect(page.getByText("Receivable added", { exact: true })).toBeVisible();
+  await expect(page.getByText("Receivable added", { exact: true })).toBeVisible(writeConfirmed);
 }
 
 async function openSection(page: Page, section: "Today" | "Clients") {
@@ -110,7 +130,7 @@ async function editClientThroughUi(page: Page, account: Account) {
   await sheet.getByLabel("Company").fill("Stage4 Studio revised");
   await sheet.getByLabel("Note").fill("Renamed through the browser, then reloaded.");
   await page.getByRole("button", { name: "Save changes" }).click();
-  await expect(page.getByText("Client updated", { exact: true })).toBeVisible();
+  await expect(page.getByText("Client updated", { exact: true })).toBeVisible(writeConfirmed);
 }
 
 async function editReceivableThroughUi(page: Page, account: Account) {
@@ -121,7 +141,7 @@ async function editReceivableThroughUi(page: Page, account: Account) {
   await sheet.getByLabel("What is this for?").fill(account.editedLabel);
   await sheet.getByLabel("Note").fill("Reference corrected after the client asked for it.");
   await page.getByRole("button", { name: "Save details" }).click();
-  await expect(page.getByText("Details updated", { exact: true })).toBeVisible();
+  await expect(page.getByText("Details updated", { exact: true })).toBeVisible(writeConfirmed);
 }
 
 function ledgerCard(page: Page) {
@@ -141,6 +161,7 @@ test.describe("Stage 4 persistence and safe editing in a real browser", () => {
   let page: Page;
 
   test.beforeAll(async ({ browser }) => {
+    test.setTimeout(workspaceSetup);
     context = await browser.newContext();
     page = await context.newPage();
     await signUp(page, owner);
@@ -222,6 +243,10 @@ test.describe("Stage 4 persistence and safe editing in a real browser", () => {
   });
 
   test("a second account never sees the edit surface or the edited names", async () => {
+    // This test signs a whole second workspace up through the form, so it carries the
+    // setup budget the suite's 30s global could not hold: measured 32.2s under battery load
+    // against 5.8-7.1s in isolation.
+    test.setTimeout(workspaceSetup);
     const other = await context.browser()!.newContext();
     const otherPage = await other.newPage();
     await signUp(otherPage, stranger);
@@ -237,6 +262,22 @@ test.describe("Stage 4 persistence and safe editing in a real browser", () => {
 
 test.describe("Stage 4 concurrent edits through the real screens", () => {
   test.skip(!localStackEnabled, "Set STAGE4_LOCAL_E2E=1 to run against the local Supabase stack.");
+  // Stated rather than inherited, and measured twice: these two tests reload four
+  // times across two tabs of one browser context, and they came in at 9.9s then 28.3s
+  // and 6.3s then 16.2s on the same machine with nothing else running. The 30s global
+  // was therefore a coin toss once the battery put Stage 5's suites in front of them on
+  // the same worker. The retry count stays at zero, because a timeout that clears on a
+  // second attempt would hide exactly the stall this suite is here to catch.
+  //
+  // This 60s covers the test bodies only. It provably never reached the setup below:
+  // the battery killed this suite with `"beforeAll" hook timeout of 30000ms exceeded`,
+  // because Playwright arms every `beforeAll` with `project.timeout`
+  // (playwright@1.62.1 workerProcessEntry.js:1759, `const timeSlot = { timeout:
+  // this._project.project.timeout, elapsed: 0 }`). A previous revision of this comment
+  // claimed the raise made the run "answer a question instead of timing out"; it did not,
+  // and the claim is corrected here rather than repeated. The hook gets its own budget via
+  // `test.setTimeout` inside its body, which the same source line shows is what arms a hook.
+  test.describe.configure({ timeout: 60_000 });
 
   const account = newAccount("owner");
   let context: BrowserContext;
@@ -244,6 +285,7 @@ test.describe("Stage 4 concurrent edits through the real screens", () => {
   let second: Page;
 
   test.beforeAll(async ({ browser }) => {
+    test.setTimeout(workspaceSetup);
     context = await browser.newContext();
     first = await context.newPage();
     await signUp(first, account);
@@ -267,7 +309,7 @@ test.describe("Stage 4 concurrent edits through the real screens", () => {
     await first.getByRole("button", { name: /Edit client/ }).click();
     await first.getByRole("dialog", { name: "Edit client" }).getByLabel("Client name").fill(`${account.clientName} (tab one)`);
     await first.getByRole("button", { name: "Save changes" }).click();
-    await expect(first.getByText("Client updated", { exact: true })).toBeVisible();
+    await expect(first.getByText("Client updated", { exact: true })).toBeVisible(writeConfirmed);
 
     await second.getByRole("button", { name: /Edit client/ }).click();
     const sheet = second.getByRole("dialog", { name: "Edit client" });
@@ -294,7 +336,7 @@ test.describe("Stage 4 concurrent edits through the real screens", () => {
     await second.getByRole("button", { name: /Edit client/ }).click();
     await second.getByRole("dialog", { name: "Edit client" }).getByLabel("Client name").fill(`${account.clientName} settled`);
     await second.getByRole("button", { name: "Save changes" }).click();
-    await expect(second.getByText("Client updated", { exact: true })).toBeVisible();
+    await expect(second.getByText("Client updated", { exact: true })).toBeVisible(writeConfirmed);
 
     await second.reload();
     await openSection(second, "Clients");

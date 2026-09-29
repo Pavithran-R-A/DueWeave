@@ -43,3 +43,19 @@ export function problemsFound(watch: ProblemWatch, expectedFailures?: RegExp): s
   const unexpected = (entries: string[]) => (expectedFailures ? entries.filter((entry) => !expectedFailures.test(entry)) : entries);
   return [...unexpected(watch.consoleErrors), ...watch.pageErrors, ...unexpected(watch.unansweredRequests)];
 }
+
+/**
+ * The same reading as `problemsFound`, plus the forgetting. A multi-step journey
+ * runs on one signed-in page because the narrative is the point, and Playwright
+ * hands each test a fresh page fixture that the journey deliberately does not use —
+ * so one watcher spans every step and the failure has to say which step broke.
+ * Draining after each assertion keeps that attribution without detaching the
+ * listeners, which a re-attached watcher would silently double-count.
+ */
+export function drainProblems(watch: ProblemWatch, expectedFailures?: RegExp): string[] {
+  const found = problemsFound(watch, expectedFailures);
+  watch.consoleErrors.length = 0;
+  watch.pageErrors.length = 0;
+  watch.unansweredRequests.length = 0;
+  return found;
+}
