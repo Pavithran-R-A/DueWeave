@@ -16,9 +16,9 @@ this file claims hosted verification. Where a number could not be measured, it s
 | Field | Value |
 | --- | --- |
 | STARTING SHA | `ccc44382…` (`ccc4438`, the accepted Stage 8 head "fix: align Founder readiness at every boundary") |
-| ENDING SHA | Executable head `c682827eedc71f873ba523fd14c27f1ee81538f1`. This report and two documentation corrections are delivered by one forward docs-only commit after it, whose SHA cannot be self-referential inside its own diff; it is quoted in the delivery response and by `git ls-remote origin refs/heads/current-stage-9-security-ci`. |
+| ENDING SHA | Executable head `c682827eedc71f873ba523fd14c27f1ee81538f1` — no file CI would run changes after it. The documentation surface landed as `99c120f528a86af2f46b9e42cbbfc30fd6b5bdd5` (nine docs paths, 1519 insertions / 36 deletions), and one further forward docs-only commit corrects this file's CI section with the run that head itself produced. A commit cannot quote its own SHA, so the branch head is authoritative by `git ls-remote origin refs/heads/current-stage-9-security-ci`, which was verified after each push. |
 | BRANCH | `current-stage-9-security-ci` (pushed to `origin`, tracking set, `main` untouched) |
-| Commit chain | `ccc4438` → `cbd423d` *ci: qualify DueWeave release candidate* → `c682827` *test: consolidate release security gates* → closing docs commit |
+| Commit chain | `ccc4438` → `cbd423d` *ci: qualify DueWeave release candidate* → `c682827` *test: consolidate release security gates* → `99c120f` *docs: close Stage 9 security qualification* → final docs correction |
 | Forward-only | No amend, no rebase, no force-push, no rewrite of `ccc4438` or any earlier commit. Verified with `git reflog` and `git log --oneline -4`. |
 | Migration policy | Forward-only. **Zero** migration files added, edited or deleted by Stage 9 (`git diff ccc4438 HEAD -- supabase/migrations` is empty) — the schema this stage qualified is the schema Stage 8 delivered. |
 | Generated types | `client/src/types/database.generated.ts` unchanged in content versus `ccc4438` (`git diff --numstat` empty; the `M` flag on this host is the `core.autocrlf=true` phantom, and `scripts/verify-types-drift.mjs` normalises CRLF so line endings cannot fake a drift). |
@@ -29,10 +29,10 @@ this file claims hosted verification. Where a number could not be measured, it s
 | --- | --- |
 | CI DESIGN | Three jobs with unique, human-meaningful check names, each a different environment class, so that a required-status-check rule can name them individually and a job that omits a gate cannot present itself as a job that ran it. `browser` depends on `static` and `database`; the workflow is secret-free by design (it receives no Supabase credentials, no privileged key, no payment credential). The database and browser jobs replay the **committed** migrations onto a disposable loopback Supabase started by a composite action rather than trusting a recorded schema. |
 | CI WORKFLOW FILES | `.github/workflows/ci.yml` (154 lines changed, 129 added / 25 removed); `.github/actions/setup-toolchain/action.yml` (new, 23 lines); `.github/actions/local-supabase/action.yml` (new, 34 lines). No other workflow file exists in the repository. `main` carries **no** CI workflow at all (`git show main:.github/workflows/ci.yml` → "path exists on disk, but not in 'main'"), so the workflow ships *with* this branch. |
-| CI RUN IDS | `36533797727` (this stage, `event: push`, workflow `CI`, attempt 1). Compared against history: `36062418596` (2026-09-24, `pull_request`, head `1bb2f38`) and the last run that executed anything, `31825803438` (2026-08-14T17:49:47Z, head `6d99651`, `success`). |
-| CI HEAD SHA | `c682827eedc71f873ba523fd14c27f1ee81538f1` — read back from the remote, not from local state: `git ls-remote origin refs/heads/current-stage-9-security-ci` returned the same value the API reports as the run's `head_sha`. |
+| CI RUN IDS | `36533797727` (`event: push`, workflow `CI`, attempt 1, head `c682827…`, created 06:57:00Z) and `36535054827` (`event: push`, workflow `CI`, attempt 1, head `99c120f…`, created 07:10:11Z) — one run per pushed head, both observed to completion. Compared against history: `36062418596` (2026-09-24, `pull_request`, head `1bb2f38`) and the last run that executed anything, `31825803438` (2026-08-14T17:49:47Z, head `6d99651`, `success`). |
+| CI HEAD SHA | `c682827eedc71f873ba523fd14c27f1ee81538f1` for the first run — read back from the remote, not from local state: `git ls-remote origin refs/heads/current-stage-9-security-ci` returned the same value the API reports as that run's `head_sha`. The docs-closure head `99c120f528a86af2f46b9e42cbbfc30fd6b5bdd5` is the branch head now, verified the same way. **This file cannot carry the CI result of its own final SHA**: delivering that result would need another commit, which moves the head again. The operator reads the current head's run with `gh api repos/Pavithran-R-A/project-ar1/actions/runs?per_page=1`; the two most recent heads are recorded below and were identical in shape. |
 | CI JOBS | `Static verification` (`static`), `Database contracts` (`database`), `Browser release smoke` (`browser`). |
-| CI RESULTS | `Static verification` **failure** (06:57:00Z→06:57:02Z), `Database contracts` **failure** (06:57:00Z→06:57:02Z), `Browser release smoke` **skipped** (06:57:03Z). No job executed a single step. |
+| CI RESULTS | Run `36533797727`: `Static verification` **failure** (06:57:00Z→06:57:02Z), `Database contracts` **failure** (06:57:00Z→06:57:02Z), `Browser release smoke` **skipped** (06:57:03Z). Run `36535054827`: `Static verification` **failure** and `Database contracts` **failure** (both 07:10:12Z→07:10:14Z, `runner_id: 0`, `steps: []`), `Browser release smoke` **skipped** (07:10:14Z). No job of either run executed a single step. |
 
 ### Why the run failed — GitHub's own words, measured
 
@@ -45,6 +45,16 @@ this file claims hosted verification. Where a number could not be measured, it s
 
 `GET …/actions/jobs/109293164919/logs` → `404 BlobNotFound`: no log blob exists, which is
 consistent with a job that never started rather than a job whose log expired.
+
+The docs-closure head reproduced it exactly. For run `36535054827`, jobs `109297080816`
+(`Database contracts`) and `109297081054` (`Static verification`) each carry `runner_id: 0`,
+`steps: []` and this annotation, byte-identical to the earlier one:
+
+> The job was not started because recent account payments have failed or your spending limit
+> needs to be increased. Please check the 'Billing & plans' section in your settings
+
+So the refusal is stable across two heads five minutes apart and is not a transient allocation
+failure, and neither result is a signal about this repository's contents.
 
 The same annotation, and the same `runner_id: 0` / `steps: []` shape, is on run `36062418596`
 from 2026-09-24 — which means the sentence this report's draft docs previously drew from that run

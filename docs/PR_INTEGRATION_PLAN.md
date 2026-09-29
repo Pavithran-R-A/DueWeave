@@ -11,11 +11,11 @@ after Stage 9 closes.
 | --- | --- | --- |
 | Base branch | `git ls-remote origin refs/heads/main` | `58f0cc76ca560bdac08bdbd19e237aa4a413686b` |
 | Candidate branch | `git branch --show-current` | `current-stage-9-security-ci`, expected start `ccc44382…` (the accepted Stage 8 head) |
-| Candidate on remote | `git ls-remote origin refs/heads/current-stage-9-security-ci` | no ref — **not pushed at measurement time** |
-| merge-base | `git merge-base main HEAD` | `58f0cc76…` — equal to `main`, so `main` has not moved since the fork point |
-| Commits | `git rev-list --left-right --count main...HEAD` | `0  40` → 40 ahead, **0 behind** |
-| Files | `git diff --shortstat $(git merge-base main HEAD) HEAD` | 236 files changed, 37141 insertions(+), 12933 deletions(-) |
-| Stage 9 work in progress | `git status --porcelain` | 14 modified + 23 untracked paths, not yet in the 236 |
+| Candidate on remote | `git ls-remote origin refs/heads/current-stage-9-security-ci` | no ref at the 2026-09-29 opening measurement; **now pushed** — re-measured at delivery, `99c120f528a86af2f46b9e42cbbfc30fd6b5bdd5` |
+| merge-base | `git merge-base main HEAD` | `58f0cc76…` — equal to `main`, so `main` has not moved since the fork point. Re-confirmed at delivery: `main` still `58f0cc76ca560bdac08bdbd19e237aa4a413686b`. |
+| Commits | `git rev-list --left-right --count main...HEAD` | `0  40` → 40 ahead, **0 behind** at the opening measurement; `0  43` at delivery (the three Stage 9 delivery commits). Still **0 behind**, so the one-directional-diff conclusion below still holds. |
+| Files | `git diff --shortstat $(git merge-base main HEAD) HEAD` | 236 files changed, 37141 insertions(+), 12933 deletions(-) at the opening measurement; **263 files changed, 41818 insertions(+), 12934 deletions(-)** at delivery. |
+| Stage 9 work in progress | `git status --porcelain` | 14 modified + 23 untracked paths, not yet in the 236 at the opening measurement. Delivered by the three forward commits; the only path still flagged at delivery is `client/src/types/database.generated.ts`, whose `M` is the `core.autocrlf=true` phantom (`git diff --numstat` empty) and which is deliberately not committed. |
 | Repository | `gh api repos/…project-ar1 --jq .private` | `true` (private), `owner.type = User` |
 
 ## Conflict risk
@@ -63,7 +63,8 @@ operator must sequence around:
 - Re-taken across the whole run history, the same measurement gives a sharper picture: the last
   run that executed anything is `31825803438` (`stage-4-2-operator-readiness`, `6d99651`,
   2026-08-14T17:49:47Z, `success`, `runner_id = 1000000214`, 14 steps). Every run after that —
-  `36062418596` on 2026-09-24 and Stage 9's own `36533797727` on 2026-09-29 — has
+  `36062418596` on 2026-09-24 and Stage 9's own `36533797727` (head `c682827`) and
+  `36535054827` (head `99c120f`), both on 2026-09-29 — has
   `runner_id = 0`, zero steps, and the identical billing annotation. **Actions has not allocated
   a runner to this repository since 2026-08-14, and the blocker is account-level, not
   code-level.** `gh api repos/…/actions/permissions` still answers `enabled: true`,
