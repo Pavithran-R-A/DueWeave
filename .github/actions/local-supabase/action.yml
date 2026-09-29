@@ -23,9 +23,17 @@ runs:
       shell: bash
       run: pnpm supabase stop --no-backup >/dev/null 2>&1 || true
 
+    # D-S9-7: the CLI prints the privileged key it just generated for this stack, and on a
+    # persistent runner a step's stdout is the job log the platform retains — run
+    # 36555102272's database and browser logs each carried one `sb_secret_…` value. The filter
+    # masks credential-shaped output and keeps the URLs, ports and browser-safe keys an operator
+    # needs to see why a stack did not start. `pipefail` is load-bearing: `bash -e` alone reads
+    # the filter's exit code, so a stack that failed to start would still mark the step green.
     - name: Start the local Supabase stack
       shell: bash
-      run: pnpm supabase:start
+      run: |
+        set -o pipefail
+        pnpm supabase:start 2>&1 | node scripts/redact-cli-secrets.mjs
 
     - name: Write the browser-safe local configuration
       shell: bash
