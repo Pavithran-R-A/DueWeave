@@ -30,6 +30,22 @@ const serviceRoleToken = signedToken("service_role", "a");
 const anonToken = signedToken("anon", "b");
 const databaseUrl = ["postgres://postgres:", "LocalStackDbPassword", "@127.0.0.1:54322/postgres"].join("");
 
+// D-S9-11: the same banner carries a second, unredacted credential pair. Runs 27 and 28 each show
+// the CLI's `📦 Storage (S3)` table in the retained `database` and `browser` job logs with its
+// `Access Key` (32 hex) and `Secret Key` (64 hex) printed literally, two lines below the
+// `[redacted-sb-secret-key-41-chars]` marker this filter is responsible for. `verify-secrets.mjs`
+// cannot be the oracle for it — a bare hex literal has no shape there by design, because one would
+// flag every commit hash in every log — so this fixture asserts the values are gone directly.
+const s3AccessKey = ["a1b2c3d4", "e5f60718", "293a4b5c", "6d7e8f01"].join("");
+const s3SecretKey = ["f0e1d2c3", "b4a59687", "78695a4b", "3c2d1e0f"].join("").repeat(2);
+const storageBanner = [
+  "│ 📦 Storage (S3) │",
+  "│ URL        │ http://127.0.0.1:54321/storage/v1/s3 │",
+  `│ Access Key │ ${s3AccessKey}                                 │`,
+  `│ Secret Key │ ${s3SecretKey} │`,
+  "│ Region     │ local                                       │",
+].join("\n");
+
 // The lines the run-18 logs actually showed, in the shape they arrive in.
 const banner = [
   "│ 🔑 API URL      │ http://127.0.0.1:54321/rest/v1 │",
@@ -87,6 +103,25 @@ describe("CI log credential redaction", () => {
     }
     // The host and port of the database line are the diagnosis; only the credential goes.
     expect(output).toContain("127.0.0.1:54322/postgres");
+  });
+
+  // D-S9-11: the Storage (S3) rows arrive in the same stream as the privileged key, and a default
+  // pair is still a credential-shaped literal in a log anyone the repository gives Actions access
+  // to reads. The labels, the endpoint and the region are what diagnose a storage failure, so they
+  // stay and the two values go.
+  it("masks the storage S3 credential pair the CLI prints beside the privileged key", () => {
+    expect(s3AccessKey).toHaveLength(32);
+    expect(s3SecretKey).toHaveLength(64);
+
+    const output = redact(storageBanner);
+    expect(output, "the storage access key reached the job log").not.toContain(s3AccessKey);
+    expect(output, "the storage secret key reached the job log").not.toContain(s3SecretKey);
+    expect(output).toContain("[redacted-storage-access-key-32-chars]");
+    expect(output).toContain("[redacted-storage-secret-key-64-chars]");
+    expect(output).toMatch(/Access Key\s+│/);
+    expect(output).toMatch(/Secret Key\s+│/);
+    expect(output).toContain("http://127.0.0.1:54321/storage/v1/s3");
+    expect(output).toContain("Region");
   });
 
   it("runs the stack start through the filter without losing its exit code", () => {

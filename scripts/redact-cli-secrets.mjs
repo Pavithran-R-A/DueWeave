@@ -28,6 +28,16 @@ function mask(label, matched) {
 
 const rules = [
   (line) => line.replace(/\b(?:sb_secret|SB_SECRET|sb_service_role|SB_SERVICE_ROLE)_[A-Za-z0-9_-]{16,}/g, (m) => mask("sb-secret-key", m)),
+  // D-S9-11: the CLI's `📦 Storage (S3)` table prints this stack's S3 access/secret pair two rows
+  // below the privileged key. They are local-stack defaults rather than anything this project
+  // trusts with real data, but they arrive in the same retained log, and nothing about diagnosing
+  // storage needs them — the endpoint, the region and the row labels all stay.
+  (line) =>
+    line.replace(
+      /(\b(?:Access|Secret) Key\b)([^\S\n]*[│|]?[^\S\n]*)([0-9a-fA-F]{16,})/gi,
+      (match, label, separator, value) =>
+        `${label}${separator}${mask(`storage-${label.toLowerCase().split(/\s+/)[0]}-key`, value)}`,
+    ),
   // The credential part only: `postgres://[redacted-db-password]@127.0.0.1:54322/postgres`
   // still tells an operator which host and port the stack took, which is the diagnosis.
   (line) =>
