@@ -402,6 +402,9 @@ test.describe("Stage 8 local Founder reviewer journey", () => {
     await expect(toastTitle(page, "Your Free plan limit is reached.")).toBeVisible();
     expect(activeReceivableCount(buyer.email), "a sixth receivable was stored against a revoked account").toBe(5);
 
+    // The refusal toast overlaps this button, and sonner holds a toast open while the pointer is
+    // on it — which is exactly what Playwright's actionability hover does. D-S9-9.
+    await clearToasts(page);
     await page.locator(".founder-limit-callout").getByRole("button", { name: /View Founder access/ }).click();
     await expect(page.getByText("Founder Lifetime is active")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Start payment claim" })).toHaveCount(0);

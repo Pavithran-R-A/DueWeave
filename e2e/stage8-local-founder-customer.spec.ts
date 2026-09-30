@@ -169,6 +169,9 @@ test.describe("Stage 8 local Founder customer journey", () => {
     // The refusal names itself in product language, not as a database error.
     await expect(page.getByRole("region", { name: /Notifications/ })).not.toContainText(/PGRST|SQLSTATE|constraint|policy|row-level/i);
 
+    // The refusal toast overlaps this button, and sonner holds a toast open while the pointer is
+    // on it — which is exactly what Playwright's actionability hover does. D-S9-9.
+    await clearToasts(page);
     await callout.getByRole("button", { name: /View Founder access/ }).click();
     await expect(page).toHaveURL(/\/founder$/);
     await expectNoWayToPay(page);
