@@ -108,7 +108,7 @@ model as it was measured on the running database.
 pnpm lint      # ESLint 10 flat config, --max-warnings=0
 pnpm check     # tsc --noEmit
 pnpm build     # the bundle the browser half and the bundle contracts both read
-pnpm test:unit # 25 files / 368 tests (24 / 363 as executed by CI runs 18–19): money and date
+pnpm test:unit # 25 files / 368 tests (CI runs 20–21 print exactly 25 / 368; runs 18–19 printed 24 / 363): money and date
                # helpers, domain rules, repository+adapter
                # contracts, and the boundary contracts (no demo import, no privileged
                # credential in source or in dist/, production module graph, gate manifests,
@@ -173,9 +173,11 @@ tracked file, so the `verify:secrets` gate could otherwise never see it.
 
 The three jobs run on `[self-hosted, linux, x64, dueweave-ci]`, which today means
 `dueweave-local-ci` — a repository-scoped runner on a WSL2 Ubuntu workstation, with budgets of
-25/40/45 minutes. Measured on 2026-09-29, runs `36555102272` (head `ec868e8`) and `36560985637`
-(head `f4bcc61`) each passed all three jobs there (1 m 32 s / 7 m 18 s / 18 m 07 s and 2 m 07 s /
-6 m 52 s / 17 m 47 s, `retries: 0`, zero hosted minutes consumed). Two properties
+25/40/45 minutes. Measured on 2026-09-29, runs `36555102272` (head `ec868e8`), `36560985637`
+(head `f4bcc61`) and `36569878819` (head `f03fd0d`, the head that carries the log redactor) each
+passed all three jobs there (1 m 32 s / 7 m 18 s / 18 m 07 s, then 2 m 07 s / 6 m 52 s / 17 m 47 s,
+then 2 m 05 s / 6 m 01 s / 18 m 00 s for `static` / `database` / `browser`, all `retries: 0`, zero
+hosted minutes consumed). Two properties
 follow from that choice and both are deliberate: GitHub's hosted runner refusal on this account stops
 blocking the gates, and a green check now depends on that machine being online, so
 `.github/actions/release-local-ci-state` releases only this repository's stack and only preview
