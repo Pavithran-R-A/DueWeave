@@ -108,11 +108,11 @@ model as it was measured on the running database.
 pnpm lint      # ESLint 10 flat config, --max-warnings=0
 pnpm check     # tsc --noEmit
 pnpm build     # the bundle the browser half and the bundle contracts both read
-pnpm test:unit # 25 files / 368 tests (CI runs 20–21 print exactly 25 / 368; runs 18–19 printed 24 / 363): money and date
+pnpm test:unit # 26 files / 371 tests on this tree (CI runs 20–21 printed exactly 25 / 368; runs 18–19 printed 24 / 363): money and date
                # helpers, domain rules, repository+adapter
                # contracts, and the boundary contracts (no demo import, no privileged
                # credential in source or in dist/, production module graph, gate manifests,
-               # CI job-log credential redaction)
+               # CI job-log credential redaction, release-journey toast occlusion)
 pnpm verify:secrets                     # 11 secret shapes over the tracked tree and dist/
 pnpm audit --prod --audit-level=high    # runtime dependency graph
 ```
