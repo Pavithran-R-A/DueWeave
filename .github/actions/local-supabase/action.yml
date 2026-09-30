@@ -41,10 +41,20 @@ runs:
 
     # The suites assert against the schema the committed migrations produce, not whatever
     # a half-finished database happens to hold, so the stack is replayed from zero.
+    # D-S9-10: runs 23 and 24 both died inside this replay with only `error running
+    # container: exit 1` retained, followed by the CLI's own instruction — "Try rerunning
+    # the command with --debug to troubleshoot the error." The one-shot container's trace
+    # exists only under `--debug`, so a red run left no cause in any artefact. `--debug` is
+    # pnpm-forwarded to the same `supabase db reset --local --yes` (proved against the
+    # pinned CLI), so the gate is the command it was always meant to be; the pipe keeps
+    # D-S9-7's masking in front of the platform's log, and `pipefail` keeps a failed replay
+    # red.
     - name: Replay every committed migration
       if: ${{ inputs.reset == 'true' }}
       shell: bash
-      run: pnpm db:reset:local
+      run: |
+        set -o pipefail
+        pnpm db:reset:local --debug 2>&1 | node scripts/redact-cli-secrets.mjs
 
     - name: Confirm the stack is the loopback stack this stage qualifies against
       shell: bash

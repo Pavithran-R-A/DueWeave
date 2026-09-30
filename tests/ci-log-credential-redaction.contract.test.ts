@@ -105,4 +105,25 @@ describe("CI log credential redaction", () => {
     // suites against nothing.
     expect(start[0], "redaction must not turn a failed stack start into a green step").toMatch(/set -o pipefail/);
   });
+
+  // D-S9-10: the replay step is the second CLI invocation in this action, and the one runs 23 and
+  // 24 died in. It now runs with the CLI's own `--debug`, which multiplies the lines that reach a
+  // retained log, so the same three properties are pinned for it too instead of for one step.
+  it("runs the migration replay through the same filter without losing its exit code", () => {
+    const steps = readFileSync(actionPath, "utf8").split(/\n(?= {4}- name:)/);
+    // Selected by its own step name, because a `run:` written on one line has no indented command
+    // line for a shape regex to find — the whole point is that this block reaches the log.
+    const replay = steps.find((step) => step.startsWith("    - name: Replay every committed migration"));
+    expect(replay, "the local-supabase action no longer replays the migrations in its own step").toBeDefined();
+    expect(replay, "the replay step must still run the committed-migration replay itself").toContain(
+      "pnpm db:reset:local",
+    );
+    expect(replay, "the migration replay step reaches the job log unredacted").toContain(
+      "scripts/redact-cli-secrets.mjs",
+    );
+    expect(replay, "both CLI streams have to pass the filter, not just stdout").toContain("2>&1");
+    expect(replay, "redaction must not turn a failed migration replay into a green step").toMatch(
+      /set -o pipefail/,
+    );
+  });
 });
