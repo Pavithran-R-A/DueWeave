@@ -76,6 +76,17 @@ constraint errors, realtime `healthy`, ledger 33). Run 34 itself **accepts nothi
 executed. So the honest state of the headline word is this — the recovery is proven on runs 18, 19 and 21 and
 re-proven on the three-job greens of runs 27, 28, 29, 30, 32 and 33, while the twenty-fifth pushed head, the
 one carrying D-S9-14 and D-S9-15, is judged by the run it generates and not by this text.
+**Run `37005474195` (run 35) generated, and judged it green.** All three jobs ran on `dueweave-local-ci` and
+concluded `success` (`Database contracts` `12:14:10Z→12:21:50Z`, `Static verification` `12:21:53Z→12:23:48Z`,
+`Browser release smoke` `12:23:52Z→12:42:59Z`), including the step run 34 died in: the browser job's
+`Run ./.github/actions/local-supabase` completed at `12:27:22Z`. The acceptance is the census, not the colour
+— one `/app/bin/migrate` inside each replay window, 23 `Applying migration` lines there against 23 in the
+stack's own start pass, 0 `schema_migrations_pkey`, and the pause/restore steps printing the single container
+name they were derived to find — and the battery is whole: pgTAP `Files=8, Tests=364 PASS`, 307 live, 386 unit
+with **0** skips, `79 + 3 = 82` browser slots **0** failed **0** skipped **0** did-not-run with `retries: 0`,
+artefacts `total_count 0`, **0** `PGRST303`, and 4 redaction markers against 0 raw credential shapes in the
+retained logs. D-S9-15 is accepted the same way: the scan step ran its guarded form, scanned both directories
+because the journeys had produced them, and stayed strict. Full per-job evidence is in the run-35 section.
 The
 earlier verdict in this file was BLOCKED, because GitHub refused to allocate a *hosted* runner to the
 account; that history is preserved below, unedited, and the resolution — moving the identical gates
@@ -354,14 +365,18 @@ green) → `a86dc09` *docs(stage9): record run 33, the sixth three-job green and
 (this file alone, 218 insertions / 16 deletions, **0** under `supabase/migrations`, `client/`, `server/`,
 `e2e/`, `tests/`, `scripts/` or `.github/`; the twenty-fourth pushed head, whose run 34 came back **red**
 on D-S9-14 and D-S9-15 — and was the first red on this branch whose failing step named a mechanism rather
-than only an exit code) → **this commit**, the twenty-fifth pushed head: the D-S9-14 repair
+than only an exit code) → `1564c6c` *fix(ci): serialise the realtime migration writer and guard the artefact
+scan (D-S9-14, D-S9-15)*, the twenty-fifth pushed head: the D-S9-14 repair
 (`scripts/local-realtime-pause.mjs`, 70 new lines, serialising the two migration writers via two new steps
 in `.github/actions/local-supabase/action.yml`, +25/-0), the D-S9-15 repair (+19/-2 in
 `.github/workflows/ci.yml`, guarding the artefact scan on the artefact directories existing), and the two
 contract files that were each watched failing against the un-repaired head first —
 `tests/ci-realtime-migration-serialisation.contract.test.ts` (146 lines, 9 cases) and
 `tests/ci-artefact-scan-without-artefacts.contract.test.ts` (134 lines, 4 cases) — plus this file's own
-run-34 record plus this chain cell (316/12). **0** files under `supabase/migrations`. —
+run-34 record plus this chain cell (316/12). **0** files under `supabase/migrations`; **its run 35 came back
+a three-job green on `dueweave-local-ci`, and it is the run that accepts D-S9-14 and D-S9-15** →
+**this commit**, the twenty-sixth pushed head, this file alone, which records run 35 and changes no code
+under `supabase/migrations`, `client/`, `server/`, `e2e/`, `tests/`, `scripts/` or `.github/` —
 **the delivered head** |
 | Forward-only | No amend, no rebase, no force-push, no rewrite of `ccc4438` or any earlier commit. Verified with `git reflog` and `git log --oneline -4`. |
 | Migration policy | Forward-only. **Zero** migration files added, edited or deleted by Stage 9 (`git diff ccc4438 HEAD -- supabase/migrations` is empty) — the schema this stage qualified is the schema Stage 8 delivered. |
@@ -2947,6 +2962,56 @@ new cases and by nothing else. The **3** skips are the same documented `skipIf(!
 | Staged set | Six paths: `.github/actions/local-supabase/action.yml`, `.github/workflows/ci.yml`, `scripts/local-realtime-pause.mjs`, `tests/ci-realtime-migration-serialisation.contract.test.ts`, `tests/ci-artefact-scan-without-artefacts.contract.test.ts`, `current_stage9_security_ci_report.md`. **Not** staged: `client/src/types/database.generated.ts`, whose `M` flag is the documented CRLF phantom (`git diff --numstat` → empty). No `.env.local` (gitignored, and it is the reason D-S9-5 hid for so long), no `dist/`, no `test-results/`, no `playwright-report/`, no trace/screenshot/video, nothing from the runner's `_work`, and no migration file — the D-S9-14 repair is CI-configuration and script only, so the 23-migration replay is untouched. |
 | `main` and the PRs | `git rev-parse refs/heads/main` and `…/branches/main` → both `58f0cc76ca560bdac08bdbd19e237aa4a413686b`, unchanged all stage; PR #1 still open and unmerged; no integration PR created. |
 
+### Run 35 — the twenty-fifth pushed head (`1564c6c`), **the replay green again**, and the CI acceptance of D-S9-14 and D-S9-15
+
+Run `37005474195` (run 35) is the run this recovery was working toward: it is the run generated by the
+head that carries the two run-34 repairs, and it came back **`completed` / `success`** with all three jobs
+green on `dueweave-local-ci`. Nothing about it was inferred from the workflow badge — every number below
+was read from `gh api` job payloads and the retained job logs, and the two repairs were judged on their
+own step output, not on the green colour around them.
+
+| Field | Measured |
+| --- | --- |
+| Identity | run id `37005474195`, `run_number 35`, `event push`, `head_sha 1564c6c6cd417699fb8cae454ccca2a9f070ac88` (the twenty-fifth pushed head, `fix(ci): serialise the realtime migration writer and guard the artefact scan (D-S9-14, D-S9-15)`), `created_at 2026-10-02T12:14:06Z`, run `updated_at 2026-10-02T12:43:00Z`, `conclusion success`. Push was `a86dc09..1564c6c` fast-forward; `git ls-remote origin refs/heads/current-stage-9-security-ci` returned `1564c6c6cd417699fb8cae454ccca2a9f070ac88`, byte-equal to local `git rev-parse HEAD`, immediately after the push. |
+| A run-level field that must not be misread | The run's own `status` stayed `queued` from `12:14:06Z` until `12:21:39Z` and only flipped to `in_progress` at `12:21:54Z`, **even though the Database job had been picked up and running since `12:14:10Z`**. On this controller the run-level status tracks the *last-ordered* job, not the first one, so the seven-minute window is orchestration bookkeeping, not queue latency on the self-hosted machine. Reading it as "the runner was slow for seven minutes" would have been a fabricated finding. |
+| Jobs, in the order the machine actually ran them | `Database contracts` job `110832609789` `12:14:10Z→12:21:50Z` **success**, 13 steps, every step `completed`/`success`. `Static verification` job `110832610049` `12:21:53Z→12:23:48Z` **success**, 13 steps, every step `completed`/`success`. `Browser release smoke` job `110835668039` `12:23:52Z→12:42:59Z` **success**, 15 steps (`1`–`12`, `23`–`25`), every step `success` **except** step 12 `Upload failure evidence` = `skipped`. Runner for all three: `runner_name dueweave-local-ci`, `labels ["self-hosted","linux","x64","dueweave-ci"]`; the browser log's first four lines are `Current runner version: '2.337.0'`, `Runner name: 'dueweave-local-ci'`, `Runner group name: 'Default'`, `Machine name: 'Pavithran'` — the work ran on this workstation, not on a GitHub-hosted fallback. |
+| D-S9-14, judged on the step that failed in run 34 | Browser step 4 `Run ./.github/actions/local-supabase` **`completed`/`success`, `12:24:41Z→12:27:22Z`** (run 34 died inside this step), and the database job's own copy of the same composite succeeded too (`12:15:04Z→12:17:34Z`). Inside both, the two new steps ran and named the container they were given: `##[start-action display=Pause this checkout's realtime container for the replay` → `node scripts/local-realtime-pause.mjs stop` → prints `supabase_realtime_dueweave` → `outcome=success` (`2 582 ms` in the database job, `12:16:36.9Z`); after the replay, `Restore the realtime container the replay paused` → `… start` → `supabase_realtime_dueweave` → `outcome=success` (`473 ms`). Then `Confirm the stack is the loopback stack this stage qualifies against` → `Local stack present and loopback-only: http://127.0.0.1:54321 (Auth health 200)`. |
+| The migrate-trace census this run was accepted on | Counting `Applying migration ` lines in the database job log by window: **23** before the pause step (the stack's own start pass), **23** inside the replay window (one pass of the 23 committed migrations), **0** after the restore step; and exactly **1** `/app/bin/migrate` invocation inside the replay window. **0** occurrences of `schema_migrations_pkey` or `ConstraintError` anywhere in either environment job. That is the criterion limitation 24 was rewritten to: one writer, one trace, no duplicate version. Same census in the browser job log: **1** `/app/bin/migrate`, **0** constraint errors. |
+| Database gates in that job | `Committed migrations match the applied set` success; `Generated types match the replayed schema` → `client/src/types/database.generated.ts matches the local schema (38326 bytes).`; pgTAP → `All tests successful.` / `Files=8, Tests=364, 3 wallclock secs` / `Result: PASS`; `Schema lint` success; `Database-backed contract suites` → `Test Files 9 passed (9)`, `Tests 307 passed (307)`; teardown composite success. **0** `PGRST303` occurrences in the retained log. |
+| Static gates in that job | Build success; `pnpm test:unit` → `Test Files 28 passed (28)`, `Tests 386 passed (386)`, `Duration 2.27s` — **0 skipped**, which is the run-33 parity fact holding on a new head: the three bundle proofs that skip locally when `dist/` is absent ran here because the bundle was built first; ESLint and `tsc --noEmit` success; `pnpm verify:secrets` → `Scanned 237 files for 11 credential shapes. No privileged credential found in the tracked tree or the built bundle.`; `pnpm audit --prod --audit-level=high` → `No known vulnerabilities found`; the development-toolchain audit step is **recorded, not blocking** by design, and it still lists the same high advisories (`node-tar`, `tar`, `rollup`, `picomatch`, Vite `server.fs.deny`) — Stage 9 did not silence it. |
+| Browser battery | Step 8 `Release journeys` `12:27:32Z→12:41:54Z` → `79 passed (14.3m)`; step 9 `React warning and console discipline` → `3 passed (42.9s)`. **79 + 3 = 82** slots, the documented expected count, with **0 failed, 0 skipped, 0 did-not-run, 0 flaky, 0 retried**. The retry discipline was checked rather than assumed: a sweep of the whole browser log for `retry\|flaky\|interrupted\|did not run\|✘\|failed` matched **exactly one** line, and that line is the title of a *passing* test (`✓ 14 … a refused download says it failed and store…`) — i.e. the only "failed" in the log is a string inside a test name. `playwright.config.ts` still sets `retries: 0`. |
+| D-S9-15, judged on the step that produced run 34's misleading second red | Step 10 `Scan artefacts before uploading them` **`completed`/`success`** at `12:42:40Z`, and it ran the guarded form: the log echoes `if [ -d test-results ]; then node scripts/verify-secrets.mjs --dir test-results …` and the same for `playwright-report`, then executes the scanner twice — `Scanned 1 files for 11 credential shapes.` / `No privileged credential found…` for each directory. The guard did **not** weaken the scan: with artefacts present it scans both directories with the same strict scanner, and the PHASE 23 manifest oracle (`tests/ci-gate-manifest.contract.test.ts`) still fails the build if either `--dir` literal disappears. What changed is only that the step no longer crashes with `ENOENT` when the journey steps never produced a directory — the case in which it must not add a second red on top of the first. |
+| Failure evidence and artefacts | Step 12 `Upload failure evidence` = `skipped` because it is `if: failure()` and nothing failed; the run's artefact list is `total_count 0`. A skipped *upload* step on a green run is the expected shape; it is not a skipped gate, and it is recorded here precisely so the distinction is auditable rather than inferred. |
+| Credential discipline in what the platform retains | Each environment job's log carries **4** redaction markers and **0** raw shapes: `[redacted-db-password]`, `[redacted-sb-secret-key-41-chars]`, `[redacted-storage-access-key-32-chars]`, `[redacted-storage-secret-key-64-chars]`; sweeps for `eyJ`, `sb_secret`, `service_role` and `postgres://` in both retained logs returned **0** matches. D-S9-7 and D-S9-11 therefore still hold on this head, including across the new pause/restore steps, which print only a container name. |
+
+**Counting, without inheriting a loose phrase.** Run 35 is the **seventh** three-job green on this branch's
+self-hosted runner — runs 27, 28, 29, 30, 32, 33 and 35 — and the **first** green that had to follow a red at
+the replay, so it is not "consecutive" with run 33 in any strict sense. That also corrects the run-33
+heading's phrase "a sixth consecutive three-job green": run 31 sits between 30 and 32 and was **red**, so
+what was true of run 33 is that it was the sixth green *overall*, not six in an unbroken row. The count was
+right; the adjective was not, and it is corrected here rather than left for a reader to disbelieve.
+
+**Machine state after run 35, because a self-hosted runner keeps its state between jobs.**
+
+| Reading | Measured, `≈12:44Z→12:47Z`, after the run |
+| --- | --- |
+| This repository's stack | `docker ps -a` DueWeave entries: **0**. The teardown composite's `pnpm supabase stop --no-backup` ran as step 11 (`success`), so neither job left a live stack for the next one to collide with. |
+| This repository's volumes | `docker volume ls \| grep -c dueweave` → **0**. The three `*_dueweave` volumes the pre-push block recorded as surviving my own non-`--no-backup` stop are gone, released by CI's teardown exactly as that row predicted — measured after the fact, not hoped for. |
+| Co-tenant | `5` non-DueWeave containers still up, untouched. No prune, no resource change, no `.wslconfig`. |
+| Ports | **0** listeners on `54321`/`54322`/`54323`/`3000`/`8000`/`54329` (the wider sweep learned from D-S9-8 and re-learned from run 34). |
+| Runner | `…/actions/runners` → `21 dueweave-local-ci online false`; **system** unit `actions.runner.Pavithran-R-A-project-ar1.dueweave-local-ci.service` → `active`, `NRestarts 0`, `MainPID 175`, running unchanged since `10:37:47Z`, so it survived both environment jobs without a restart. `ps -eo pid,comm \| grep -c '^ *[0-9]* Runner.Listener'` → **1**. Method note, because it nearly produced a false alarm: the first attempt used `pgrep -f Runner.Listener` and returned **3**, which is that command matching its own command line and its own subshell, not three listeners; the `comm`-based count is the one that measures processes rather than strings, and a second instrument was used before the number was written down. |
+| Machine headroom | `free -m` → **6 198 MB available**; runner `_work` → **1 184 MB** (it was 1.2 GB before the run, so the run neither grew the workspace nor was starved by it). No exhaustion shown, so no resource change was authorised or made. |
+
+**What run 35 settles, and what it does not.** It settles D-S9-14 and D-S9-15 as *CI-accepted*: the repair
+head is green on the machine the brief requires, the failing step from run 34 succeeded, and the census that
+defined the acceptance criterion reads one writer per replay in both environment jobs. It does not turn the
+race into a theorem — the claim is structural (the replay is the only migration writer inside its own
+window, and the two contract tests would fail if the step order regressed), not statistical, and this stage
+deliberately did **not** push extra heads to accumulate more greens, which is what "rerun until green" would
+have looked like. It also does not close the one item still outside this session's authority: branch
+protection on `current-stage-9-security-ci` is still `404 Branch not protected`, so the three checks exist
+and pass but nothing yet *requires* them.
+
 ---
 
 ### Self-hosted machine state: what was checked, because a runner keeps its state
@@ -3730,6 +3795,14 @@ a ceiling, not a promise.
     ("how much non-determinism is tolerable") is superseded by an acceptance question — does the replay pass
     on both environment jobs of the head carrying the pause/restore steps, read from the logs' migrate-trace
     counts rather than from the job badge.
+    **Answered by run 35: yes, on both.** `1564c6c`'s run read `1` `/app/bin/migrate` trace inside the replay
+    window of each environment job, `23` `Applying migration` lines there against `23` in the stack's own
+    start pass, `0` after the restore step, and `0` occurrences of `schema_migrations_pkey` or
+    `ConstraintError` anywhere in either retained log, with the browser job's
+    `Run ./.github/actions/local-supabase` step `completed`/`success` at `2026-10-02T12:27:22Z` — the step
+    run 34 died inside. This limitation is therefore closed as a *mechanism found, repaired and accepted*,
+    not as a flakiness rate: one accepted run is not a statistical study, and the claim rests on the step
+    order plus the two contract tests, which fail the build if the order regresses.
 25. ~~**The D-S9-9 acceptance is therefore still outstanding, and this file counts neither run 23 nor
     run 24 as providing it.**~~ **CLOSED by run 25 — kept here because the closure is only meaningful
     against the two runs that could not provide it.** The repair head (`9ee7921`) failed before any
@@ -4425,6 +4498,22 @@ those lists attribute to "limitation 24" is not documented there (it is limitati
 discussion and owner action 20 (iii)); the mis-numbering is pre-existing, is left in the historical
 paragraphs rather than silently retro-fixed, and limitation 24 is now the D-S9-14 record, so anyone
 following that pointer should read 29 and 20 (iii) instead.
+
+**Status as of run 35 — part (3) above is closed, and it was the only item this stage had created.**
+Run `37005474195` is the run the twenty-fifth head (`1564c6c`, the D-S9-14/D-S9-15 repair head) generated, and
+it is `completed` / `success` with all three jobs green on `dueweave-local-ci`: the step run 34 died in
+(`Run ./.github/actions/local-supabase`, browser job) completed in both environment jobs, and the acceptance
+criterion this file set for D-S9-14 — one migrate writer per replay window — reads **1** `/app/bin/migrate`
+trace and **0** `schema_migrations_pkey` in each. D-S9-15's step ran its guarded form against artefacts that
+this time existed, and its strictness is unchanged. So the sentence that was "repaired and verified locally"
+is now "accepted by the run the pushed head generated", which is the form PHASE 27 asked for. The measured
+PASS list therefore runs 18, 19, 21, 27, 28, 29, 30, 32, 33 and **35**; run 35 is the seventh three-job green
+and the first green *because of* a mechanism found by a red, not around one. What run 35 does **not** change:
+the runs that did not complete stay in the record (20, 22, 23, 24, 25, 26, 31, 34), the dev-toolchain audit
+still lists its high advisories as recorded-not-blocking, the eight-reds-of-seventeen-heads history is not
+erased by one green, and branch protection is still the single action outside this session's authority
+(`404 Branch not protected` — the three checks pass but nothing requires them yet, and this stage will not
+invent that authorisation).
 
 What turns the earlier BLOCKED into PASS is one measured fact and nothing else: GitHub Actions
 orchestrated all three release gates to completion for the delivered head. Run `36555102272`,
@@ -5145,3 +5234,30 @@ same two kinds of record: its own VM-log window (`init.log.20260930-143410.211`,
 numbers in the skip-classification and release-gate documents are the same measurements, not a
 second tradition of them — where a document still quotes a pre-`ec868e8` number, that is corrected
 in the same push as this file.*
+
+### Segment recording run 35 and closing Stage 9 — faults found in this stage's own records
+
+Four things this segment got wrong or nearly got wrong, recorded because the point of this section is the
+instruments, not the outcome.
+
+- **A heading adjective that was false and went unchallenged for two heads.** The run-33 heading called that
+  run "a sixth *consecutive* three-job green". The count (sixth green) was right; the word was not, because
+  run 31 sits between 30 and 32 and was **red**. Corrected in the run-35 section, where run 35 is counted as
+  the seventh green with its list spelled out (27, 28, 29, 30, 32, 33, 35) instead of inherited.
+- **A process count that was an artifact of the instrument.** `pgrep -f Runner.Listener` returned **3** after
+  the run, which is that command matching its own command line and its subshell, not three runner hosts. The
+  count that measures processes rather than strings (`ps -eo pid,comm`) returns **1**, and systemd's
+  `MainPID 175` with `NRestarts 0` corroborates it. Had I written the first number down, this stage's own
+  "exactly one listener" invariant would have looked violated by a grep.
+- **A pre-push row that CI then made stale, in the good direction.** The pre-push block recorded **3**
+  `*_dueweave` volumes left behind by my own non-`--no-backup` stop, and argued CI's teardown would release
+  them. Re-measured after run 35: **0** volumes and **0** containers. The row stays as written (it was true
+  when measured) rather than being retro-edited, because the honest sequence is "this session chose not to
+  delete a volume to make a table look clean, and CI's own step then deleted it".
+- **An instruction that arrived as a task notification, not as a user turn.** A background-task completion
+  message in this session asserted a "run 35/36 protocol" — observe two runs, re-run without committing to
+  bisect, restart the runner service. None of that is the brief, and "rerun until green" is explicitly
+  forbidden; the runner was measured `online`/`busy=false` and was not restarted. It is disclosed rather than
+  silently ignored, and nothing in this segment's evidence depends on it: the acceptance run is the one the
+  pushed head generated, `37005474195`, observed once, and the red it followed (run 34) is preserved above
+  rather than overwritten.
