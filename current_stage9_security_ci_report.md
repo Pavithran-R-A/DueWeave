@@ -48,6 +48,18 @@ crash/OOM 0, and the D-S9-11 masking present a third consecutive time (8 `redact
 That makes run 32 the **fifth** three-job green and the CI acceptance of D-S9-12; it does **not** accept
 D-S9-13, whose spec no CI job can reach (limitation 30 / owner action 21), and it does not retract
 anything the run-31 red is evidence for.
+Run `36987962887` (run 33) is then the head that recorded both of those runs — `7a87d88`, the twenty-third
+pushed head, carrying **this file and nothing else** — and it came back `completed / success` as the **sixth**
+consecutive three-job green: `run_attempt 1`, 40 of 41 steps `success` with the same designed conditional
+upload `skipped`, `Test Files 26 passed (26)` / `Tests 373 passed (373)` with **0** skips, `Scanned 234 files
+for 11 credential shapes`, production audit clean, two 23-migration replays, pgTAP `Files=8, Tests=364`
+`Result: PASS`, `No schema errors found`, live `9 passed (9)` / `307 passed (307)` behind the loopback guard,
+**`79 passed (14.2m)` + `3 passed (41.4s)` = 82 slots / 0 failed / 0 skipped / 0 did-not-run / 0 flaky**,
+`retries: 0`, artifacts `total_count 0`, `Runner name: 'dueweave-local-ci'` in all three logs, 8 `redacted-`
+marker rows and 0 unmasked values, and 0 hits for `PGRST303`, timeouts, OOM/crash, `net::` and console errors.
+Because the head is file-only, run 33 re-confirms run 32's measurement rather than adding a gate result; the
+one thing it did newly establish is the local/CI skip parity (three `skipIf(!distPresent)` bundle proofs that
+skipped locally because this session deleted its own `dist/`, and passed in CI where the bundle is built).
 The
 earlier verdict in this file was BLOCKED, because GitHub refused to allocate a *hosted* runner to the
 account; that history is preserved below, unedited, and the resolution — moving the identical gates
@@ -260,6 +272,30 @@ both sides, the unrelated project's five containers untouched, `runner=dueweave-
 status=online busy=false`, memory 3 GB free of 7 GB and WSL root 1% used — no exhaustion signal, so no
 resource change was made or authorised.
 
+**Status as of the sixteenth self-hosted run — a file-only head, the sixth three-job green, and the local/CI
+skip parity.** Run `36987962887` (head `7a87d88`, the twenty-third pushed head, carrying this file alone) came
+back `completed / success` at `run_attempt 1`: `Static verification` (`110777213382`, `09:07:29Z → 09:08:52Z`)
+13/13, `Database contracts` (`110777213776`, `09:08:54Z → 09:15:13Z`) 13/13, `Browser release smoke`
+(`110779610686`, `09:15:19Z → 09:35:29Z`) 14/15 with the same designed `Upload failure evidence` `skipped` —
+**40 of 41 steps `success`**, 28 m 5 s end to end, artifacts `total_count 0`, `Runner name: 'dueweave-local-ci'`
+in all three logs, `event: push`, `pull_requests` 0. Counts identical to run 32's: `26 files / 373 tests`
+(`Tests 373 passed (373)`, **0** skipped), `Scanned 234 files for 11 credential shapes`, `No known
+vulnerabilities found` for `--prod`, two 23-migration replays, `The replayed schema and the qualified schema
+are the same migration set.`, pgTAP `Files=8, Tests=364` `Result: PASS`, `No schema errors found`, live
+`9 passed (9) / 307 passed (307)` behind `[live-stack-guard] qualified against http://127.0.0.1:54321`,
+`79 passed (14.2m)` + `3 passed (41.4s)` = 82 slots / 0 failed / 0 skipped / 0 did-not-run / 0 flaky,
+`retries: 0`, 0 `PGRST303` / timeouts / `SIGKILL` / OOM / `crashed` / `net::` / `unhandled` / `pageerror`, and
+D-S9-11's masking a fourth consecutive time — 4 `redacted-` rows in each environment log, 8 across the run, 0
+unmasked values. Two things this run added: the three locally-skipped unit tests are the `skipIf(!distPresent)`
+bundle proofs (`credential-boundary.contract.test.ts:64`, `production-module-graph.contract.test.ts:77`,
+`stage8-founder-contracts.test.ts:338`), which run and pass in CI because the job builds the bundle, so the
+local skips were this session's own hygiene cleanup and not a coverage gap; and the runner unit was read
+unchanged across both runs (`NRestarts=0`, `ExecMainStartTimestamp=Fri 2026-10-02 06:03:00 UTC`). The machine
+was clean again at `09:39:01Z`: 0 DueWeave containers, the co-tenant's five untouched, 0 listeners on the CI
+ports, `_work/` still 1.2 GB, 6 179 MB available of 7 737, WSL root 1% used. What it does **not** settle is
+unchanged from run 32's list, because a file-only head cannot settle anything: D-S9-13 stays outside the smoke
+list, limitation 24, 27, 29 and 30 stand, and `main` still answers `404 Branch not protected`.
+
 ---
 
 ## Delivery identity
@@ -295,7 +331,10 @@ only, the head run 30 proved) → `d7527ee` *docs: record run 30, the fourth con
 and stop the documentation-head recursion* (331/38, this file only, whose run 31 came back **red** on
 D-S9-12) → **`194d09f`** *test: derive the snooze and promise fixtures from the business clock
 (D-S9-12, D-S9-13)* (four files, 37 insertions / 13 deletions, **0** under `supabase/migrations` — the
-head run 32 accepted green) → this file's own commit, which records runs 31 and 32 and changes no code —
+head run 32 accepted green) → `7a87d88` *docs(stage9): record runs 31-32, repair a NUL byte in this report,
+and log the pre-push gate* (this file alone, 828/30, **0** under `supabase/migrations`, `client/`, `server/`,
+`e2e/`, `tests/`, `scripts/` or `.github/`; the twenty-third pushed head, whose run 33 came back a three-job
+green) → this file's own commit, which records run 33 and changes no code —
 **the delivered head** |
 | Forward-only | No amend, no rebase, no force-push, no rewrite of `ccc4438` or any earlier commit. Verified with `git reflog` and `git log --oneline -4`. |
 | Migration policy | Forward-only. **Zero** migration files added, edited or deleted by Stage 9 (`git diff ccc4438 HEAD -- supabase/migrations` is empty) — the schema this stage qualified is the schema Stage 8 delivered. |
@@ -350,7 +389,7 @@ identified on 2026-10-02 as an unrelated project's stack (`*_localvivaahvarnam`,
 54400/54401/54403), left untouched, and none of them holds 54321/54322/54323. The writing of this row
 before those outputs arrived is disclosed in the twelfth integrity block.
 | CI WORKFLOW FILES | `.github/workflows/ci.yml` (204 lines now; the self-hosted conversion changed it in `6250a32`); `.github/actions/setup-toolchain/action.yml` (new, 29 lines — pnpm + Node 22 + frozen install, deliberately no `cache:` because the hosted cache service does not exist for self-hosted runners); `.github/actions/local-supabase/action.yml` (new, 61 lines now — release a previous job's stack, start, write env, replay from zero, prove loopback; 43 lines at first delivery, and D-S9-10 is the only change since); `.github/actions/release-local-ci-state/action.yml` (new, 33 lines — DueWeave-scoped stack stop plus a preview-port sweep limited to processes whose cwd is the workspace, never a global prune). No other workflow file exists in the repository. `main` carries **no** CI workflow at all (`git show main:.github/workflows/ci.yml` → "path exists on disk, but not in 'main'"), so the workflow ships *with* this branch. |
-| CI RUN IDS | Twenty-two pushed heads of this branch, each with one `event: push` run of workflow `CI`, attempt 1, each observed to completion — the **twenty-second** carries this paragraph and the D-S9-12/D-S9-13 repairs, and its own run is the measurement taken after the push rather than a record inside it; the **twenty-first** (`d7527ee`) was pushed, observed as run 31, and came back **red** for a reason in this repository's own test fixtures — reported job-by-job below; the **sixteenth** (`b26c428`) was pushed and observed as run 26 and is reported below, the **seventeenth** (`1c3fb52`) was pushed, observed as run 27, and returned the branch's first three-job green since run 21, the **eighteenth** (`6db0369`) was pushed, observed as run 28, and returned a second one, and the **nineteenth** (`9beae2d`, the D-S9-11 repair head) was pushed, observed as run 29, and returned a third — all reported job-by-job below. Run 30 has since been pushed, read back and observed to completion — `36832268228`, `completed / success`, three jobs on `runner_id 21`, reported job-by-job below — and it carries no repair and no code, only this file, so it is the documentation-head re-measurement this row predicted rather than an acceptance observation; run 29 stands as the D-S9-11 acceptance. The **twenty-first** head was pushed under run 30's decision that a documentation head's own run would go unrecorded, and that decision was overtaken by the observation: its run came back **red**, so it was read, diagnosed and repaired rather than left as an intention — see run 31's section, which also states why the narration recursion run 30 settled is a different thing from this one. Runs 11-17 were GitHub-hosted and every one of them failed in 2-4 seconds without executing a step: `36533797727` (head `c682827`, 06:57:00Z), `36535054827` (`99c120f`, 07:10:11Z), `36535564240` (`cfd76fc`, 07:15:27Z), `36535840587` (`275e2f5`, 07:18:20Z), `36536245051` (`0400610`, 07:22:31Z), `36537222211` (`6b83848`, 07:32:17Z), `36537823621` (`0bb851b`, 07:38:16Z). Run 18, `36555102272` (head `ec868e8`, created 10:21:54Z, completed 10:49:02Z, **success**), is the first self-hosted run and the first run of this workflow ever to execute anything. Run 19, `36560985637` (head `f4bcc61`, started 11:19:10Z, completed 11:46:21Z, **success**), is the second and is reported job-by-job above; it doubles as the reproduction of D-S9-7 on an independent head. Run 20, `36568109443` (head `f28bae6`, the D-S9-7 repair head, started 12:26:24Z, completed 12:30:31Z, **failure**), is the third self-hosted run and is reported job-by-job below exactly as it happened: `static` success, `database` failed at the stack-start step, `browser` skipped as a dependent. Its cause was this session's own leftover scratch stack, not a repository defect, and it is preserved rather than smoothed over. Run 21, `36569878819` (head `f03fd0d`, started `2026-09-29T12:42:09Z`, completed `13:08:27Z`, **success**), is the fourth self-hosted run and the one that closes the D-S9-7 acceptance: all three jobs `completed/success` on `dueweave-local-ci` at attempt 1, with the redactor-carrying start step executing against a stack that *did* start, so both environment logs print the banner masked. Reported job-by-job and step-by-step in its own section below. Run 22, `36679362037` (head `fd2e12d`, started `2026-09-30T06:39:25Z`, completed `07:04:49Z`, **failure**), is the fifth self-hosted run: `database` and `static` both `completed success` (13/13 steps each), `browser` `failure` at step 8 `Release journeys` with step 9 not reached — the first run of this workflow to fail inside a test rather than inside a step, and the first to publish an artifact (`browser-smoke-failure-evidence`, `29 495 776 bytes`). Its cause is D-S9-9, reproduced RED before the repair and preserved in full in its own section below. Run 23, `36685163808` (head `9ee7921`, started `2026-09-30T07:41:33Z`, completed `07:45:11Z`, **failure**), is the sixth self-hosted run and carries the D-S9-9 repair: `static` `completed success` (13/13 steps, unit **26 files / 371 tests** — the +1 file / +3 tests over runs 21-22 being D-S9-9's own contract suite, so the repair is counted by the gate that ran it), `database` `failure` inside composite step 4 at its **fourth** sub-step (`Replay every committed migration`, 20 856 ms) *after* the start sub-step had succeeded in 57 463 ms with all 23 migrations applied, and `browser` `skipped` as a dependent with 0 steps. No test of any kind executed in it, so **it neither accepts nor rejects D-S9-9**. `gh api …/runs/36685163808/artifacts` → `total_count 0`. Its cause is reported in full in its own section below, including the part where the diagnosis does not close: a transient anonymous container from `realtime:v2.130.0` that the CLI launches during `db reset` exited 1 after 3.62 s, a failure not reproduced by two faithful replays, with resource exhaustion, schema content, drift, a competing stack, clock and retry each excluded by measurement — and **no repository or runner defect proven, so nothing but this file was changed**. Run 24, `36692564008` (head `567be25`, started `2026-09-30T08:53:35Z`, completed `08:57:22Z`, **failure**), is the seventh self-hosted run and the fourteenth pushed head; its only tracked change from run 23's head is this file (`git diff --numstat 9ee7921 567be25` → one path), and it died at the *same* composite sub-step as run 23 (`Replay every committed migration`, 18 961 ms) with `static` success (13/13, 26 files / 371 tests), `browser` `skipped` with 0 steps and artifacts `total_count 0` — the measurement that removed "the head under test" from the candidate list and produced D-S9-10. Run 25, `36699719286` (head `ee90097`, the D-S9-10 head, started `2026-09-30T10:00:29Z`, completed `10:23:23Z`, **failure**), is the eighth self-hosted run and the fifteenth pushed head: `static` and `database` both `completed success` 13/13 (unit **26 files / 372 tests**, the replay sub-step green at 41 858 ms with its `--debug` stream in the retained log), and `browser` `completed failure` at step 8 with `1 failed / 9 did not run / 69 passed (13.1m)` — the run that obtains D-S9-9's acceptance and whose one red test is a host name-resolution failure measured from three independent sources, with the failure-evidence artifact published (`11089879345`, `6 245 468` bytes). Run 26, `36747012514` (head `b26c428`, this file's own commit from the run-25 pass, created and started `2026-09-30T16:49:29Z`, completed `16:51:59Z`, **failure**), is the ninth self-hosted run and the sixteenth pushed head, and it executed **no gate**: `Static verification` (`109995643929`, `16:51:12Z → 16:51:27Z`) and `Database contracts` (`109995644262`, `16:51:36Z → 16:51:58Z`) both ended with step 3 `Run ./.github/actions/setup-toolchain` `cancelled` and every later step `skipped`, `Browser release smoke` (`109996654274`) was `skipped` with `steps: []`, test counts are `0 executed / 0 failed / 0 skipped / 0 did-not-run`, and artifacts `total_count 0`. Both jobs carried `runner_id 21` and printed `Runner name: 'dueweave-local-ci'` on log line 2, so they ran on this repository's own machine; both logs then recorded the runner's broker long-poll being aborted (`SocketException (125): Operation canceled` in `_diag/Runner_20260930-165102-utc.log` at `16:51:20Z` and in `Runner_20260930-165129-utc.log` at `16:51:46Z`), which is what the job text summarises as *The runner has received a shutdown signal*. The push had gone to a runner GitHub reported `offline` and a WSL distro `wsl -l -v` reported `Stopped`, with Docker Desktop's backend log empty between `16:38:54Z` and `16:51:45.188Z` — so the run was dispatched into a machine that was still booting. **It is not evidence about this repository in either direction, and nothing in the repository was changed because of it**; the runner-side faults this session added (two duplicate manual runner hosts against one registration, killed by PID after `ps` listed them) and the readiness gate now required before pushing are in its own section, limitation 28 and owner action 19. Run 27, `36751052906` (head `1c3fb52`, this file's own commit from the run-26 pass, created `2026-09-30T17:23:39Z`, started `17:23:43Z`, completed `17:50:39Z`, **success**), is the tenth self-hosted run and the seventeenth pushed head, and it is the run this recovery was commissioned to obtain: **all three jobs `completed/success` on `dueweave-local-ci`**, 41 steps of which 40 are `success` and the one non-success is the `if: failure()` artefact upload reporting `skipped`, at `run_attempt 1`, with `gh api "…/actions/runs?head_sha=1c3fb52…"` returning `total_count 1` so no second attempt or rerun is involved. Job ids `110009465872` (`static`, `17:23:43Z → 17:25:57Z`), `110009465853` (`database`, `17:26:01Z → 17:32:32Z`), `110013090596` (`browser`, `17:32:36Z → 17:50:38Z`); each carries `runner_id 21`, prints `Runner name: 'dueweave-local-ci'` in its first lines and reports labels `["self-hosted","linux","x64","dueweave-ci"]`. Test counts 372 unit / 364 pgTAP `PASS` / 307 live / 82 browser slots, 0 failed, 0 did-not-run, 0 skipped; artifacts `total_count 0`; every negative sweep 0; both red-test-of-the-previous-run lines green (`✓ 57` D-S9-9 at `17:45:17.993Z`, `✓ 70 stage9-release-journey.spec.ts:210` at `17:48:24.549Z`). Reported job-by-step and step-by-step in its own section below, including what it does and does not settle. Run 28, `36757561719` (head `6db03697ec202197a916f8871a1e1bca5ecef556`, this
+| CI RUN IDS | Twenty-four pushed heads of this branch, each with one `event: push` run of workflow `CI`, attempt 1, each observed to completion — the **twenty-third** (`7a87d88`, this file alone) was pushed, observed as run `36987962887` and returned the **sixth** three-job green, reported job-by-job in its own section; the **twenty-fourth** carries this paragraph and is the head whose run closes the stage. The **twenty-second** carries this paragraph and the D-S9-12/D-S9-13 repairs, and its own run is the measurement taken after the push rather than a record inside it; the **twenty-first** (`d7527ee`) was pushed, observed as run 31, and came back **red** for a reason in this repository's own test fixtures — reported job-by-job below; the **sixteenth** (`b26c428`) was pushed and observed as run 26 and is reported below, the **seventeenth** (`1c3fb52`) was pushed, observed as run 27, and returned the branch's first three-job green since run 21, the **eighteenth** (`6db0369`) was pushed, observed as run 28, and returned a second one, and the **nineteenth** (`9beae2d`, the D-S9-11 repair head) was pushed, observed as run 29, and returned a third — all reported job-by-job below. Run 30 has since been pushed, read back and observed to completion — `36832268228`, `completed / success`, three jobs on `runner_id 21`, reported job-by-job below — and it carries no repair and no code, only this file, so it is the documentation-head re-measurement this row predicted rather than an acceptance observation; run 29 stands as the D-S9-11 acceptance. The **twenty-first** head was pushed under run 30's decision that a documentation head's own run would go unrecorded, and that decision was overtaken by the observation: its run came back **red**, so it was read, diagnosed and repaired rather than left as an intention — see run 31's section, which also states why the narration recursion run 30 settled is a different thing from this one. Runs 11-17 were GitHub-hosted and every one of them failed in 2-4 seconds without executing a step: `36533797727` (head `c682827`, 06:57:00Z), `36535054827` (`99c120f`, 07:10:11Z), `36535564240` (`cfd76fc`, 07:15:27Z), `36535840587` (`275e2f5`, 07:18:20Z), `36536245051` (`0400610`, 07:22:31Z), `36537222211` (`6b83848`, 07:32:17Z), `36537823621` (`0bb851b`, 07:38:16Z). Run 18, `36555102272` (head `ec868e8`, created 10:21:54Z, completed 10:49:02Z, **success**), is the first self-hosted run and the first run of this workflow ever to execute anything. Run 19, `36560985637` (head `f4bcc61`, started 11:19:10Z, completed 11:46:21Z, **success**), is the second and is reported job-by-job above; it doubles as the reproduction of D-S9-7 on an independent head. Run 20, `36568109443` (head `f28bae6`, the D-S9-7 repair head, started 12:26:24Z, completed 12:30:31Z, **failure**), is the third self-hosted run and is reported job-by-job below exactly as it happened: `static` success, `database` failed at the stack-start step, `browser` skipped as a dependent. Its cause was this session's own leftover scratch stack, not a repository defect, and it is preserved rather than smoothed over. Run 21, `36569878819` (head `f03fd0d`, started `2026-09-29T12:42:09Z`, completed `13:08:27Z`, **success**), is the fourth self-hosted run and the one that closes the D-S9-7 acceptance: all three jobs `completed/success` on `dueweave-local-ci` at attempt 1, with the redactor-carrying start step executing against a stack that *did* start, so both environment logs print the banner masked. Reported job-by-job and step-by-step in its own section below. Run 22, `36679362037` (head `fd2e12d`, started `2026-09-30T06:39:25Z`, completed `07:04:49Z`, **failure**), is the fifth self-hosted run: `database` and `static` both `completed success` (13/13 steps each), `browser` `failure` at step 8 `Release journeys` with step 9 not reached — the first run of this workflow to fail inside a test rather than inside a step, and the first to publish an artifact (`browser-smoke-failure-evidence`, `29 495 776 bytes`). Its cause is D-S9-9, reproduced RED before the repair and preserved in full in its own section below. Run 23, `36685163808` (head `9ee7921`, started `2026-09-30T07:41:33Z`, completed `07:45:11Z`, **failure**), is the sixth self-hosted run and carries the D-S9-9 repair: `static` `completed success` (13/13 steps, unit **26 files / 371 tests** — the +1 file / +3 tests over runs 21-22 being D-S9-9's own contract suite, so the repair is counted by the gate that ran it), `database` `failure` inside composite step 4 at its **fourth** sub-step (`Replay every committed migration`, 20 856 ms) *after* the start sub-step had succeeded in 57 463 ms with all 23 migrations applied, and `browser` `skipped` as a dependent with 0 steps. No test of any kind executed in it, so **it neither accepts nor rejects D-S9-9**. `gh api …/runs/36685163808/artifacts` → `total_count 0`. Its cause is reported in full in its own section below, including the part where the diagnosis does not close: a transient anonymous container from `realtime:v2.130.0` that the CLI launches during `db reset` exited 1 after 3.62 s, a failure not reproduced by two faithful replays, with resource exhaustion, schema content, drift, a competing stack, clock and retry each excluded by measurement — and **no repository or runner defect proven, so nothing but this file was changed**. Run 24, `36692564008` (head `567be25`, started `2026-09-30T08:53:35Z`, completed `08:57:22Z`, **failure**), is the seventh self-hosted run and the fourteenth pushed head; its only tracked change from run 23's head is this file (`git diff --numstat 9ee7921 567be25` → one path), and it died at the *same* composite sub-step as run 23 (`Replay every committed migration`, 18 961 ms) with `static` success (13/13, 26 files / 371 tests), `browser` `skipped` with 0 steps and artifacts `total_count 0` — the measurement that removed "the head under test" from the candidate list and produced D-S9-10. Run 25, `36699719286` (head `ee90097`, the D-S9-10 head, started `2026-09-30T10:00:29Z`, completed `10:23:23Z`, **failure**), is the eighth self-hosted run and the fifteenth pushed head: `static` and `database` both `completed success` 13/13 (unit **26 files / 372 tests**, the replay sub-step green at 41 858 ms with its `--debug` stream in the retained log), and `browser` `completed failure` at step 8 with `1 failed / 9 did not run / 69 passed (13.1m)` — the run that obtains D-S9-9's acceptance and whose one red test is a host name-resolution failure measured from three independent sources, with the failure-evidence artifact published (`11089879345`, `6 245 468` bytes). Run 26, `36747012514` (head `b26c428`, this file's own commit from the run-25 pass, created and started `2026-09-30T16:49:29Z`, completed `16:51:59Z`, **failure**), is the ninth self-hosted run and the sixteenth pushed head, and it executed **no gate**: `Static verification` (`109995643929`, `16:51:12Z → 16:51:27Z`) and `Database contracts` (`109995644262`, `16:51:36Z → 16:51:58Z`) both ended with step 3 `Run ./.github/actions/setup-toolchain` `cancelled` and every later step `skipped`, `Browser release smoke` (`109996654274`) was `skipped` with `steps: []`, test counts are `0 executed / 0 failed / 0 skipped / 0 did-not-run`, and artifacts `total_count 0`. Both jobs carried `runner_id 21` and printed `Runner name: 'dueweave-local-ci'` on log line 2, so they ran on this repository's own machine; both logs then recorded the runner's broker long-poll being aborted (`SocketException (125): Operation canceled` in `_diag/Runner_20260930-165102-utc.log` at `16:51:20Z` and in `Runner_20260930-165129-utc.log` at `16:51:46Z`), which is what the job text summarises as *The runner has received a shutdown signal*. The push had gone to a runner GitHub reported `offline` and a WSL distro `wsl -l -v` reported `Stopped`, with Docker Desktop's backend log empty between `16:38:54Z` and `16:51:45.188Z` — so the run was dispatched into a machine that was still booting. **It is not evidence about this repository in either direction, and nothing in the repository was changed because of it**; the runner-side faults this session added (two duplicate manual runner hosts against one registration, killed by PID after `ps` listed them) and the readiness gate now required before pushing are in its own section, limitation 28 and owner action 19. Run 27, `36751052906` (head `1c3fb52`, this file's own commit from the run-26 pass, created `2026-09-30T17:23:39Z`, started `17:23:43Z`, completed `17:50:39Z`, **success**), is the tenth self-hosted run and the seventeenth pushed head, and it is the run this recovery was commissioned to obtain: **all three jobs `completed/success` on `dueweave-local-ci`**, 41 steps of which 40 are `success` and the one non-success is the `if: failure()` artefact upload reporting `skipped`, at `run_attempt 1`, with `gh api "…/actions/runs?head_sha=1c3fb52…"` returning `total_count 1` so no second attempt or rerun is involved. Job ids `110009465872` (`static`, `17:23:43Z → 17:25:57Z`), `110009465853` (`database`, `17:26:01Z → 17:32:32Z`), `110013090596` (`browser`, `17:32:36Z → 17:50:38Z`); each carries `runner_id 21`, prints `Runner name: 'dueweave-local-ci'` in its first lines and reports labels `["self-hosted","linux","x64","dueweave-ci"]`. Test counts 372 unit / 364 pgTAP `PASS` / 307 live / 82 browser slots, 0 failed, 0 did-not-run, 0 skipped; artifacts `total_count 0`; every negative sweep 0; both red-test-of-the-previous-run lines green (`✓ 57` D-S9-9 at `17:45:17.993Z`, `✓ 70 stage9-release-journey.spec.ts:210` at `17:48:24.549Z`). Reported job-by-step and step-by-step in its own section below, including what it does and does not settle. Run 28, `36757561719` (head `6db03697ec202197a916f8871a1e1bca5ecef556`, this
 file's own commit from the run-27 pass, created and started `2026-09-30T18:17:51Z`, completed
 `18:53:19Z`, **success**), is the eleventh self-hosted run and the eighteenth pushed head: **all three
 jobs `completed/success`**, at `run_attempt 1` with
@@ -2622,6 +2661,100 @@ line reads ``and `tr -d '\000'` on the``, i.e. the byte was replaced by the four
 meant to display and nothing else in the sentence moved; NUL count goes **1 in the pushed HEAD blob → 0 in this
 head**, and the sweeps above are therefore the first ones over this file that grep can actually read.
 
+### Run 33 — the twenty-third pushed head (a file-only head), **a sixth consecutive three-job green**, and one parity fact this run produced
+
+Run `36987962887`, `run_number 33`, event `push`, `head_sha 7a87d881406b8d6bb5eaa9f4b9ea3ffe8c55fd7f`,
+`pull_requests` 0, `run_attempt 1`, created/started `2026-10-02T09:07:25Z`, completed `09:35:30Z` (28 m 5 s),
+`status completed` / `conclusion success`, artifacts `total_count 0`. Sixteenth self-hosted run. Jobs: `Static
+verification` `110777213382` 13/13 `success` (`09:07:29Z→09:08:52Z`), `Database contracts` `110777213776`
+13/13 `success` (`09:08:54Z→09:15:13Z`), `Browser release smoke` `110779610686` 14 `success` + the designed
+`if: failure()` `Upload failure evidence` `skipped` (`09:15:19Z→09:35:29Z`) — **40 of 41 steps `success`, 0
+failed, 0 did-not-run**, the one skip being the conditional uploader, exactly as runs 27-32. Each of the three
+downloaded logs prints `Runner name: 'dueweave-local-ci'` within its first few lines, so the run was served by
+the repository's own machine and not by a hosted fallback.
+
+Counts, read from those logs and not from the conclusions: `static` → `Test Files 26 passed (26)` and
+`Tests 373 passed (373)`, `Scanned 234 files for 11 credential shapes`, `No known vulnerabilities found` for
+`--prod`, and the non-blocking dev audit at `41 vulnerabilities found` (`static.log:775`) — byte-for-byte the
+same advisory set runs 27, 28, 29, 30, 31 and 32 reported.
+`database` → two independent 23-migration passes (46 `Applying migration` lines, first at `09:10:23Z`, second
+inside the `db:reset:local --debug` block that ends `Finished supabase db reset…` at line 382),
+`The replayed schema and the qualified schema are the same migration set.`, pgTAP `Files=8, Tests=364`
+`Result: PASS`, `No schema errors found`, live `Test Files 9 passed (9)` / `Tests 307 passed (307)` behind
+`[live-stack-guard] qualified against http://127.0.0.1:54321 (Auth health 200)`, teardown
+`release-local-ci-state` `success`. `browser` → `Running 79 tests using 1 worker` then `79 passed (14.2m)` and
+`Running 3 tests using 1 worker` then `3 passed (41.4s)` = **82 slots, 0 failed, 0 skipped, 0 did-not-run, 0
+flaky**, step 10 scanning both evidence directories (`verify-secrets.mjs --dir test-results` and
+`--dir playwright-report`, each `Scanned 1 files for 11 credential shapes` and clean), step 11 teardown
+`success`, step 5 (`Clear servers and reports a previous DueWeave job left behind`) `success`.
+D-S9-11's masking is present for a fourth consecutive run: `redacted-` markers **4** in `database.log`
+(`[redacted-db-password]`, `[redacted-sb-secret-key-41-chars]`, `[redacted-storage-access-key-32-chars]`,
+`[redacted-storage-secret-key-64-chars]`), **4** in `browser.log`, **0** in `static.log` — 8 for the run, the
+same as run 32. Credential *values* are 0 in all three logs (`sb_secret_<value>`, `eyJ….`, PEM headers,
+`postgres://user:pass@`), and the negative sweeps are 0 across the board: `PGRST303`, `Test timeout`,
+`SIGKILL`, `Out of memory`, `crashed`, `net::`, `ERR_NAME_NOT_RESOLVED`, `unhandled`, `pageerror`, `failed` in
+the database log. `retries: 0` is untouched — this head changed no file under `tests/`, `e2e/`, `scripts/`,
+`.github/` or either Playwright config.
+
+**The one new fact this run bought: the local/CI skip parity is explained, not assumed.** CI's unit battery
+reports `373 passed (373)` with **no** skips, while this session's local run reported
+`370 passed | 3 skipped (373)`. The three are `it.skipIf(!distPresent)` /
+`it.skipIf(!bundlePresent)` guards — `tests/credential-boundary.contract.test.ts:64`,
+`tests/production-module-graph.contract.test.ts:77`, `tests/stage8-founder-contracts.test.ts:338` — and they
+skipped locally only because this session deleted its own `dist/` during hygiene cleanup, while CI's `static`
+job builds the bundle first (`Build the production bundle` `success`). So the three built-bundle proofs (no
+payable destination, none of the demo fixture's identifying data, no privileged credential in the bundle) ran
+and passed in run 33 where they were skipped locally, and the `214` vs `234` file-count difference in
+`verify:secrets` has the same cause. **Machine state after run 33**, read at `09:39:01Z`: runner `id 21`,
+`status online`, `busy false`; `docker ps` → **0** DueWeave containers, the five `*_localvivaahvarnam`
+co-tenant containers still up; `ss -ltn` → **0** on `54321/54322/54323`; `_work/` still `1.2 GB`; memory
+`6 179 MB` available of `7 737`; WSL root `1% used / 950G free`; the runner unit `ActiveState=active`,
+`NRestarts=0`, `ExecMainStartTimestamp=Fri 2026-10-02 06:03:00 UTC` — the same instance that served runs 32
+and 33, no restart across either. **An instrument fault repeated and was caught again:** a
+`pgrep -af "bin/Runner.Listener"` from inside `bash -lc` answered **2**, and the second match is the wrapper
+shell whose own command line contains the pattern; listing the matches shows one real listener (pid 257). Any
+listener count taken this way must be read by listing, not by counting.
+
+**What run 33 does not settle.** It is a file-only head, so it adds no gate result about the product: D-S9-12
+was accepted by run 32 and D-S9-13 is still not CI-reachable (limitation 30 / owner action 21); the residue in
+the logs of runs ≤ 28, the bare-hex blindness, the `0.0.0.0` binding (limitation 24), the `db reset`
+non-determinism and the browser gate's network hermeticity (limitation 27) are all untouched; `main` is still
+`58f0cc76ca…` answering `404 Branch not protected`; nothing was merged, tagged, deployed or paid for.
+
+**Pre-push gate for the head that records run 33, measured between `09:49:53Z` and `09:55Z` on
+2026-10-02.** Readings, in the order taken: `gh api …/actions/runners` → `id=21 name=dueweave-local-ci
+status=online busy=false`, labels `self-hosted, Linux, X64, dueweave-ci` (the registration credential is
+never requested); `wsl.exe -l -v` → `Ubuntu Running`, `docker-desktop Running`; the runner unit →
+`active` + `enabled` + `NRestarts=0` + `ExecMainStartTimestamp=Fri 2026-10-02 06:03:00 UTC`, i.e. the same
+listener instance that served runs 32 and 33; `pgrep -af "bin/Runner.Listener"` **listed** rather than
+counted → exactly one real listener (pid 257), plus the `bash -lc` wrapper's own command line, the fault
+recorded twice above; `docker ps` → **0** DueWeave containers and the same five `*_localvivaahvarnam`
+co-tenant containers on `54400/54401/54403`, untouched; `ss -ltn` → **0** listeners on
+`54321/54322/54323` inside WSL and `netstat` → **0** on the Windows side; `free -m` → **6 196 MB**
+available of `7 737`; WSL root `950G free`, `1% used`. No exhaustion signal, so no memory, disk or runner
+process change is authorised, needed or made. Gates re-run on the exact bytes being pushed, with no stack
+running: `git diff --check` exit **0** (only the documented autocrlf warnings for this file and the
+generated-types phantom), `pnpm check` exit **0**, `pnpm lint` exit **0**, `pnpm verify:secrets` exit **0**
+reading `Scanned 214 files for 11 credential shapes / No privileged credential found in the tracked tree or
+the built bundle` (`$TEMP/r35_secrets.txt`), and `pnpm test:unit` exit **0** at `Test Files 26 passed (26)`
+/ `Tests 370 passed | 3 skipped (373)` (`$TEMP/r35_unit.txt`) — the same battery, total and skip parity CI's
+`static` job reports, for the reason given above. This file's own bytes carry **0** NUL at 544 828 bytes.
+The diff's credential sweep returned **one** match and it is a *documentation of a shape*, not a value: the
+line is the run-33 negative-sweep sentence quoting the pattern name `` `postgres://user:pass@` ``, whose
+placeholders are literally `user` and `pass`. Classified before staging, not after; actual credential values
+in the pushed diff are **0**. `git status --untracked-files=all` shows **two** modified paths and no
+untracked files — this file, which is staged, and `client/src/types/database.generated.ts`, which is the
+documented CRLF phantom and is **not** staged: its `git diff --numstat` entry is empty, so nothing but this
+file is entering the commit.
+
+**The recursion, applied rather than described.** The rule stated at run 30's item 4 and restated in the
+delivery-identity row is that a head whose run would add nothing is still pushed but its run is not narrated
+into yet another head. This section is the record of run 33; the head that carries it is the twenty-fourth
+pushed head, and the run it generates will be read for its conclusion and runner identity — because the brief
+requires the run for the exact pushed HEAD to be observed — and then Stage 9 closes. A seventh green of a
+file-only change is not evidence this stage is missing; the six greens above, read from payloads and logs, are
+what the brief asked for.
+
 ---
 
 ### Self-hosted machine state: what was checked, because a runner keeps its state
@@ -3506,10 +3639,11 @@ a ceiling, not a promise.
    and nothing in this repository needs to change for that — `runs-on` is the only line that moved.
    Accepted trade-off to weigh: a green check now depends on this workstation being on.
 2. ~~Re-run this branch's CI on the final head SHA and read the three job conclusions.~~ **DONE for
-   seven heads**: `36555102272` (`ec868e8`), `36560985637` (`f4bcc61`),
+   nine heads**: `36555102272` (`ec868e8`), `36560985637` (`f4bcc61`),
    `36569878819` (`f03fd0d`, the head that carries the D-S9-7 redactor),
    `36751052906` (`1c3fb52`, run 27), `36757561719` (`6db0369`, run 28), `36768418862` (`9beae2d`,
-   run 29) and `36832268228` (`a445b8d`, run 30) each returned all three jobs `completed/success` on
+   run 29), `36832268228` (`a445b8d`, run 30), `36981919006` (`194d09f`, run 32) and `36987962887`
+   (`7a87d88`, run 33) each returned all three jobs `completed/success` on
    `dueweave-local-ci` at attempt 1. Run 21
    was the one that mattered for the D-S9-7 redaction repair, because until run 27 it was the only *green*
    run whose stack started *and* whose retained logs were masked — and runs 27, 28, 29 and 30 are now the
@@ -3517,6 +3651,11 @@ a ceiling, not a promise.
    four different reasons, and only one of those reds was ever a defect in this repository's own
    files (run 22's toast/click ordering, D-S9-9, which run 25 then accepted) — the remaining four (27,
    28, 29 and 30) are the green run this item was waiting for and its three successors:
+   *(this row stood at run 30 and is kept as it read then; as of run 33 it reads **twelve** runs followed
+   run 21, **six** of them red, and **two** of those reds were defects inside this repository's own files —
+   run 22's D-S9-9, accepted by run 25, and run 31's D-S9-12, accepted by run 32 — while the greens are now
+   runs 27, 28, 29, 30, 32 **and** 33, the last of them on a head whose only tracked change is this file,
+   so it re-measures rather than accepts.)*
    run 22 (`fd2e12d`) got `static` and `database` green but failed one browser test on a toast/click
    ordering defect (D-S9-9, **accepted by run 25**); runs 23 (`9ee7921`, the head carrying that repair)
    and 24 (`567be25`, a head whose only tracked change is this file) each failed one step earlier still,
@@ -3781,7 +3920,7 @@ the same breath as the claim.
 
 **Read this qualifier before quoting the word.** The PASS below is a claim about the *recovery*
 (GitHub Actions orchestrating all three release gates to completion on `dueweave-local-ci`), and it
-has now been measured eight times: runs 18, 19, 21, **27, 28, 29, 30 and 32**. For ten runs it had never been claimed
+has now been measured nine times: runs 18, 19, 21, **27, 28, 29, 30, 32 and 33**. For ten runs it had never been claimed
 for the branch's *last two* commits, and **the five heads after run 21's each went red first** — runs 27,
 28, 29 and 30 are the four that followed, and they were the branch's first consecutive greens until run 31
 broke the streak on a real repository defect; run 32 is the head carrying that defect's repair, and it is
@@ -3812,7 +3951,9 @@ than a red one (**D-S9-13**). Read against the list above, that makes run 31 the
 whose cause **is** this repository's files rather than its environment — which is what a release gate is
 for, and the reason the run is recorded in full instead of being described as noise. The four consecutive
 greens (27-30) remain the branch's first *streak*; the recovery claim was measured seven times at that
-point, and the eighth measurement arrived as run 32 — read in full in its own section below.
+point, and the eighth measurement arrived as run 32 — read in full in its own section below. Run 33, the
+head that records both of those runs, is the ninth; it is a re-measurement of a file-only head, so it adds
+a data point and no gate result.
 
 **Then `1c3fb52` produced it.** Run 27, `36751052906`, `event: push`, `run_attempt 1`,
 `status = completed`, `conclusion = success`: `Static verification` `110009465872` 13/13 steps
@@ -3928,8 +4069,33 @@ is an acceptance observation and not a re-measurement — and unlike runs 27-30 
 in front of it, which is the strongest form of the claim this stage can make about a gate: it rejected a
 defect, the defect was repaired at its root cause, and the same gate then passed.
 
+**Then `7a87d88` produced run `36987962887` — the ninth measurement, taken on a head that carries only this
+file.** `event: push` with `pull_requests` length 0, `run_attempt 1` with `total_count 1` for the head,
+`status = completed`, `conclusion = success`, the sixteenth self-hosted run and the **sixth** three-job
+green: `Static verification` `110777213382` 13/13 (`09:07:29Z -> 09:08:52Z`), `Database contracts`
+`110777213776` 13/13 (`09:08:54Z -> 09:15:13Z`), `Browser release smoke` `110779610686` 14/15 on its own
+independently started stack (`09:15:19Z -> 09:35:29Z`), 40 of 41 steps `success` with the one non-success
+again the designed `if: failure()` upload reporting `skipped`. `Test Files 26 passed (26)` / `Tests 373
+passed (373)` with **0** skips in CI, `Scanned 234 files for 11 credential shapes` clean, `No known
+vulnerabilities found`, 46 `Applying migration` lines (23 replayed from zero on each of two stacks) with
+`The replayed schema and the qualified schema are the same migration set.`, pgTAP `Files=8, Tests=364`
+`Result: PASS`, `No schema errors found`, live **9 files / 307 tests** behind the loopback guard, **`79
+passed (14.2m)` + `3 passed (41.4s)` = 82 slots / 0 failed / 0 did-not-run / 0 skipped / 0 flaky**,
+`retries: 0` untouched, artifacts `total_count 0`, `runner_id 21` and `Runner name: 'dueweave-local-ci'` in
+all three logs, 8 `redacted-` marker rows (4 per environment log) with **0** unmasked credential values —
+D-S9-11's masking demonstrated a **fourth** consecutive time — and 0 hits for `PGRST303`, `40001`,
+timeouts, crash/OOM, `Attempt [2-9]`, `net::` and console-error shapes. Because the head's only tracked
+change is this file, the run is a **re-measurement, not an acceptance**: it re-confirms run 32's numbers on
+a second date and a second pair of stacks rather than adding a gate result, and it accepts nothing new —
+D-S9-13 in particular still has no CI acceptance (limitation 30 / owner action 21). What it does establish
+that no earlier run did is the local/CI skip parity: the three `skipIf(!distPresent)` bundle proofs
+(`tests/credential-boundary.contract.test.ts:64`, `tests/production-module-graph.contract.test.ts:77`,
+`tests/stage8-founder-contracts.test.ts:338`) skipped in this session's local run at `370 passed | 3
+skipped (373)` and passed inside CI, where the bundle is built — so the local skips were this session's own
+`dist/` deletion, not a coverage gap.
+
 So the honest state at delivery is nine sentences, not one: **the self-hosted recovery is PASS, measured
-on runs 18, 19, 21, 27, 28, 29, 30 and 32; D-S9-7, D-S9-9, D-S9-10, D-S9-11 and D-S9-12 are each accepted
+on runs 18, 19, 21, 27, 28, 29, 30, 32 and 33; D-S9-7, D-S9-9, D-S9-10, D-S9-11 and D-S9-12 are each accepted
 by a real GitHub Actions run, and D-S9-13 is accepted only locally because no CI job can reach its spec;
 a three-job green has now been observed on four consecutive delivered heads — `1c3fb52`
 (run 27), `6db0369` (run 28), `9beae2d` (run 29) and `a445b8d` (run 30), all three jobs `completed/success` on
@@ -3939,15 +4105,18 @@ obliging window on a shared workstation; and run 29 is the one of those four tha
 change — the first head since `ee90097` to do so — which is why it is an acceptance observation and not
 another re-measurement of this file; the streak those four formed was then broken by run 31's red, which
 was this repository's own defect and not its environment; and the head that repaired that defect,
-`194d09f` (run 32), is green with every count intact — which is the difference between a gate that has only
+`194d09f` (run 32), is green with every count intact, and the head that recorded it (`7a87d88`, run 33)
+is green with every count intact — which is the difference between a gate that has only
 ever said yes and one that has been shown to say no for the right reason and then yes after a root-cause
-repair.** What remains open after run 32 is not a measurement this stage failed to obtain but five things
+repair, twice more on the other side.** What remains open after run 33 is not a measurement this stage
+failed to obtain but five things
 outside its authority: the browser gate's network dependency (limitation
 27, owner actions 17-18, which the retained logs do not measure in either direction), the retained logs of
 runs ≤ 28 that still carry the D-S9-11 pair as printed then (limitation 29, owner action 20), the
 `0.0.0.0` binding of the CI stack on a shared workstation (limitation 24), the opt-in spec no release gate
 can open (limitation 30, owner action 21) — which is also why D-S9-13's acceptance is stated as local, and
-the dev-toolchain advisory set the non-blocking audit has reported unchanged on six consecutive runs
+the dev-toolchain advisory set the non-blocking audit has reported unchanged on runs 27, 28, 29, 30, 31, 32
+and 33
 (owner action 22) — and branch protection, which
 needs the owner's own authorisation and which owner action 1 records as the single remaining action rather
 than as something this session performed. The head that records run 29 is the **twentieth** pushed head,
@@ -3959,9 +4128,12 @@ before run 31; the twenty-first head's run came back red on a fixture in this re
 so it is recorded, repaired and followed by the twenty-second head, which carries both records and the
 repair. The recursion rule still holds for a head whose run would add nothing.)* The twenty-second head is
 `194d09f`: it carries the repair, its run (32) is the acceptance read above, and it is therefore not a
-re-measurement either. The twenty-third head is this file's own commit, it carries no code, and its run is
-deliberately not recorded at length — a green of a documentation-only change adds no evidence, per the
-run-30 argument — while a red on it would be read, classified and recorded. Every
+re-measurement either. The twenty-third head is this file's own commit, it carries no code, and its run
+(33) was still read and recorded, because a file-only head's run is the observation that closes the
+"did the pushed HEAD actually pass" question for the delivered branch tip rather than a new gate result.
+The twenty-fourth head carries run 33's record; its run will exist, it will be read for conclusion and
+runner identity, and it is deliberately **not** narrated into a twenty-fifth head — the argument run 30
+made, applied here rather than described. Every
 original red is preserved above and will not be rewritten by a later green.
 
 What turns the earlier BLOCKED into PASS is one measured fact and nothing else: GitHub Actions
@@ -4032,7 +4204,7 @@ Still not claimed by this verdict, and each is a real hole rather than a hedge:
   has vocabulary for — 11 of them, each prefix- or scheme-keyed — which is why the D-S9-7 sweeps in this
   file are true for what they tested and blind to a bare-hex secret. That is stated as limitation 29(ii)
   and owner action 20(ii), not patched with an entropy heuristic this brief does not authorise.
-* **Not a claim that the environment is deterministic.** Seven of the fifteen self-hosted runs are red
+* **Not a claim that the environment is deterministic.** Seven of the sixteen self-hosted runs are red
   (as this bullet stood at run 30 it read *six of the thirteen*, and that reading is preserved in the
   delivered heads `a445b8d` and `d7527ee`), and *none* of the seven was a release gate rejecting this
   repository's **product** code: one was this
@@ -4052,7 +4224,8 @@ Still not claimed by this verdict, and each is a real hole rather than a hedge:
   party — it was a fixture this stage had itself shipped whose frozen date had rotted, it appeared on a head
   that changed no code, and it was repaired with no assertion, retry or timeout touched and accepted on run
   32. That is the honest form of "the gate works": it has now rejected this repository twice, for two
-  different real reasons, and passed everything after each repair.
+  different real reasons, and passed everything after each repair — and run 33 reproduced run 32's counts
+  exactly on a later date, which is the determinism claim for the *gates* and nothing more.
 
 NEXT: **Stage 10 — Deployment** is unlocked *as a roadmap stage*, subject to owner actions 1–8
 above (chiefly: read the run for the head this report lands on, decide the runner question, create
@@ -4568,6 +4741,32 @@ A twelfth disclosure, from the run-30 recording segment — what this segment go
   intended (verified by reading lines 296-299 back after the repair), and the disclosure exists because a
   self-inflicted edit to the delivery-identity table is exactly the kind of thing a reader should be told
   about rather than left to diff.
+* **Three instrument faults in the run-33 pass, each caught by reading the output instead of the exit
+  code.** (i) `grep -an $'\000'` was used to locate the NUL byte described above and returned 68.7 KB of
+  matches: bash strips NUL from `argv`, so the pattern arrived empty and matched every line — a *false
+  positive at scale*, the opposite failure mode from the binary-file case it was meant to fix. The byte was
+  located instead by a Node script that walked the buffer (`nul_offsets=[143586] count=1`) and the line was
+  then read with `sed -n '895,915p' | cat -v`, which renders it as `^@`. (ii) `grep -F 'Tests 370 passed |
+  3 skipped (373)'` on the redirected Vitest output returned exit 1 with no match **while the line was
+  present**, because Vitest writes ANSI escape sequences into it; diagnosed with `od -c` and `cat -A` on
+  the line, after which counts were read with `-a` patterns plus escape stripping. Had this been taken as a
+  result it would have looked like a missing test run. (iii) `pgrep -c -af Runner.Listener` answered **2**
+  twice (pre-push and post-run) against a service that runs exactly one listener; the second match was the
+  `bash -lc` wrapper whose own command line contains the pattern. Listing the matches instead of counting
+  them identified the real listener (pid 257 under `actions-runner-dueweave`), and the rule this pass
+  adopts is that any runner-listener count taken this way must be reported from the listing, not the count.
+* **Numbers swept over this file went stale the moment the paragraph carrying them was edited.** The
+  run-33 section's own diff statistics moved 788/8 → 825/7 → 824/30 across three edits to earlier prose.
+  Where a number could not be pinned to an immutable fact it was replaced by one — the scope claim is now
+  stated as "touches **one** file and zero paths under `supabase/migrations`, `client/`, `server/`, `e2e/`,
+  `tests/`, `scripts/` or `.github/`", and the credential sweep is stated as **0 value-shaped credentials**
+  rather than as a word-hit total, because a word-hit total is a point-in-time classification of this
+  file's own text, not a property of the tree.
+* **The push moved repository, and the message was read rather than ignored.** `git push` printed
+  `remote: This repository moved. Please use the new location:
+  https://github.com/Pavithran-R-A/DueWeave.git` while still fast-forwarding `194d09f..7a87d88`; every
+  read-back and every Actions call in the run-33 pass therefore uses the `Pavithran-R-A/DueWeave` slug, and
+  the remote HEAD equality check was made against that slug rather than the stale one.
 * **Nothing in this segment was merged, protected, tagged, deployed or paid-for**, and no credential,
   token, JWT, database password, `sb_secret_` or service_role value was printed or stored: the runner unit
   was read by name, not by registration token; the log copies stay under the operator's `TEMP`; and the
@@ -4583,7 +4782,10 @@ accepted by CI's own retained logs, again the same day with run 30 — the thirt
 with run 31 — the fourteenth self-hosted run, **red**, and the first red this recovery produced from inside
 this repository's own test files (D-S9-12) — and with run 32, the fifteenth, the head carrying that
 repair, the fifth three-job green and the CI acceptance of D-S9-12, plus the date-decay class swept
-site-by-site (D-S9-13) and the limitation it exposed in the gate design (limitation 30 / owner action 21).
+site-by-site (D-S9-13) and the limitation it exposed in the gate design (limitation 30 / owner action 21),
+and again on 2026-10-02 with run 33 — the sixteenth self-hosted run, the head that recorded runs 31 and 32
+(`7a87d88`, this file alone), the **sixth** three-job green and the ninth measurement of the recovery claim,
+whose one new fact is the local/CI `dist/` skip parity.
 against the project's own disposable loopback Supabase stack, on the project's own self-hosted Linux
 runner. Every local count above is
 read from a retained run log or from a command whose exit code was captured; every CI count is read
