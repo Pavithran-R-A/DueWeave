@@ -7,6 +7,8 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterAll, beforeAll, describe, it } from "vitest";
+import { addIndiaBusinessDays } from "@/lib/finance";
+import { todayInIndia } from "@/lib/business-clock";
 
 const url = process.env.VITE_SUPABASE_URL ?? "";
 const anonKey = process.env.VITE_SUPABASE_ANON_KEY ?? "";
@@ -29,6 +31,13 @@ const newPassword = () => `Stage3!${Math.random().toString(36).slice(2, 12)}aA`;
 // promise dates from 2026-09-28 onward, so this origin is earlier than every one
 // of them and never later than today — the two rules the database checks.
 const originDate = "2026-09-01";
+
+// snooze_receivable checks the date before it checks whose receivable it is, so a probe
+// that wants to reach the ownership guard has to bring a date the guard will pass. Run 31
+// measured the alternative: a frozen "2026-10-01" that was tomorrow when the suite was
+// written and yesterday by the time CI ran it, refusing a legitimate owner with
+// "Choose today or a future snooze date". Derived from the business clock instead.
+const snoozeUntil = addIndiaBusinessDays(todayInIndia(), 30);
 
 function newClient(accessToken?: string): SupabaseClient {
   return createClient(url, anonKey, {
@@ -1126,7 +1135,7 @@ describeLocalStack(
           "A",
           await a.client.rpc("snooze_receivable", {
             p_receivable_id: b.receivableId,
-            p_until: "2026-12-31",
+            p_until: snoozeUntil,
           }),
           "Receivable is not available to snooze"
         )
@@ -1290,7 +1299,7 @@ describeLocalStack(
         "A snoozes its own first receivable",
         await a.client.rpc("snooze_receivable", {
           p_receivable_id: a.receivableId,
-          p_until: "2026-10-01",
+          p_until: snoozeUntil,
         })
       );
       allowed(

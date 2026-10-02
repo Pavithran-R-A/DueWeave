@@ -195,7 +195,7 @@ function writeSurface(): Array<{ slot: string; rpc: string; foreign: keyof Ids |
     { slot: "cancel_receivable's receivable id", rpc: "cancel_receivable", foreign: "receivableId", args: (ids, value) => ({ p_receivable_id: value, p_reason: "abuse probe" }) },
     { slot: "cancel_promise's promise id", rpc: "cancel_promise", foreign: "promiseId", args: (ids, value) => ({ p_promise_id: value, p_reason: "abuse probe" }) },
     { slot: "record_contacted's receivable id", rpc: "record_contacted", foreign: "receivableId", args: (ids, value) => ({ p_receivable_id: value, p_note: "abuse probe" }) },
-    { slot: "snooze_receivable's receivable id", rpc: "snooze_receivable", foreign: "receivableId", args: (ids, value) => ({ p_receivable_id: value, p_until: "2026-10-05" }) },
+    { slot: "snooze_receivable's receivable id", rpc: "snooze_receivable", foreign: "receivableId", args: (ids, value) => ({ p_receivable_id: value, p_until: addIndiaBusinessDays(todayInIndia(), 30) }) },
   ];
 }
 
@@ -234,7 +234,11 @@ async function bootstrapLedger(label: string): Promise<Account> {
   const createdReceivable = await client.rpc("create_receivable", { p_client_id: clientId, p_label: `Probe Invoice ${label}`, p_invoice_ref: "PB-1", p_amount_due_paise: 500_000, p_due_date: "2026-10-01", p_notes: "" });
   assert(!createdReceivable.error && !!createdReceivable.data, `${label} receivable fixture failed: ${createdReceivable.error?.message}`);
   const receivableId = (createdReceivable.data as { id: string }).id;
-  const createdPromise = await client.rpc("create_promise", { p_receivable_id: receivableId, p_promised_amount_paise: 100_000, p_made_on: "2026-09-20", p_promised_date: "2026-10-01", p_source: "CALL", p_note: "", p_request_id: crypto.randomUUID() });
+  // The victim's promise has to be one the product still grades ACTIVE: the assertion
+  // below reads its stored status after the attack was refused, and a promise whose date
+  // has passed is graded BROKEN by any sweep that reaches it. Frozen here, the fixture
+  // quietly changed meaning the day its date went past.
+  const createdPromise = await client.rpc("create_promise", { p_receivable_id: receivableId, p_promised_amount_paise: 100_000, p_made_on: "2026-09-20", p_promised_date: addIndiaBusinessDays(todayInIndia(), 3), p_source: "CALL", p_note: "", p_request_id: crypto.randomUUID() });
   assert(!createdPromise.error && !!createdPromise.data, `${label} promise fixture failed: ${createdPromise.error?.message}`);
   return { client, accessToken, label, ids: { clientId, receivableId, promiseId: (createdPromise.data as { id: string }).id } };
 }

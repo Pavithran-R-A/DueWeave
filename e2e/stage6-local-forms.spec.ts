@@ -1,4 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
+import { todayInIndia } from "../client/src/lib/business-clock";
+import { addIndiaBusinessDays } from "../client/src/lib/finance";
 import { awaitLedger, completeWorkspaceSetup } from "./workspace-setup";
 
 // Stage 6 Phases 30, 32 and 36 for the sheets the earlier specs had not reached.
@@ -16,6 +18,13 @@ const account = {
   businessName: `Stage6 Forms Studio ${token.slice(-6)}`,
 };
 const clientName = `Stage6 Forms Client ${token.slice(-6)}`;
+
+// The withdrawal case below only has a control to press while the promise it made
+// earlier is still graded ACTIVE: once the promised date passes with nothing paid, the
+// product grades it BROKEN and the withdraw action disappears from the panel. So the
+// date is derived from the business clock instead of frozen, and stays live on the day
+// the run happens.
+const activePromisedDate = addIndiaBusinessDays(todayInIndia(), 6);
 
 async function signIn(page: Page) {
   await page.goto("/auth");
@@ -154,7 +163,7 @@ test.describe("Stage 6 forms, keyboard and toast lifetime", () => {
     await expect(promise.getByLabel("Promised date")).toHaveAttribute("aria-invalid", "true");
 
     await promise.getByLabel("Promise made on").fill("2999-01-01");
-    await promise.getByLabel("Promised date").fill("2026-09-30");
+    await promise.getByLabel("Promised date").fill(activePromisedDate);
     await promise.getByRole("button", { name: "Keep this promise" }).click();
     await expect(promise.getByRole("alert")).toContainText(["A promise cannot be dated as made in the future."]);
     await expect(promise.getByLabel("Promise made on")).toHaveAttribute("aria-invalid", "true");
@@ -199,7 +208,9 @@ test.describe("Stage 6 forms, keyboard and toast lifetime", () => {
     await snooze.getByRole("button", { name: "Save snooze" }).click();
     await expect(snooze.getByRole("alert")).toContainText("Choose today or a future date.");
     await expect(snooze.getByLabel("Bring this back on")).toHaveAttribute("aria-invalid", "true");
-    await snooze.getByLabel("Bring this back on").fill("2026-10-05");
+    // The valid half of this pair has to be a date the product's own rule accepts on
+    // the day the run happens: "today" is that date forever, a literal is not.
+    await snooze.getByLabel("Bring this back on").fill(todayInIndia());
     await expect(snooze.getByRole("alert")).toHaveCount(0);
     await snooze.getByRole("button", { name: "Save snooze" }).click();
     await expect(snooze).toBeHidden();
