@@ -60,6 +60,22 @@ marker rows and 0 unmasked values, and 0 hits for `PGRST303`, timeouts, OOM/cras
 Because the head is file-only, run 33 re-confirms run 32's measurement rather than adding a gate result; the
 one thing it did newly establish is the local/CI skip parity (three `skipIf(!distPresent)` bundle proofs that
 skipped locally because this session deleted its own `dist/`, and passed in CI where the bundle is built).
+Then run `36992373786` (run 34) at head `a86dc09` — again this file alone, again recording nothing about the
+product — came back **red**, and it is the most informative red of this recovery. `Static verification` and
+`Database contracts` were green (373 unit, two 23-migration replays, pgTAP `364` `PASS`, 307 live), and the
+`Browser release smoke` job died at **step 4, the migration replay**, printing
+`Ecto.ConstraintError … "schema_migrations_pkey" (unique_constraint)` into the `--debug` stream D-S9-10 added
+for exactly this purpose — the first time that step ever said *why* instead of `exit 1` — followed one second
+later by a **second, misleading red** from the artefact scan. Those two are **D-S9-14** (the composite's own
+order leaves this project's realtime container live and then drops its database out from under it, so the
+reconnecting node and the replay's one-shot migrate the same ledger at once) and **D-S9-15** (a `verify-secrets
+--dir` on artefacts a job that never launched cannot have produced). Both were reproduced locally — including
+forcing run 34's verbatim error on a scratch ledger and showing the serialised pair clean — and both repaired
+forward, then verified by **executing the shipped composite end to end** (`1` migrate trace, exit 0, 0
+constraint errors, realtime `healthy`, ledger 33). Run 34 itself **accepts nothing**: 0 of 82 browser slots
+executed. So the honest state of the headline word is this — the recovery is proven on runs 18, 19 and 21 and
+re-proven on the three-job greens of runs 27, 28, 29, 30, 32 and 33, while the twenty-fifth pushed head, the
+one carrying D-S9-14 and D-S9-15, is judged by the run it generates and not by this text.
 The
 earlier verdict in this file was BLOCKED, because GitHub refused to allocate a *hosted* runner to the
 account; that history is preserved below, unedited, and the resolution — moving the identical gates
@@ -334,7 +350,18 @@ D-S9-12) → **`194d09f`** *test: derive the snooze and promise fixtures from th
 head run 32 accepted green) → `7a87d88` *docs(stage9): record runs 31-32, repair a NUL byte in this report,
 and log the pre-push gate* (this file alone, 828/30, **0** under `supabase/migrations`, `client/`, `server/`,
 `e2e/`, `tests/`, `scripts/` or `.github/`; the twenty-third pushed head, whose run 33 came back a three-job
-green) → this file's own commit, which records run 33 and changes no code —
+green) → `a86dc09` *docs(stage9): record run 33, the sixth three-job green and the local/CI skip parity*
+(this file alone, 218 insertions / 16 deletions, **0** under `supabase/migrations`, `client/`, `server/`,
+`e2e/`, `tests/`, `scripts/` or `.github/`; the twenty-fourth pushed head, whose run 34 came back **red**
+on D-S9-14 and D-S9-15 — and was the first red on this branch whose failing step named a mechanism rather
+than only an exit code) → **this commit**, the twenty-fifth pushed head: the D-S9-14 repair
+(`scripts/local-realtime-pause.mjs`, 70 new lines, serialising the two migration writers via two new steps
+in `.github/actions/local-supabase/action.yml`, +25/-0), the D-S9-15 repair (+19/-2 in
+`.github/workflows/ci.yml`, guarding the artefact scan on the artefact directories existing), and the two
+contract files that were each watched failing against the un-repaired head first —
+`tests/ci-realtime-migration-serialisation.contract.test.ts` (146 lines, 9 cases) and
+`tests/ci-artefact-scan-without-artefacts.contract.test.ts` (134 lines, 4 cases) — plus this file's own
+run-34 record plus this chain cell (316/12). **0** files under `supabase/migrations`. —
 **the delivered head** |
 | Forward-only | No amend, no rebase, no force-push, no rewrite of `ccc4438` or any earlier commit. Verified with `git reflog` and `git log --oneline -4`. |
 | Migration policy | Forward-only. **Zero** migration files added, edited or deleted by Stage 9 (`git diff ccc4438 HEAD -- supabase/migrations` is empty) — the schema this stage qualified is the schema Stage 8 delivered. |
@@ -2757,6 +2784,171 @@ what the brief asked for.
 
 ---
 
+### Run 34 — the twenty-fourth pushed head, **the first red the replay produced since `--debug` was added**, and the run that explains runs 23 and 24
+
+Run `36992373786`, `run_number 34`, event `push`, `head_sha a86dc092bd497054ed0cd8e45e90c6d73261895b`
+(the head that recorded run 33 — a file-only head, so this run says nothing about the product and a great
+deal about the gate), `run_attempt 1`, created and started `2026-10-02T09:53:28Z`, last updated `10:05:03Z`
+(11 m 35 s), `status completed` / **`conclusion failure`**, `artifacts total_count 0` read from
+`…/runs/36992373786/artifacts` because the run payload's own `artifacts_count` field is `null`. Seventeenth
+self-hosted run. Jobs, from the job payload rather than the badge: `Database contracts` `110791309196`
+`success` `09:53:32Z→10:00:27Z` 13/13; `Static verification` `110791309488` `success` `10:00:30Z→10:02:12Z`
+13/13; **`Browser release smoke` `110793935575` `failure` `10:02:16Z→10:05:02Z`**, 15 reported steps:
+1 `Set up job`, 2 `checkout`, 3 `setup-toolchain` all `success`; **4 `Run ./.github/actions/local-supabase`
+`failure` `10:03:11Z→10:04:42Z` (91 s)**; 5 `Clear servers and reports a previous DueWeave job left behind`,
+6 `Install the Chromium build the suite launches`, 7 `Build the bundle the suite drives`, 8 `Release
+journeys`, 9 `React warning and console discipline` all **`skipped`** — no Playwright spec launched, so
+**0 of the 82 browser slots executed**; **10 `Scan artefacts before uploading them` `failure`**
+(`10:04:42Z`, under a second); 11 `release-local-ci-state` `success`; 12 `Upload failure evidence` `success`
+with nothing to publish (run artifacts `0`); 23/24/25 posts `success`. All three jobs report
+`runner_name dueweave-local-ci`, `runner_id 21`, labels `self-hosted, Linux, X64, dueweave-ci`, and each of
+the three downloaded logs prints `Runner name: 'dueweave-local-ci'` (`static.log` `10:00:30.636Z`,
+`database.log` `09:53:32.879Z`, `browser.log` `10:02:17.190Z`) — the repository's own machine served all
+three, no hosted fallback. The three jobs ran strictly one after another on that single runner, which is
+what a one-machine fleet means in practice: the browser job started 4 s after `static` finished.
+
+Counts read out of the logs, not the conclusions. `static` → `Test Files 26 passed (26)`,
+`Tests 373 passed (373)`, `Scanned 234 files for 11 credential shapes`, `No known vulnerabilities found`
+(`--prod`) and the non-blocking dev audit at `41 vulnerabilities found` — the seventh consecutive run with
+that identical advisory set. `database` → `46` `Applying migration` lines (two 23-migration passes, the
+`1` `Finished supabase db reset` inside them), `The replayed schema and the qualified schema are the same
+migration set.`, pgTAP `Files=8, Tests=364` `Result: PASS`, `No schema errors found`,
+`[live-stack-guard] qualified against http://127.0.0.1:54321 (Auth health 200)`, `Test Files 9 passed (9)`
+at `10:00:08Z`. `browser` → `23` `Applying migration` lines (the stack's own start pass) and
+**`0` `Finished supabase db reset`**; D-S9-7/D-S9-11 masking intact for a fifth run — `4` `redacted-`
+markers (`[redacted-db-password]`, `[redacted-sb-secret-key-41-chars]`, `[redacted-storage-access-key-32-chars]`,
+`[redacted-storage-secret-key-64-chars]`) in `browser.log` and 4 in `database.log`, and `0` privileged
+*values* in any of the three logs. `retries: 0` untouched; no timeout, assertion, skip or gate was changed
+to get here.
+
+**Step 4's first real failure, verbatim from `browser.log`** (line numbers as retained):
+
+```
+333  10:04:25.300Z  Recreating database...
+334  10:04:36.934Z  Initialising schema...
+342  10:04:37.887Z  + sudo -E -u nobody /app/bin/migrate
+343  10:04:40.716Z  ** (Ecto.ConstraintError) constraint error when attempting to insert struct:
+345  10:04:40.716Z      * "schema_migrations_pkey" (unique_constraint)
+361  10:04:41.982Z  error running container: exit 1
+363  10:04:42.271Z  ##[error]Process completed with exit code 1.
+```
+
+This is what D-S9-10 bought: runs 23 and 24 died with `error running container: exit 1` and nothing else,
+while run 34 printed the phase, the command and the constraint. **The constraint is the whole finding.**
+`_realtime.schema_migrations` has `version bigint` as its primary key, and an Ecto migrator reads the
+recorded versions first and inserts only the pending ones, so a duplicate-key insert on that table is not
+something one pass does to itself — **two sessions inserted the same version**, 2.83 s after the first
+`/app/bin/migrate` trace.
+
+**Root cause (D-S9-14), proven by construction and then by measurement.** The composite's own order creates
+both writers: `Start the local Supabase stack` leaves DueWeave's realtime container running, and the
+replay's `Recreating database` then drops the database out from under it. The running node reconnects and
+runs its own migration pass while the replay's transient one-shot runs `/app/bin/migrate` against the same
+freshly created schema. Measured in the shipped order on the WSL qualification clone (cycle `w1`,
+`/home/pavithran_r_a/r34race/w1`): the live container's own log carried a **33-migration pass** that began
+`19.2` s into the replay and ended **7.4 s before** the replay's `/app/bin/migrate` line — the two writers
+are real and always present, and only their *ordering* was luck. Forced on one scratch database with an
+empty ledger (cycle `pk1`): two passes started within the same millisecond produce run 34's verbatim
+`Ecto.ConstraintError … "schema_migrations_pkey" (unique_constraint)` in one of them, exit 1. Sequential
+pair (cycle `vs1`): both exit 0, ledger ends at 33 rows. So the mechanism needs overlap, not merely two
+passes, which is exactly why eight consecutive green runs (25-33) and three reds (23, 24, 34) are the same
+defect observed at different margins.
+
+**Step 10's second red, verbatim** — and it is a *second* defect, not a restatement of the first:
+
+```
+367  10:04:42.344Z  ##[group]Run node scripts/verify-secrets.mjs --dir test-results
+378  10:04:42.477Z  Error: ENOENT: no such file or directory, scandir
+                     '/home/pavithran_r_a/actions-runner-dueweave/_work/DueWeave/DueWeave/test-results'
+380  10:04:42.478Z      at walk (…/scripts/verify-secrets.mjs:91:7)
+393  10:04:42.482Z  ##[error]Process completed with exit code 1.
+```
+
+The step is `if: always()` because a failed journey is the run whose artefacts must be scanned before the
+platform keeps them, so it also runs when the job died *before* any journey and no artefact exists. What it
+then publishes is a Node stack trace out of the credential scanner, which reads like "the scanner found
+something" and sends a reviewer to `verify-secrets.mjs` instead of to the replay. D-S9-15: the step now
+asks `[ -d … ]` per directory and prints which answer it took; the scanner itself still refuses a `--dir`
+that is not there (a scan of nothing must never report clean), which is what PHASE 23's oracle in
+`tests/ci-gate-manifest.contract.test.ts` depends on.
+
+**Repair, executed and measured locally on the shipped bytes, `11:36:12Z→11:38:42Z` on 2026-10-02** (the
+composite's steps run in order, in `/home/pavithran_r_a/dueweave-qualification`, with the real script rather
+than a hand-run equivalent): release → `pnpm supabase:start` through the filter (exit `0`, 4 redaction
+markers) → `.env.local` written (exit `0`) → **`node scripts/local-realtime-pause.mjs stop`** (exit `0`,
+container `supabase_realtime_dueweave` `running`→`exited` at `11:37:37Z`) → **`pnpm db:reset:local --debug`
+through the filter: exit `0`, `1` `/app/bin/migrate` trace, `0` `Ecto.ConstraintError`, `0`
+`schema_migrations_pkey`, `0` `error running container`** (`11:38:32Z`, 55 s) →
+**`…local-realtime-pause.mjs start`** (exit `0`; the container was already `running` before it, because the
+reset's own `Restarting containers…` phase brought it back and its boot-time pass found the ledger
+complete) → `node scripts/local-stack-check.mjs` exit **`0`** (`Auth health 200`), realtime
+`Up 22 seconds (healthy)`, `_realtime.schema_migrations` = **33** rows, i.e. one pass. Before/after, in the
+one variable that mattered: **two writers with a 7.4 s luck-margin → one writer, twice, both no-ops.**
+Tests: `tests/ci-realtime-migration-serialisation.contract.test.ts` (9 cases) and
+`tests/ci-artefact-scan-without-artefacts.contract.test.ts` (4 cases, which runs the *workflow's own command
+block* under `bash -e` in a scratch project — absence must not crash, presence must still exit 1 on a real
+`committed-env-file` finding). RED observed first: `5 failed | 4 passed (9)` with the script absent and
+`nothing pauses the live realtime container before the replay`, and `2 failed | 2 passed (4)` for the
+artefact suite while step 10's crash was still reproducible by hand (`node scripts/verify-secrets.mjs --dir
+definitely-not-produced` → exit 1 with the same `verify-secrets.mjs:91 walk` frame). GREEN: both files
+`9 passed (9)` and `4 passed (4)`, then the whole battery `Test Files 28 passed (28)` /
+`Tests 383 passed | 3 skipped (386)` (the 3 being the documented built-bundle guards, run 33's parity note),
+`pnpm check` exit 0, `pnpm lint` exit 0.
+
+**Machine state, and a host event that is *not* the cause.** Run 34's browser job failed at `10:04:42Z`.
+An unattended Docker Desktop **4.93.0 (240920)** update on the host ran at ≈`10:25–10:27Z` — observed as
+installer activity in progress, ~20 min after this run had already finished — and it tore down the shared
+WSL VM and with it the runner; I restarted Docker Desktop, and the readings taken at `11:48:38Z` are the
+consequence: `/mnt/wsl/docker-desktop` created `10:36:38.7Z`, the Ubuntu distro's boot `uptime -s` =
+`2026-10-02 10:36:34`, engine `29.8.1` API `1.56`, the runner listener pid `265` with `etimes 4282`
+(started ≈`10:37:16Z`, i.e. it came up with the VM), `runsvc.sh` pid `175`. So **the host event postdates
+run 34 by 31 minutes and cannot explain it**; every local cycle quoted above (`w1`, `pk1`, `vs1`, `w2` and
+the `11:36Z` verification) ran on the *restarted* engine, which is the stronger position anyway.
+Runner `id 21` `status online`, `busy false`, labels `self-hosted, Linux, X64, dueweave-ci`,
+version `2.337.0`. `free -m` → `4 523 MB` available of `7 737`; WSL root `5.9G used / 950G free, 1%`;
+`_work` `1.2 G`. Co-tenant `*_localvivaahvarnam` containers (5) left running and untouched, as always; no
+prune, no volume removal, no `.wslconfig`, no resource change — nothing in this segment showed exhaustion,
+so none was authorised. **Two instrument faults of my own, caught by re-measuring:** the runner unit was
+queried with `systemctl --user` and returned nothing, which reads as "the runner is down" and is not — it is
+a **system** unit,
+`actions.runner.Pavithran-R-A-project-ar1.dueweave-local-ci.service`, `active` + `enabled`; and the first
+port sweep (`grep -aE ':5432[123]'` over `ss -ltn`) listed `54322` and `54323` but not `54321` while a
+stack was serving `127.0.0.1:54321` health `200`, and a second, wider sweep listed `54321/54322/54323` plus
+the co-tenant `54324/54327`. Both readings are reported as the corrected ones; a listener list is a
+sweep-pattern risk in the same way the credential vocabulary sweeps were (runs 27-28), and it is the reason
+the port line is taken from the wider pattern here.
+
+**What run 34 does not settle.** It is a file-only head, so it carries no product evidence; the repair heads
+for D-S9-14/D-S9-15 are the twenty-fifth pushed head and their acceptance is that head's run, not this
+text. The residue in the logs of runs ≤ 28, the bare-hex blindness, the `0.0.0.0` binding, the browser
+gate's network hermeticity (limitation 27) and D-S9-13's CI-unreachable spec question (limitation 30 / owner
+action 21) are untouched. Runs 23 and 24 are now *consistent* with this mechanism — their one-shots lived
+3.62 s and 3.18 s where a healthy one takes 7.69-8.56 s, and run 34 reached its constraint error 2.83 s into
+its own one-shot — but neither of those logs carries an `Ecto` line, so **no retroactive proof is claimed
+for them**; limitation 24 says which part is measured and which part is inference. `main` is still
+`58f0cc76ca…` answering `404 Branch not protected`; nothing was merged, tagged, deployed or paid for.
+
+**Pre-push gate for the twenty-fifth head, measured `2026-10-02T11:56Z→12:04Z`.** Run in this order, with
+the stack released before the credential-free battery so the battery measures the bytes as CI will run them.
+
+| Reading | Measured |
+| --- | --- |
+| Stack this task started, released | `pnpm supabase:stop` in the WSL qualification clone at ≈`11:56Z`, exit **0** (`Stopped supabase local development setup.`). Before: **12** `*_dueweave` containers in `docker ps -a` (the D-S9-14 verification cycle's stack, `Up 24-26 minutes`). After: **0** `*_dueweave` entries in `docker ps -a` — not merely stopped, removed. |
+| Ports a leftover stack would collide with | Wider `ss -ltn` sweep (the pattern lesson from run 34's machine-state block): listeners are now `:53`, `:54400`, `:54401`, `:54403` and **nothing holds `54321`/`54322`/`54323`**, which is the exact collision that turned run 20 red (D-S9-8). |
+| Co-tenant, untouched | The five `*_localvivaahvarnam` containers are still `Up About an hour (healthy)` on the ports they were on before this session began. No other container was stopped, no `docker prune` of any kind, no `.wslconfig`, no resource change. |
+| Volumes — a stated difference, not an oversight | **3** volumes labelled `com.supabase.cli.project=dueweave` remain (`supabase_db_dueweave`, `supabase_edge_runtime_dueweave`, `supabase_storage_dueweave`). This stop did **not** pass `--no-backup`, unlike the previous head's `11:56Z`-predecessor at `08:02Z`, and the difference is deliberate: removing a database volume is irreversible, the brief forbids volume pruning, and Docker Desktop's VM keeps the volume mountpoints unreadable from this distro (`stat` → *not readable* for all four probed), so this session could not have dated their contents before deleting them. What is measured rather than assumed: they cannot hold a port (row above), and CI's own teardown releases them anyway — `.github/actions/release-local-ci-state/action.yml` runs `pnpm supabase stop --no-backup`, so no residue of mine survives the next environment job. Nothing was deleted to prove a point. |
+| Runner ready (and read without fetching its credential) | `…/actions/runners` with `--jq` selecting `id,name,status,busy,labels,version` only → `id=21 name=dueweave-local-ci status=online busy=false labels=self-hosted,Linux,X64,dueweave-ci version=2.337.0`. The registration token is a field of this payload and was therefore never requested. Service side: the **system** unit `actions.runner.Pavithran-R-A-project-ar1.dueweave-local-ci.service` → `active`, and exactly one `Runner.Listener` (pid `265`, `etimes 5158`). Not restarted — nothing measured asked for a restart. |
+| Machine, for the exhaustion question | `free -m` → **6 267 MB available of 7 737**; WSL root `5.9G used / 950G free, 1%`; runner `_work` `1.2G`. No exhaustion shown, so no resource change was authorised or made. |
+| Static gates, on the exact bytes pushed | `git diff --check` → exit **0** (three `core.autocrlf=true` warnings, no whitespace error); `pnpm verify:secrets` → exit **0**, `Scanned 214 files for 11 credential shapes. No privileged credential found in the tracked tree or the built bundle.`; `pnpm check` (`tsc --noEmit`) → exit **0**; `pnpm lint` (`eslint … --max-warnings=0`) → exit **0**. |
+| The credential-free half CI's `static` job runs | `pnpm test:unit` → exit **0**: `Test Files 28 passed (28)`, `Tests 383 passed \| 3 skipped (386)`, `Duration 27.85s`, run with **no** stack listening and captured to a file rather than piped (a wrapper's exit code is not the run's). 386 tests total = run 33's **373** plus the **13** cases D-S9-14/D-S9-15 add (9 + 4), and 28 files = 26 + 2;
+the passed count reads 383 because the same 3 bundle proofs skip locally and passed in CI, so the local
+`370 passed | 3 skipped (373)` of run 33 and this `383 passed | 3 skipped (386)` differ by exactly those 13
+new cases and by nothing else. The **3** skips are the same documented `skipIf(!distPresent)` bundle proofs (`tests/credential-boundary.contract.test.ts:64`, `tests/production-module-graph.contract.test.ts:77`, `tests/stage8-founder-contracts.test.ts:338`) that passed inside CI on runs 32 and 33 — this session's own `dist/` is absent, which is also why the scan says 214 files where CI says 234. **0** failures, **0** did-not-run, no unexplained skip. |
+| Staged set | Six paths: `.github/actions/local-supabase/action.yml`, `.github/workflows/ci.yml`, `scripts/local-realtime-pause.mjs`, `tests/ci-realtime-migration-serialisation.contract.test.ts`, `tests/ci-artefact-scan-without-artefacts.contract.test.ts`, `current_stage9_security_ci_report.md`. **Not** staged: `client/src/types/database.generated.ts`, whose `M` flag is the documented CRLF phantom (`git diff --numstat` → empty). No `.env.local` (gitignored, and it is the reason D-S9-5 hid for so long), no `dist/`, no `test-results/`, no `playwright-report/`, no trace/screenshot/video, nothing from the runner's `_work`, and no migration file — the D-S9-14 repair is CI-configuration and script only, so the 23-migration replay is untouched. |
+| `main` and the PRs | `git rev-parse refs/heads/main` and `…/branches/main` → both `58f0cc76ca560bdac08bdbd19e237aa4a413686b`, unchanged all stage; PR #1 still open and unmerged; no integration PR created. |
+
+---
+
 ### Self-hosted machine state: what was checked, because a runner keeps its state
 
 A self-hosted runner is not a fresh container: the workspace, the Docker engine and any file a job
@@ -3209,7 +3401,10 @@ artefact-producing CI environment could expose (D-S9-5, D-S9-6, D-S9-7), the res
 inflicted on its own runner (D-S9-8), the toast-occlusion recurrence run 22 exposed (D-S9-9) and the
 evidence-retention gap runs 23 and 24 exposed (D-S9-10) and the second credential a *green* run's log
 turned out to carry (D-S9-11) and the two this stage found in **its own test fixtures**, which run 31
-surfaced by a calendar day rather than by a commit (D-S9-12, D-S9-13), are recorded here. Some were
+surfaced by a calendar day rather than by a commit (D-S9-12, D-S9-13), and the two run 34 exposed —
+**D-S9-14**, the two-writer migration race sitting inside this repository's own step order that had been
+reddening the replay all along, and **D-S9-15**, the artefact-scan crash that turned that one red into a
+misleading second one — are recorded here. Some were
 surfaced by a step exiting non-zero;
 **D-S9-7 was surfaced only by reading the log of a green run**, which is the sense in which a passing job
 is not the same thing as an inspected one; **D-S9-9 was surfaced only by a *second* run of code a *first*
@@ -3223,15 +3418,26 @@ structurally could not see, because the leaked shape carries no prefix for the g
 which is the sense in which a passing suite is not the same thing as a date-independent one, while
 **D-S9-13 is the same decay pointing the direction that cannot announce itself** — a fixture whose failure
 mode is a *green* assertion or a skipped file, found only by widening this stage's own sweep after the
-first repair.
+first repair; **D-S9-14 was surfaced only because D-S9-10 made the failing step speak**, which is the sense
+in which a red run is not the same thing as a legible one, and it is the first defect of this stage's whose
+cause sat in the composite action's own step order rather than in a spec, a fixture or a retained log; and **D-S9-15 is that same run's *second* red**, which is the sense in which a step that always
+runs is not the same thing as a step that always reports the right cause.
 
-**The failure itself is deliberately *not* numbered.** Nothing about run 23's or run 24's
-`error running container: exit 1` is proven to be a defect in this repository, its tests, its
-configuration or its runner, and giving *that* a D-S9-n id would manufacture a repair no measurement
-justifies. What D-S9-10 claims is narrower and fully proven: the step that failed was the only one in
-its action that left no diagnostic trace of its own failure, and the CLI had said so in the log. The
-unexplained failure stays where it belongs — its own run sections, limitation 24 and owner actions 15
-and 16 — with the mechanism stated exactly, the unrecovered part stated as unrecovered, and the
+**The failure runs 23 and 24 showed was deliberately *not* numbered when the paragraph below was written,
+and it is numbered now — as D-S9-14, and only for the run that proved it.** The original wording is kept
+because the judgement in it was correct at the time, and a report that quietly restated it would lose the
+thing this stage exists to measure: nothing measured then proved run 23's or run 24's `error running container: exit
+1` to be a defect in this repository, its tests, its configuration or its runner, and giving *that* a
+D-S9-n id would have manufactured a repair no measurement justified. Run 34 supplied the missing half — the
+constraint name inside the retained log, the two migrators the composite's own step order always creates,
+and a forced reproduction of that exact error against an empty ledger — so the mechanism now has an id, a
+repair, and a verification executed on the shipped bytes. **What D-S9-14 does *not* do is retroactively
+explain runs 23 and 24:** their logs carry no `Ecto` line, they remain consistent-but-unproven, and
+limitation 24 states which half is measured and which half is inference. What D-S9-10 claimed then is
+narrower and fully proven, and is the only reason any of this was findable: the step that failed was the
+only one in its action that left no diagnostic trace of its own failure, and the CLI had said so in the log.
+The parts still unexplained stay where they belong — their own run sections, limitation 24 and owner actions
+15 and 16 — with the mechanism stated exactly, the unrecovered part stated as unrecovered, and the
 symptom-level changes that would have hidden it named and rejected.
 
 | ID | Defect | Proof before fix | Fix (test-side only unless stated) |
@@ -3250,6 +3456,8 @@ symptom-level changes that would have hidden it named and rejected.
 | **D-S9-11** | *The second credential a passing job printed into a retained log, and the one this stage's own sweeps could not see:* the Supabase CLI's start-up banner carries a `📦 Storage (S3)` table whose **Access Key** (32 hex characters) and **Secret Key** (64 hex characters) rows reach the job log unredacted. `.github/actions/local-supabase/action.yml` pipes both CLI invocations through `scripts/redact-cli-secrets.mjs`, and the filter was demonstrably running in the same banner — `database.log:353` of run 28 shows the connection-string password as `[redacted-db-password]` and `:360` shows the privileged key as `[redacted-sb-secret-key-41-chars]` — while `:367` and `:368` carried the S3 pair in the clear (`browser.log:329/330` on the job's second, independently started stack). Every D-S9-7 sweep in this file is literally true for the shapes it tested: `sb_secret_` 0, both markers present, and the tracked-tree gate reporting `Scanned 234 files for 11 credential shapes` with no finding — because `verify-secrets.mjs` keys each shape to a prefix or scheme (`sb_secret_`, `postgres://…:…@`, a JWT role claim, `BEGIN PRIVATE KEY`, provider tokens) and a bare hex blob has no prefix to match. So the gate that exists to stop "a credential in a place CI keeps" is blind to exactly the class of credential that has no vocabulary. | Read from run 28's retained logs as **text**, after the job had already been recorded `success` — the same method that found D-S9-7, applied again on purpose. Characterised before being changed, without ever printing a value: extracted through `grep -oE` into shell variables, measured by `${#var}` length and by an `md5sum` prefix, and compared across sources — the pair measures **identical** in `database` and `browser` of run 27 **and** of run 28 (four independently started stacks; access `adde95ea…`, secret `48366806…`), i.e. it is a stable property of this local stack, which extends D-S9-7's "the same keys regenerate across jobs" observation to Storage. The values are in no file, no chat message and no commit; they are named here only by length and digest. Blast radius, measured rather than assumed: the pair authenticates only to the local stack's S3 endpoint (`http://127.0.0.1:54321/storage/v1/s3`), the workflow holds no hosted credential (`…/actions/secrets` and `…/actions/variables` → `[]`), the stack is released at the end of each environment job, and the CLI's own notice beside these very rows (`database.log:372-374`) says *All services bind to 0.0.0.0 (network-accessible, not just localhost)* and *API keys and JWT secrets are shared defaults. Do not use in production*. **Whether the pair is a CLI-bundled default or derived from this machine is not proven**, and this entry does not claim it is either. | `scripts/redact-cli-secrets.mjs`, one rule: a `(Access\|Secret) Key` label followed by a run of ≥16 hex gets `[redacted-storage-access-key-NN-chars]` / `[redacted-storage-secret-key-NN-chars]`, keeping the label, the separator and the row, so the log still says a Storage credential existed and where. Nothing else in the rule set changed, no CI step changed, no timeout, `retries` value or assertion anywhere in the repository changed, and **no credential-shape coverage was removed** — the browser-safe values D-S9-7 deliberately keeps visible (publishable key, anon JWT, API URL, host:port/path of the DB line) stay visible, which is an assertion in the suite, not an afterthought. Measured RED/GREEN, not asserted: **(a)** in-suite — `tests/ci-log-credential-redaction.contract.test.ts` gained a 7th case feeding the Storage block's real shape (assembled at runtime, so the HARD shapes the scanner refuses never appear as literals in a tracked file) and asserting both keys vanish, both markers appear with their exact character counts, the row labels and the S3 URL survive; against the pre-change redactor it failed 1 / passed 6, after the rule it reports `7 passed (7)`, and the full battery is **26 files / 373 tests** (`+1` being this case) at exit 0. **(b)** out-of-band, against the evidence that motivated it — run 28's *actual* retained `database.log` and `browser.log` through the redactor as it stood at `6db0369` (`git show HEAD:scripts/redact-cli-secrets.mjs`, i.e. the code run 28 executed) versus the repaired one: leaking Access Key rows **1 → 0**, leaking Secret Key rows **1 → 0**, `[redacted-…]` marker lines **2 → 4** per environment log, with `762 → 762` and `665 → 665` lines in and out and `127.0.0.1` diagnostic occurrences **12 → 12** and **13 → 13**, so the filter masks credentials without eating the log a failing step has to be diagnosed from. **(c) CI acceptance, obtained by run 29** — the head carrying this rule (`9beae2d`) was pushed and observed, and the platform's own retained logs of that run show the rows masked on two independently started stacks: `database.log:343-344` and `browser.log:325-326` read `[redacted-storage-access-key-32-chars]` / `[redacted-storage-secret-key-64-chars]`, the row labels and `Region` survive, `database.log:340`/`browser.log:322` still print the `📦 Storage (S3)` table header, and counted across all three of run 29's logs there are **0** unmasked 32-hex rows, **0** unmasked 64-hex rows, **0** `sb_secret_` and **0** JWTs, with **4** `redacted-` marker rows in each environment log where run 28 had 2. The whole gate battery stayed intact on that head (23/23 migrations twice, pgTAP 364 `PASS`, 307 live, 82 browser slots, 0 failed / 0 did-not-run / 0 skipped, `retries: 0`, `run_attempt 1`, artifacts 0), so the masking was not bought with a weakened gate. **This is the first credential repair in this stage that CI itself evidences** — D-S9-7's was accepted the same way in run 21. **limitation 29** states what no run can retroactively fix: the logs GitHub already retains for runs ≤ 28 still hold the pair as printed then. |
 | **D-S9-12** | *The first defect this stage found in its own test fixtures, and it was surfaced by a calendar day rather than by a commit:* run 31 went red on `tests/stage3-local-rls.test.ts` bytes that runs 27, 28, 29 **and 30** had all passed. The suite asked for `snooze_receivable`'s **ownership** guard while passing the **date** guard's argument as a frozen literal — `p_until: "2026-10-01"` at `:1293`, accepted on every business day up to and including the day run 30 happened to execute it, because `supabase/migrations/20260815090000_current_stage5_lifecycle_correctness.sql:949-956` checks `p_until < public.current_business_date()` *before* it checks whose receivable it is. By the time run 31 reached that test the literal was yesterday, so the product refused a legitimate owner with `P0001 Choose today or a future snooze date`. Same file, same runner, same stack, same 307 tests, one day apart from run 30's green. | Identical test bytes were measured green on 2026-10-01 and red on 2026-10-02 — `database.log:610-611` of run 30 (`9 passed (9)` / `307 passed (307)`) against run 31's `##[error]Error: [legitimate-owner] A snoozes its own first receivable … P0001` (`database.log:642-645`) with `Tests 1 failed | 306 passed (307)` (`:636-639`), so the battery neither shrank nor was re-scaled. `current_business_date()` was then read live off the loopback stack (`/tmp/r32_bizdate.txt`, `/tmp/r32_bizdate2.txt`) and each fixture literal given a past/future verdict (`date '2026-10-01' < current_business_date()` → **`true`**, `2026-12-31` → `false`), which is the measurement separating "the gate caught a defect in this repository's files" from "the environment was unwell". RED reproduced locally **before** any edit, against the pre-repair file bytes (`/tmp/r32_red.txt`, exit 1): `Tests 1 failed | 109 passed (110)`, the same `P0001 Choose today or a future snooze date`. | `tests/stage3-local-rls.test.ts:40` now derives `const snoozeUntil = addIndiaBusinessDays(todayInIndia(), 30);` from the project's own clock helpers (`client/src/lib/business-clock.ts`, `client/src/lib/finance.ts:12`) rather than adding a new one, used at both `p_until` sites (`:1138`, `:1302`). **No assertion, expectation, accepted-error list, timeout, skip or budget changed anywhere in the file** — and the *refusal* half stays a frozen literal deliberately, because a date that must be rejected has to be permanently invalid, which is the opposite requirement. GREEN: that file 110/110, `Test Files 2 passed (2)` exit 0 (`/tmp/r32_green2_key.txt`), and the whole live battery **`9 passed (9)` / `Tests 307 passed (307)`** at 322.61 s with the guard qualifying against `http://127.0.0.1:54321` (`/tmp/r32_livewhole2.txt`), exit 0 — the same 307 CI counted on runs 27-30 and the same 307 run 31 counted while failing. The class was then swept site-by-site (date-axis table in the run 31 section) instead of fixing the one reporter. |
 | **D-S9-13** | *The same decay in the direction that cannot announce itself:* a frozen date fixture whose failure mode is a **green** result rather than a red one. Found only after repairing D-S9-12 forced this stage to widen its own criterion — the earlier rule ("a frozen future date expires") is not the class; the class is **a frozen date rots whenever anything downstream depends on a state *derived* from that date, in either direction**. Three sites: `e2e/stage6-local-forms.spec.ts:166` filled `Promised date "2026-09-30"` (already past when written) so the product graded the promise BROKEN and `client/src/pages/Home.tsx` stopped rendering the withdrawal control the next test presses; `tests/stage9-abuse-matrix.test.ts:198` passed the attacker's `p_until: "2026-10-05"`, which once past is refused by the **date** guard — a code in that probe's own accepted list (`["P0001","P0002"]`, `:303-306`) — leaving the cross-tenant isolation matrix green while proving nothing about isolation; and `:241`'s victim fixture `p_promised_date: "2026-10-01"` against the status assertion at `:313`. | The forms case was **measured**, not argued: `/tmp/r32_e2e_forms2.txt` reads `1 failed / 3 passed / 5 did not run`, `expect(locator).toBeVisible() failed` on `getByRole('button', { name: /Withdraw active promise/ })`, with the failure snapshot's own rendered text showing `Friday, 2 October 2026` and `Broken promises 1` as the mechanism's evidence. The abuse-matrix sites are recorded **as latent**: the vacuation mechanism is read from the assertion's own accepted-code list, and the frozen `:241` fixture was accepted by the battery green twice — before the change (`/tmp/r32_livewhole.txt`, `307 passed (307)`, `live_exit=0`) and after (`/tmp/r32_livewhole2.txt`). No measured instance of either vacuation is claimed, because none was observed; that is stated rather than smoothed over. The gate-design half **is** measured: opening that spec by hand with the gate closed returned **exit 0 while executing nothing** (`/tmp/r32_e2e_forms.txt`, `9 skipped`), because `:11` gates the file on `STAGE6_LOCAL_E2E === "1"` and no CI job runs it — the F1/F2 shape this stage was opened to hunt, in a file the manifest contract structurally cannot see. | Test-side only: `activePromisedDate = addIndiaBusinessDays(todayInIndia(), 6)` at `e2e/stage6-local-forms.spec.ts:27` used at `:166`, the snooze's valid half changed from the literal `"2026-10-05"` to `todayInIndia()` at `:213`, and `tests/stage9-abuse-matrix.test.ts:198`/`:241` derive from the same clock helpers. The refusal literals (`Promise made on "2999-01-01"`, `Bring this back on "2020-01-01"`) are left frozen, and the relation the forms refusal asserts still holds after the change. Re-measured: **`9 passed (1.9m)`**, 0 failed / 0 did-not-run (`/tmp/r32_e2e_forms3.txt`), `retries: 0` untouched, abuse-matrix 7 passed, unit battery 26 files / 373 tests and `check`/`lint`/`verify:secrets` at exit 0. **No fixture was deleted, no expected status narrowed, and no spec was quietly added to or removed from a CI gate** — the smoke-list question moves a gate and is therefore **owner action 21**, reported rather than decided here. |
+| **D-S9-14** | *The defect that had been reddening this action for three runs, and it sat in this repository's own step order:* the composite's first step starts the local stack, which leaves `supabase_realtime_dueweave` **running**; its next step replays the committed migrations with `pnpm db:reset:local`, whose `Recreating database` phase then drops the database out from under that live container. A realtime node that loses its database reconnects and runs **its own** Ecto migration pass, while the replay's transient one-shot container runs `/app/bin/migrate` against the same freshly created schema. Both writers insert into `_realtime.schema_migrations`, whose primary key is `version`, so whichever one inserts a given version second dies on `schema_migrations_pkey` and the step exits 1. Two writers is a property of the shipped order, not of a bad run — the race is armed on every replay, and only its *margin* varies, which is why the same action could be green eight times and red three. | Read out of run 34's retained `browser.log` as text, not inferred: `333 10:04:25.300Z Recreating database...`, `334 10:04:36.934Z Initialising schema...`, `342 10:04:37.887Z + sudo -E -u nobody /app/bin/migrate`, `343/345 10:04:40.716Z ** (Ecto.ConstraintError) constraint error when attempting to insert struct: * "schema_migrations_pkey" (unique_constraint)`, `361 10:04:41.982Z error running container: exit 1`. The constraint is the whole finding — an Ecto migrator reads the recorded versions and inserts only the pending ones, so a duplicate-key insert is not something one pass does to itself. **Then reproduced locally, in all three halves** (evidence tree `/home/pavithran_r_a/r34race/`, scanned with this repository's own gate: `Scanned 57 files for 11 credential shapes`, 0 findings): in the *shipped* order (cycle `w1`) the live container's own log carried a full **33-migration pass** that began **19.2 s** into the replay and finished **7.4 s before** the replay's `/app/bin/migrate` trace — both writers present, no collision only because ordering happened to work; forced on one scratch database with an empty ledger (cycle `pk1`), two passes started inside the same millisecond produce run 34's **verbatim** `Ecto.ConstraintError … "schema_migrations_pkey"` with exit 1 in one of them; run sequentially (cycle `vs1`) both pass exits are **0** and the ledger ends at 33 rows. So overlap, not merely two passes, is the cause — and runs 23/24 are *consistent* with it (their one-shots lived 3.62 s and 3.18 s against a healthy 7.69-8.56 s, run 34 reached its constraint 2.83 s into its own) without being retroactively proven by it, because neither log carries an `Ecto` line. | `scripts/local-realtime-pause.mjs` plus two steps in `.github/actions/local-supabase/action.yml` that bracket the replay — `… stop` immediately before it and `… start` immediately after, both gated on the same `if: ${{ inputs.reset == 'true' }}` as the replay itself. The repair **removes the second writer from the window** rather than trying to outrun it: the container name is derived from this checkout's declared `project_id`, addresses exactly one container (no pattern, no `--filter`, no guessed default — a checkout declaring no project id is an error, because stopping nothing while reporting success would put the race back), and realtime **stays part of the qualified stack**, since the auth sessions ride `/realtime/v1`; the pause lasts exactly as long as the replay, and the reset's own `Restarting containers…` phase or the restore step brings it back. **No timeout, no retry, no assertion, no migration, no product behaviour changed, and nothing was weakened.** `tests/ci-realtime-migration-serialisation.contract.test.ts` (9 cases) pins both halves — the derived name for this checkout *and* for a rebranded one, the fail-closed cases, and the ordering `pause < replay < restore` with the shared condition and D-S9-10's `--debug`/filter/`pipefail` still intact on the replay step. Observed RED first (`5 failed \| 4 passed (9)`, `nothing pauses the live realtime container before the replay`), then GREEN (`9 passed (9)`). **And executed end to end on the shipped bytes against the real stack** at `11:36:12Z→11:38:42Z`: start → env → **pause** (container `running`→`exited`) → **replay** exit **0** with **1** `/app/bin/migrate` trace, **0** `Ecto.ConstraintError`, **0** `schema_migrations_pkey`, **0** `error running container` → **restore** → `local-stack-check` exit **0** (`Auth health 200`), realtime `Up 22 seconds (healthy)`, ledger **33** rows i.e. one pass. One variable, before/after: two writers with a 7.4 s luck-margin → one writer, twice, both no-ops. Acceptance is the twenty-fifth pushed head's own run. |
+| **D-S9-15** | *The same run's second red, and the one that would have sent a reviewer to the wrong file:* the browser job's `Scan artefacts before uploading them` runs `if: always()`, which is right — a failed journey is exactly the run whose artefacts must be scanned before the platform keeps them — but it therefore also runs when the job died **before any Playwright spec launched**, when there are no artefacts. `scripts/verify-secrets.mjs` correctly refuses a `--dir` that is not there (`walk` at `:91` throws `ENOENT` and exits 1, because a scan of nothing must never report clean), so the step published a Node stack trace out of the **credential scanner** as the job's second failure — text that reads like "the secret scan found something" and points a reviewer at `verify-secrets.mjs` instead of at the replay that had failed 0.4 s earlier. | Run 34's `browser.log`, verbatim: `367 10:04:42.344Z ##[group]Run node scripts/verify-secrets.mjs --dir test-results`, `378 Error: ENOENT: no such file or directory, scandir '/home/pavithran_r_a/actions-runner-dueweave/_work/DueWeave/DueWeave/test-results'`, `380 at walk (…/scripts/verify-secrets.mjs:91:7)`, `393 ##[error]Process completed with exit code 1.` — one second after step 4's failure, with steps 6-9 `skipped` and **0 of the 82 browser slots** executed, so neither scanned directory could exist. This stage had already measured the same shape as a *passing*-run problem (D-S9-6, the ENOENT on a green dry run) and had repaired it by making the run produce the directory; this is the other half — a run that produces nothing — and it was reproduced by hand before being changed: `node scripts/verify-secrets.mjs --dir definitely-not-produced` → exit 1 with the same `:91 walk` frame. Because the scanner's refusal is the correct behaviour, the repair had to be in the step, not in the gate. | Per-directory existence guard in `.github/workflows/ci.yml`: `[ -d test-results ]` / `[ -d playwright-report ]`, each `else` branch printing `no <dir> directory: the journey steps produced no artefact to scan`. **`scripts/verify-secrets.mjs` is unchanged and still fails a missing `--dir`**, and both `--dir` literals are still in the step — the property PHASE 23's oracle in `tests/ci-gate-manifest.contract.test.ts` derives from the workflow itself, so the guard could not be bought by deleting a scan. `tests/ci-artefact-scan-without-artefacts.contract.test.ts` (4 cases) does not re-assert the guard as text: it extracts the **workflow's own `run:` block**, dedents it exactly as Actions hands it to bash, and executes it under `bash -e` in a scratch project that carries a copy of the real scanner — so the test fails if either half drifts. Observed RED first (`2 failed \| 2 passed (4)` while step 10's crash was still reproducible by hand), then GREEN: no-artefacts run exits **0** with no `ENOENT` anywhere in its output and both directory names named; a run whose `playwright-report/.env.local` exists still exits **1** with the `committed-env-file` HARD finding and no `ENOENT`. Absence is now a message; presence is still a gate. |
 | — | Assertion strength | — | **No security assertion was weakened anywhere in this stage.** No expectation was deleted, no `toHaveCount` relaxed, no error-copy assertion loosened, no isolation probe narrowed; the only assertion changes are added waits and larger time budgets, both recorded with the measurement that justified them. `retries` is `0` in both Playwright configs and pinned by a contract test that also rejects `--retries` on the command line. The D-S9-7 repair was checked against the opposite failure mode on purpose (`pipefail`, above), because a log filter is exactly the kind of change that turns a failing step into a passing one. D-S9-9 was checked against the same temptation: the four obvious ways to make run 22 green — a bigger `timeout`, a `waitForTimeout`, a `retries: 1`, or moving the click before the assertion — were all rejected as symptom fixes, and the repair is a wait on the thing that was blocking. |
 
 ## Host-state caveat, disclosed rather than smoothed
@@ -3465,7 +3673,11 @@ a ceiling, not a promise.
     (artifact `11089879345`, `6 245 468` bytes, 27 files) with both pre-upload scans clean — so the
     evidence gap is job-specific, not workflow-wide, and run 25's diagnosis needed no host-side record at
     all beyond the confirmation of a window the artifact could not see. Owner action 14.
-24. **The `db reset` failure is not explained, and no repository or runner defect is proven by it.**
+24. ~~**The `db reset` failure is not explained, and no repository or runner defect is proven by it.**~~
+    **The first clause is now false and the second is now proven in the opposite direction — run 34 named
+    the mechanism, and the mechanism is this repository's own step order (D-S9-14).** The rest of this item
+    is kept exactly as written, because it is the record of what was and was not excluded before that
+    evidence existed, and because its exclusions still hold.
     Run 23 and run 24 died the same way, at the same sub-step, on heads differing only by this file, so
     the mechanism is now twice-observed and still once-unexplained: a transient anonymous container from
     `public.ecr.aws/supabase/realtime:v2.130.0`, started by the CLI during `db reset` and removed by it
@@ -3494,6 +3706,30 @@ a ceiling, not a promise.
     command and the health check that runs 23 and 24 could only point at. Consequence to weigh before
     merging: `database` is the one job that cannot currently be assumed deterministic on this machine, and
     D-S9-8 already cost it one run for a different reason. Owner actions 15 and 16.
+    **Status after run 34 — the mechanism is measured, and it was in this repository's own step order.** The
+    instrument this limitation's own repair (D-S9-10) added is what produced the answer: run 34's retained
+    log carried `Ecto.ConstraintError … "schema_migrations_pkey" (unique_constraint)` 2.83 s into the
+    replay's `/app/bin/migrate` trace, and a duplicate insert on a version-keyed ledger requires **two**
+    migrator sessions. Both were always present, by construction: the composite's stack-start step leaves
+    `supabase_realtime_dueweave` running and the next step's `Recreating database` drops its database out
+    from under it, so the reconnecting node migrates while the replay's one-shot migrates the same schema —
+    measured in the shipped order as a live 33-migration pass starting 19.2 s into the replay and ending
+    7.4 s before the replay's own trace (only the ordering saved it), forced to collide on a scratch ledger
+    to reproduce run 34's verbatim error, and shown clean when the same pair is serialised. Repaired as
+    **D-S9-14**, verified by executing the shipped composite end to end (`1` migrate trace, exit 0, 0
+    constraint errors, ledger 33, realtime restored healthy, stack check 0). **What is still not claimed:**
+    that runs 23 and 24 died of it — their logs contain no `Ecto` line, so the honest statement remains
+    *consistent*, not proven, and this file's earlier note that those two runs' one-shots lived 3.62 s and
+    3.18 s is now a corroborating shape rather than a mystery. **Every exclusion this item recorded still
+    stands** — schema content, the head under test, drift, resource exhaustion, the analytics collateral,
+    the clock, a dirty workspace and any retry are each still excluded by a reading, and the "competing
+    stack" exclusion was accurate as written: it ruled out *another project's* stack, and the writer this
+    analysis found is this project's own realtime container, which no container listing would ever have
+    flagged as a competitor. The consequence also changes shape: the failure was never environmental
+    non-determinism but a **deterministic race with a variable margin**, so owner action 15's question
+    ("how much non-determinism is tolerable") is superseded by an acceptance question — does the replay pass
+    on both environment jobs of the head carrying the pause/restore steps, read from the logs' migrate-trace
+    counts rather than from the job badge.
 25. ~~**The D-S9-9 acceptance is therefore still outstanding, and this file counts neither run 23 nor
     run 24 as providing it.**~~ **CLOSED by run 25 — kept here because the closure is only meaningful
     against the two runs that could not provide it.** The repair head (`9ee7921`) failed before any
@@ -3797,6 +4033,20 @@ a ceiling, not a promise.
     instrument that would name the cause next time exists and is proven to work. That is a reason to treat
     the risk as *unquantified*, not as resolved: one observation of recovery on a shared workstation
     establishes nothing about the next one.
+    **Status after run 34 — this item's premise is gone, and the decision left in it is smaller.** The
+    instrument was used, and it named the cause rather than a symptom: the failure was a **proven defect in
+    this repository's own composite action** (D-S9-14 — two migration writers sharing one ledger, because
+    the stack-start step leaves the realtime container live and the replay step drops its database out from
+    under it), not environmental non-determinism, so "how much of it is tolerable" is no longer the right
+    question. The remaining owner decision is narrower: whether to accept the serialisation repair on the
+    evidence the twenty-fifth pushed head produces, and whether to act on any of owner action 16's three
+    stack-level candidates on top of it. Two corrections to how this item was phrased, both now measured:
+    the failure was never *non*-deterministic in construction — the race is armed on every replay — it was
+    non-deterministic only in **margin**, which is why runs 25-33 could be green and 23, 24 and 34 red on
+    the same machine; and the "unquantified risk" framing should have warned that a green run proves the
+    margin, not the absence of the race. Runs 23 and 24 still stay attributed-only-as-consistent (their
+    logs carry no `Ecto` line), so this stage claims no retrospective fix of those two specific runs — the
+    claim on offer is that the armed race is now serialised, and only a run on the repair head can show it.
 16. **Once run 25's log names the failing one-shot, choose the stack-level remediation.** The condition
     attached to this item is now satisfied in the weaker sense available: run 25's log does name the
     one-shot phase (`Seeding selfhosted Realtime` / `Starting Realtime` / the
@@ -3815,6 +4065,23 @@ a ceiling, not a promise.
     phase that failed twice is arguably a second pass over work already done. (c) is the smallest change
     that removes the failure surface and the largest change to what `database` is proving, so it is an
     owner call.
+    **Status after run 34 — this item's condition is now met in the strong sense it was written for.** The
+    `--debug` stream did not merely make a future failure diagnosable, it produced one and diagnosed it: run
+    34's replay died with `Ecto.ConstraintError … "schema_migrations_pkey"` in the retained log, which is how
+    D-S9-14 was found, reproduced and repaired. **None of (a), (b) or (c) was performed by this stage.** What
+    was done instead is a fourth option none of these lines contemplated, and the smallest one that repairs
+    a *proven repository defect* rather than altering the executed environment: pause this checkout's own
+    realtime container for the duration of the replay and restore it after, so one migrator is in the window
+    at a time (D-S9-14). Three consequences the owner should weigh now, since they were invisible when this
+    item was opened: **(c) has become the interesting one** — the phase that raced is precisely the second
+    replay (c) would delete, so (c) removes the surface instead of serialising it, and it remains the largest
+    change to what `database` proves; **(a) and (b) are now testable against a named mechanism** rather than
+    against a mystery, i.e. a CLI or image change here would either move the realtime container's
+    reconnect/retry behaviour or not, and the existing contract suite would see the difference; and
+    **D-S9-14 makes the *pause* step itself a dependency worth reviewing** — it addresses one exact container
+    derived from `supabase/config.toml`'s `project_id`, fails closed if that is absent, and leaves realtime
+    running for every suite, which is what keeps the auth sessions riding `/realtime/v1` inside the qualified
+    stack rather than quietly narrowing it.
 17. **Decide the host's name resolution — this is a machine question, and it reddened a release gate.**
     Run 25's single failing test is caused outside this repository: WSL's own connectivity prober logged
     five `getaddrinfo()` failures (`-3` `EAI_AGAIN` ×4, then `-5` `EAI_NODATA`) between `10:21:43.760Z`
@@ -4136,6 +4403,29 @@ runner identity, and it is deliberately **not** narrated into a twenty-fifth hea
 made, applied here rather than described. Every
 original red is preserved above and will not be rewritten by a later green.
 
+**Status as of run 34, read against the paragraph above.** `a86dc09` — the twenty-fourth head, this file
+alone — came back **red**, and the paragraph immediately above is how this file stood before that run, so
+it is kept rather than amended. What that red changed in the verdict is precise and has three parts.
+**(1) Nothing about the recovery claim.** Run 34 executed no gate at all in `browser` (0 of 82 slots), but
+`static` and `database` were green on it, and the PASS this section defends is the measured fact that
+GitHub Actions orchestrated all three release gates to completion for delivered heads — runs 18, 19, 21,
+27, 28, 29, 30, 32 and 33 — with run 34 joining runs 20, 22, 23, 24, 25, 26 and 31 in the record of runs
+that did not. **(2) Limitation 24's first clause is now false.** The `db reset` failure has a mechanism,
+and it is in this repository: **D-S9-14**, the composite action starting the stack and then dropping the
+database out from under its own live realtime container, so two migrators write `_realtime.schema_migrations`
+and one loses on `schema_migrations_pkey`. It was reproduced (forced concurrent passes produce run 34's
+verbatim error; the serialised pair is clean) and repaired forward, and verified by executing the shipped
+composite end to end. Runs 23 and 24 stay *consistent*, not re-proven — no `Ecto` line exists in either
+log — and owner action 15's "how much non-determinism is tolerable" is superseded by an acceptance
+question. **(3) A new open item, which is the only one this stage created.** D-S9-14 and D-S9-15 have **no
+CI acceptance yet**; their head is the twenty-fifth push, and until that run is read the sentence in this
+file is "repaired and verified locally", not "accepted". The five items the previous paragraph left outside
+this stage's authority are unchanged by run 34 — with one correction of citation: the `0.0.0.0` binding
+those lists attribute to "limitation 24" is not documented there (it is limitation 29's blast-radius
+discussion and owner action 20 (iii)); the mis-numbering is pre-existing, is left in the historical
+paragraphs rather than silently retro-fixed, and limitation 24 is now the D-S9-14 record, so anyone
+following that pointer should read 29 and 20 (iii) instead.
+
 What turns the earlier BLOCKED into PASS is one measured fact and nothing else: GitHub Actions
 orchestrated all three release gates to completion for the delivered head. Run `36555102272`,
 event `push`, head `ec868e8e71ae62c9f5eda83d126c4e70c539aa0e`, `status = completed`,
@@ -4226,6 +4516,20 @@ Still not claimed by this verdict, and each is a real hole rather than a hedge:
   32. That is the honest form of "the gate works": it has now rejected this repository twice, for two
   different real reasons, and passed everything after each repair — and run 33 reproduced run 32's counts
   exactly on a later date, which is the determinism claim for the *gates* and nothing more.
+  **Run 34 reclassifies the sentence "the local Supabase stack demonstrably is not [deterministic]", and
+  that is the most useful correction in this file.** The tally is now **eight reds of seventeen**
+  self-hosted runs, and the third red caused inside this repository's own files is **D-S9-14** — run 34's
+  replay dying on `Ecto.ConstraintError … "schema_migrations_pkey"` because the composite's step order
+  always puts two migration writers on one ledger. So the failure was never stack flakiness: it was a
+  **deterministic race with a variable margin**, which is exactly why runs 25-33 could be green while 23, 24
+  and 34 were red on the same machine, and why a green on that step was never evidence of an absent defect —
+  only of an ordering that happened not to overlap (measured: the live container's pass ended 7.4 s before
+  the replay's). Two consequences for how a PASS here should be quoted: the claim above about gate
+  determinism is *stronger* than it was, because the one non-deterministic-looking component turned out to
+  have a repository-side cause with a reproduction and a repair; and the warning is *sharper*, because a
+  race that is armed on every run can look green indefinitely — so the acceptance evidence for D-S9-14 has
+  to be a head whose replay passes **with the migrate-trace count read out of the log (1 per replay), not
+  with the conclusion alone**. That is the twenty-fifth pushed head's run, and it is not yet claimed.
 
 NEXT: **Stage 10 — Deployment** is unlocked *as a roadmap stage*, subject to owner actions 1–8
 above (chiefly: read the run for the head this report lands on, decide the runner question, create

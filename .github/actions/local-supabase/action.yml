@@ -39,6 +39,22 @@ runs:
       shell: bash
       run: node scripts/local-supabase-env.mjs
 
+    # D-S9-14: the replay is a second writer on the database it is recreating. `Start the local
+    # Supabase stack` above leaves this project's realtime container live, the replay's
+    # `Recreating database` drops its database, and the reconnecting container runs its own Ecto
+    # migration pass at the same moment as the replay's transient container. Both insert the same
+    # version into `_realtime.schema_migrations`; run 34's loser reported
+    # `** (Ecto.ConstraintError) ... * "schema_migrations_pkey" (unique_constraint)` and
+    # `error running container: exit 1`. Measured in that order, the live container completed a
+    # 33-migration pass inside one replay window, serialised with the other writer by 7.4 s of
+    # timing luck. Forced simultaneous passes reproduce run 34's error; sequential ones both pass.
+    # So the live writer is removed from the window instead of outrun. Gated on the same input as
+    # the replay: a caller that asks for no replay does not have its stack touched.
+    - name: Pause this checkout's realtime container for the replay
+      if: ${{ inputs.reset == 'true' }}
+      shell: bash
+      run: node scripts/local-realtime-pause.mjs stop
+
     # The suites assert against the schema the committed migrations produce, not whatever
     # a half-finished database happens to hold, so the stack is replayed from zero.
     # D-S9-10: runs 23 and 24 both died inside this replay with only `error running
@@ -55,6 +71,15 @@ runs:
       run: |
         set -o pipefail
         pnpm db:reset:local --debug 2>&1 | node scripts/redact-cli-secrets.mjs
+
+    # Realtime stays part of the qualified stack: the auth sessions ride `/realtime/v1`, so the
+    # pause lasts exactly as long as the replay. `db reset` normally boots this container again in
+    # its own "Restarting containers" phase, where its migration pass finds the ledger already
+    # complete; this step is what makes the restoration an assertion rather than a hope.
+    - name: Restore the realtime container the replay paused
+      if: ${{ inputs.reset == 'true' }}
+      shell: bash
+      run: node scripts/local-realtime-pause.mjs start
 
     - name: Confirm the stack is the loopback stack this stage qualifies against
       shell: bash

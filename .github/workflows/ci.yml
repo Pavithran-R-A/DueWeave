@@ -180,11 +180,28 @@ jobs:
       # it. They are scanned before upload, because a failure screenshot or trace can
       # carry whatever was on screen; the upload never includes .env.local, the built
       # bundle (which inlines the local stack's configuration) or any database dump.
+      # D-S9-15: the step is `always()` because a failed journey is exactly the run whose
+      # artefacts need reading, which also means it runs when the job died before Playwright
+      # and produced nothing. Run 34's browser job then showed a Node ENOENT stack trace out of
+      # the credential scanner as a second red step, in front of the real failure and reading
+      # like a found credential. The existence test asks the question the crash answered by
+      # exploding — was there an artefact? — and says which answer it took. The scanner keeps
+      # refusing a directory that is not there when it is named directly (see PHASE 23's
+      # oracle in ci-gate-manifest): tolerating absence here is a statement about this job's
+      # order, not a general weakening of the gate.
       - name: Scan artefacts before uploading them
         if: ${{ always() }}
         run: |
-          node scripts/verify-secrets.mjs --dir test-results
-          node scripts/verify-secrets.mjs --dir playwright-report
+          if [ -d test-results ]; then
+            node scripts/verify-secrets.mjs --dir test-results
+          else
+            echo "no test-results directory: the journey steps produced no artefact to scan"
+          fi
+          if [ -d playwright-report ]; then
+            node scripts/verify-secrets.mjs --dir playwright-report
+          else
+            echo "no playwright-report directory: the journey steps produced no artefact to scan"
+          fi
 
       # The stack and the bundle belong to this job, not to the host: leaving them running
       # would make the next run inherit them, and would hold the loopback ports the
