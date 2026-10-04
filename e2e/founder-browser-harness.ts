@@ -1,4 +1,4 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 import { awaitLedger, completeWorkspaceSetup } from "./workspace-setup";
 
 // Stage 8's two Founder journeys drive the same real screens: an account is created
@@ -73,6 +73,54 @@ export function toastTitle(page: Page, title: string) {
 // stack to empty before its next action rather than matching an older copy.
 export async function clearToasts(page: Page) {
   await expect(page.getByRole("region", { name: /Notifications/ }).locator("li"), "the toast stack never cleared").toHaveCount(0, { timeout: 20_000 });
+}
+
+export type ToastBox = { x: number; y: number; width: number; height: number };
+
+/** The notification card rather than the text inside it: a card is the thing that covers. */
+export function toastCard(page: Page, title: string) {
+  return page.getByRole("region", { name: /Notifications/ }).locator("[data-sonner-toast]").filter({ hasText: title }).first();
+}
+
+/**
+ * The card's box once its entrance transition has finished. Sonner slides a new card into the
+ * band, so a box read the instant the card becomes visible describes the animation rather than
+ * the geometry a pointer meets, and a reachability claim built on it is wrong in whichever
+ * direction the card had not yet arrived. Polls until two consecutive reads agree, so a card
+ * that never comes to rest fails here instead of reporting a stale box.
+ */
+export async function restingToastBox(card: Locator) {
+  let previous = await card.boundingBox();
+  await expect
+    .poll(
+      async () => {
+        const current = await card.boundingBox();
+        const settled = Boolean(previous && current && Math.abs(previous.y - current.y) < 0.5 && Math.abs(previous.height - current.height) < 0.5);
+        previous = current;
+        return settled;
+      },
+      { message: "the notification card never came to rest", timeout: 10_000, intervals: [50] }
+    )
+    .toBe(true);
+  return (await card.boundingBox()) as ToastBox;
+}
+
+/** Painted area the two boxes share, in square pixels. */
+export function boxOverlap(a: ToastBox, b: ToastBox) {
+  const width = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x);
+  const height = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y);
+  return width > 0 && height > 0 ? Math.round(width * height) : 0;
+}
+
+/**
+ * Whether a notification card owns the browser's own hit test at the centre of `box` — which is
+ * what decides where a real click lands, as opposed to what the DOM says is there.
+ */
+export function pointerOwnedByToast(page: Page, box: ToastBox) {
+  return page.evaluate((point) => {
+    const element = document.elementFromPoint(point.x, point.y);
+    return Boolean(element?.closest?.("[data-sonner-toast]"));
+  }, { x: box.x + box.width / 2, y: box.y + box.height / 2 });
 }
 
 /** Fills the receivable sheet the way a customer does. Asserts nothing about the answer. */

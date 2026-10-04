@@ -11,13 +11,19 @@ import path from "node:path";
 import QRCode from "qrcode";
 import {
   addReceivable,
+  backToLedger,
+  boxOverlap,
   clearToasts,
   founderAccountFor,
   openFounderPage,
+  pointerOwnedByToast,
+  restingToastBox,
   signIn,
   signOut,
   signUp,
+  toastCard,
   toastTitle,
+  type ToastBox,
 } from "./founder-browser-harness";
 import { problemsFound, startProblemWatch, type ProblemWatch } from "./problem-watch";
 import {
@@ -169,13 +175,50 @@ test.describe("Stage 8 local Founder customer journey", () => {
     // The refusal names itself in product language, not as a database error.
     await expect(page.getByRole("region", { name: /Notifications/ })).not.toContainText(/PGRST|SQLSTATE|constraint|policy|row-level/i);
 
-    // The refusal toast overlaps this button, and sonner holds a toast open while the pointer is
-    // on it — which is exactly what Playwright's actionability hover does. D-S9-9.
-    await clearToasts(page);
-    await callout.getByRole("button", { name: /View Founder access/ }).click();
-    await expect(page).toHaveURL(/\/founder$/);
+    // D-S9-9 was closed as a rule about test order. Measured against the refusal card at rest it
+    // is a rule about the product: the card covers 94% of this button's box at 1280x720 and all
+    // of it at 768x1024, and sonner keeps a card alive while the pointer is parked on it, so the
+    // pointer that aims for the control the refusal names never reaches it. The card is an
+    // announcement, so it has to let the click through at every width the ledger renders at. At
+    // 390x844 the ledger stacks the call-out's actions below its copy, so nothing covers
+    // anything; the click is still pressed there, because a rule only means something when it is
+    // exercised where it does not currently bite. The 10-second bound is the click's own timeout,
+    // not a wait: an intercepted click fails here instead of eating the journey's budget.
+    const covering: { label: string; overlap: number; note: string }[] = [];
+    for (const viewport of [
+      { label: "desktop 1280x720", width: 1280, height: 720 },
+      { label: "tablet 768x1024", width: 768, height: 1024 },
+      { label: "mobile 390x844", width: 390, height: 844 },
+    ]) {
+      await clearToasts(page);
+      await page.setViewportSize({ width: viewport.width, height: viewport.height });
+      if (!page.url().endsWith("/")) await backToLedger(page);
+      expectedFailure = REFUSED_RECEIVABLE_WRITE;
+      await addReceivable(page, `Stage8 Over-limit ${viewport.width} ${runTag.slice(-4)}`, `Stage8 invoice over ${viewport.width}`);
+      const card = toastCard(page, "Your Free plan limit is reached.");
+      await expect(card).toBeVisible();
+      const cta = callout.getByRole("button", { name: /View Founder access/ });
+      const ctaBox = (await cta.boundingBox()) as ToastBox;
+      const cardBox = await restingToastBox(card);
+      const overlap = boxOverlap(cardBox, ctaBox);
+      const note = `${viewport.label}: the refusal card at ${Math.round(cardBox.x)},${Math.round(cardBox.y)} ` +
+        `${Math.round(cardBox.width)}x${Math.round(cardBox.height)} covers ${overlap}px^2 of the ` +
+        `${Math.round(ctaBox.width)}x${Math.round(ctaBox.height)} button`;
+      covering.push({ label: viewport.label, overlap, note });
+      expect(await pointerOwnedByToast(page, ctaBox), `${note} — the card intercepted the pointer`).toBe(false);
+      await cta.click({ timeout: 10_000 });
+      await expect(page).toHaveURL(/\/founder$/, { timeout: 15_000 });
+    }
+
+    // Non-vacuity: the two widths Stage 9 measured the card standing on the control still have
+    // to be covered by it, or this journey guards nothing and should say so.
+    for (const width of ["desktop 1280x720", "tablet 768x1024"]) {
+      const entry = covering.find((measurement) => measurement.label === width)!;
+      expect(entry.overlap, `${entry.note} — expected the card to stand over the control it names`).toBeGreaterThan(0);
+    }
+
     await expectNoWayToPay(page);
-    observed("free-limit", "the fourth active receivable was refused by the database and routed to a still-closed Founder page");
+    observed("free-limit", `the fourth active receivable was refused by the database and routed to a still-closed Founder page at three viewports with the refusal card standing on the control; ${covering.map((measurement) => `${measurement.note}, pointer passed through, routed`).join("; ")}`);
   });
 
   test("the synthetic-ready fixture reveals the pinned price, payee and seats", async ({ page }) => {

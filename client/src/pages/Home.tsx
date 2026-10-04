@@ -146,7 +146,9 @@ function App() {
       const message = error instanceof Error ? error.message : "Please try again.";
       if (message.includes("Free plan allows up to three active receivables")) {
         setFounderLimitReached(true); setSheet(null);
-        feedback.error("Your Free plan limit is reached.", { description: "Founder access removes the active-receivable limit after manual approval.", action: { label: "View Founder", onClick: () => navigateTo("/founder") } });
+        // `passthrough` because this refusal raises the call-out directly beneath it; the card
+        // must not cover the "View Founder access" button it is telling the owner to press.
+        feedback.error("Your Free plan limit is reached.", { passthrough: true, description: "Founder access removes the active-receivable limit after manual approval.", action: { label: "View Founder", onClick: () => navigateTo("/founder") } });
         return;
       }
       feedback.error("Could not add receivable", { description: message });

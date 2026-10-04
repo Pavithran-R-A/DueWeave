@@ -18,11 +18,13 @@ import {
   clearToasts,
   founderAccountFor,
   openFounderPage,
+  pointerOwnedByToast,
   signIn,
   signOut,
   signUp,
   submitPaymentReference,
   toastTitle,
+  type ToastBox,
 } from "./founder-browser-harness";
 import { problemsFound, startProblemWatch, type ProblemWatch } from "./problem-watch";
 import {
@@ -402,10 +404,13 @@ test.describe("Stage 8 local Founder reviewer journey", () => {
     await expect(toastTitle(page, "Your Free plan limit is reached.")).toBeVisible();
     expect(activeReceivableCount(buyer.email), "a sixth receivable was stored against a revoked account").toBe(5);
 
-    // The refusal toast overlaps this button, and sonner holds a toast open while the pointer is
-    // on it — which is exactly what Playwright's actionability hover does. D-S9-9.
-    await clearToasts(page);
-    await page.locator(".founder-limit-callout").getByRole("button", { name: /View Founder access/ }).click();
+    // D-S9-9 was papered over here by waiting for the notification stack to empty before this
+    // click, which hid the product defect: the refusal card rested on the button it names. The
+    // card is pointer-transparent now, so the journey presses the button while the card is up.
+    const viewFounder = page.locator(".founder-limit-callout").getByRole("button", { name: /View Founder access/ });
+    const viewFounderBox = (await viewFounder.boundingBox()) as ToastBox;
+    expect(await pointerOwnedByToast(page, viewFounderBox), "the refusal card still intercepts the button it names").toBe(false);
+    await viewFounder.click({ timeout: 10_000 });
     await expect(page.getByText("Founder Lifetime is active")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Start payment claim" })).toHaveCount(0);
     observed("revocation", "revoked with the anon key plus this reviewer's own bearer token (no service role); 5 receivables, claim and audit history intact, sixth write refused; the review screen carries no revoke control");
