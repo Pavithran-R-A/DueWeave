@@ -12,18 +12,14 @@ import QRCode from "qrcode";
 import {
   addReceivable,
   backToLedger,
-  boxOverlap,
+  captureRefusalCoverage,
   clearToasts,
   founderAccountFor,
   openFounderPage,
-  pointerOwnedByToast,
-  restingToastBox,
   signIn,
   signOut,
   signUp,
-  toastCard,
   toastTitle,
-  type ToastBox,
 } from "./founder-browser-harness";
 import { problemsFound, startProblemWatch, type ProblemWatch } from "./problem-watch";
 import {
@@ -194,19 +190,17 @@ test.describe("Stage 8 local Founder customer journey", () => {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
       if (!page.url().endsWith("/")) await backToLedger(page);
       expectedFailure = REFUSED_RECEIVABLE_WRITE;
+      const triggered = Date.now();
       await addReceivable(page, `Stage8 Over-limit ${viewport.width} ${runTag.slice(-4)}`, `Stage8 invoice over ${viewport.width}`);
-      const card = toastCard(page, "Your Free plan limit is reached.");
-      await expect(card).toBeVisible();
-      const cta = callout.getByRole("button", { name: /View Founder access/ });
-      const ctaBox = (await cta.boundingBox()) as ToastBox;
-      const cardBox = await restingToastBox(card);
-      const overlap = boxOverlap(cardBox, ctaBox);
-      const note = `${viewport.label}: the refusal card at ${Math.round(cardBox.x)},${Math.round(cardBox.y)} ` +
-        `${Math.round(cardBox.width)}x${Math.round(cardBox.height)} covers ${overlap}px^2 of the ` +
-        `${Math.round(ctaBox.width)}x${Math.round(ctaBox.height)} button`;
-      covering.push({ label: viewport.label, overlap, note });
-      expect(await pointerOwnedByToast(page, ctaBox), `${note} — the card intercepted the pointer`).toBe(false);
-      await cta.click({ timeout: 10_000 });
+      const coverage = await captureRefusalCoverage(page, "Your Free plan limit is reached.", { scope: ".founder-limit-callout", label: "View Founder access" });
+      const { cardBox, controlBox } = coverage;
+      const note = `${viewport.label}: the live refusal card at ${Math.round(cardBox.x)},${Math.round(cardBox.y)} ` +
+        `${Math.round(cardBox.width)}x${Math.round(cardBox.height)} covers ${coverage.overlap}px^2 of the ` +
+        `${Math.round(controlBox.width)}x${Math.round(controlBox.height)} button, measured in the same frame ` +
+        `${Date.now() - triggered}ms after the refusal`;
+      covering.push({ label: viewport.label, overlap: coverage.overlap, note });
+      expect(coverage.pointerOwnedByToast, `${note} — the card intercepted the pointer`).toBe(false);
+      await callout.getByRole("button", { name: /View Founder access/ }).click({ timeout: 10_000 });
       await expect(page).toHaveURL(/\/founder$/, { timeout: 15_000 });
     }
 

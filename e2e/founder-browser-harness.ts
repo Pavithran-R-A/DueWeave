@@ -1,4 +1,4 @@
-import { expect, type Locator, type Page } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
 import { awaitLedger, completeWorkspaceSetup } from "./workspace-setup";
 
 // Stage 8's two Founder journeys drive the same real screens: an account is created
@@ -77,39 +77,69 @@ export async function clearToasts(page: Page) {
 
 export type ToastBox = { x: number; y: number; width: number; height: number };
 
-/** The notification card rather than the text inside it: a card is the thing that covers. */
-export function toastCard(page: Page, title: string) {
-  return page.getByRole("region", { name: /Notifications/ }).locator("[data-sonner-toast]").filter({ hasText: title }).first();
-}
+/** What one frame of the live page says about a refusal card and the control beneath it. */
+export type RefusalCoverage = {
+  cardBox: ToastBox;
+  controlBox: ToastBox;
+  overlap: number;
+  pointerOwnedByToast: boolean;
+};
 
 /**
- * The card's box once its entrance transition has finished. Sonner slides a new card into the
- * band, so a box read the instant the card becomes visible describes the animation rather than
- * the geometry a pointer meets, and a reachability claim built on it is wrong in whichever
- * direction the card had not yet arrived. Polls until two consecutive reads agree, so a card
- * that never comes to rest fails here instead of reporting a stale box.
+ * One in-page capture of a refusal card and the control it names, taken in the same frame.
+ *
+ * Three failures this has to make impossible, each measured rather than imagined. A card box,
+ * a control box and a hit test read at three different moments cannot be combined into one
+ * claim about a click. "Two consecutive reads agree" is not "at rest in the band": a card that
+ * has finished leaving agrees with itself exactly one own-height above it, and run 37202389761
+ * measured the refusal at `384,-22 356x130` with the band's own top offset at 108 — 108 - 130 =
+ * -22, which is Sonner's `[data-removed=true][data-front=true]` rule of `translateY(-100%)` to
+ * the pixel. And a capture that costs seven sequential round trips spent 2583ms of the
+ * refusal's 9000ms lifetime on an idle machine, a budget a loaded runner can overrun and did.
+ *
+ * So the waiting happens inside the page: one `evaluate` that polls on animation frames until
+ * a card that is not leaving has stopped moving, then reads both boxes and asks the browser
+ * what owns the centre of the control, all in the frame where it stops polling. A card that
+ * has already gone cannot answer, so the guard says so instead of measuring its departure.
  */
-export async function restingToastBox(card: Locator) {
-  let previous = await card.boundingBox();
-  await expect
-    .poll(
-      async () => {
-        const current = await card.boundingBox();
-        const settled = Boolean(previous && current && Math.abs(previous.y - current.y) < 0.5 && Math.abs(previous.height - current.height) < 0.5);
-        previous = current;
-        return settled;
-      },
-      { message: "the notification card never came to rest", timeout: 10_000, intervals: [50] }
-    )
-    .toBe(true);
-  return (await card.boundingBox()) as ToastBox;
-}
-
-/** Painted area the two boxes share, in square pixels. */
-export function boxOverlap(a: ToastBox, b: ToastBox) {
-  const width = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x);
-  const height = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y);
-  return width > 0 && height > 0 ? Math.round(width * height) : 0;
+export function captureRefusalCoverage(page: Page, cardTitle: string, control: { scope: string; label: string }): Promise<RefusalCoverage> {
+  return page.evaluate(
+    async ({ cardTitle, scope, label }) => {
+      const deadline = performance.now() + 15_000;
+      const paintOf = (element: Element): ToastBox => {
+        const box = element.getBoundingClientRect();
+        return { x: box.x, y: box.y, width: box.width, height: box.height };
+      };
+      /** A card on its way out is still mounted, and its resting place is off the top edge. */
+      const isLeaving = (element: Element) => element.getAttribute("data-removed") === "true" || getComputedStyle(element).opacity === "0";
+      let previous: ToastBox | null = null;
+      for (;;) {
+        const cards = [...document.querySelectorAll("[data-sonner-toast]")].filter((element) => (element.textContent ?? "").includes(cardTitle) && !isLeaving(element));
+        if (cards.length !== 1) {
+          previous = null;
+          if (performance.now() > deadline) {
+            throw new Error(`expected exactly one live refusal card reading "${cardTitle}", found ${cards.length} of ${document.querySelectorAll("[data-sonner-toast]").length} card(s) on screen`);
+          }
+        } else {
+          const card = cards[0];
+          const controlElement = [...(document.querySelector(scope)?.querySelectorAll("button") ?? [])].find((button) => (button.textContent ?? "").trim().startsWith(label));
+          if (!controlElement) throw new Error(`the refusal names a control "${label}" inside ${scope}, and it is not on screen to be pressed`);
+          const cardBox = paintOf(card);
+          const settled = previous !== null && ["x", "y", "width", "height"].every((key) => Math.abs(cardBox[key as keyof ToastBox] - previous![key as keyof ToastBox]) < 0.5);
+          previous = cardBox;
+          if (settled) {
+            const controlBox = paintOf(controlElement);
+            const width = Math.min(cardBox.x + cardBox.width, controlBox.x + controlBox.width) - Math.max(cardBox.x, controlBox.x);
+            const height = Math.min(cardBox.y + cardBox.height, controlBox.y + controlBox.height) - Math.max(cardBox.y, controlBox.y);
+            const owner = document.elementFromPoint(controlBox.x + controlBox.width / 2, controlBox.y + controlBox.height / 2);
+            return { cardBox, controlBox, overlap: width > 0 && height > 0 ? Math.round(width * height) : 0, pointerOwnedByToast: Boolean(owner?.closest("[data-sonner-toast]")) };
+          }
+        }
+        await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+      }
+    },
+    { cardTitle, scope: control.scope, label: control.label }
+  );
 }
 
 /**

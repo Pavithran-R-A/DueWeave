@@ -53,13 +53,15 @@ describe("the refusal announcement lets the control it names take the click", ()
       file: "stage8-local-founder-reviewer.spec.ts",
       from: 'toastTitle(page, "Your Free plan limit is reached.")',
       to: "viewFounder.click(",
+      mustMeasure: ["pointerOwnedByToast(page"],
     },
     {
       file: "stage8-local-founder-customer.spec.ts",
-      from: "const cardBox = await restingToastBox(card)",
-      to: "await cta.click(",
+      from: "const coverage = await captureRefusalCoverage(page,",
+      to: 'getByRole("button", { name: /View Founder access/ }).click(',
+      mustMeasure: ["coverage.pointerOwnedByToast"],
     },
-  ])("%s presses the covered control while the card is still up", ({ file, from, to }) => {
+  ])("%s presses the covered control while the card is still up", ({ file, from, to, mustMeasure }) => {
     const spec = source("e2e", file);
     const start = spec.indexOf(from);
     const end = spec.indexOf(to, start);
@@ -67,17 +69,23 @@ describe("the refusal announcement lets the control it names take the click", ()
     expect(end, `${file} no longer clicks the control the refusal names`).toBeGreaterThanOrEqual(0);
     const gap = spec.slice(start, end);
     expect(gap, `${file} waits the notification stack out instead of testing the card where it stands`).not.toContain("clearToasts(page)");
-    expect(gap, `${file} clicks blind: it never measures whether the card owns the pointer`).toContain("pointerOwnedByToast(page");
+    for (const probe of mustMeasure) {
+      expect(gap, `${file} clicks blind: it never measures whether the card owns the pointer`).toContain(probe);
+    }
   });
 
-  it("the pointer probe reads the hit test and the box at rest, never a sleep", () => {
+  it("the card and the control are read in one frame, from a card that is on screen", () => {
     const harness = source("e2e", "founder-browser-harness.ts");
-    const probe = harness.slice(harness.indexOf("export function pointerOwnedByToast"), harness.indexOf("export async function addReceivable"));
-    expect(probe, "the probe must ask the browser what owns the point").toContain("document.elementFromPoint");
-    expect(probe, "ownership means the notification card, not a sibling").toContain("[data-sonner-toast]");
-    const resting = harness.slice(harness.indexOf("export async function restingToastBox"), harness.indexOf("export function boxOverlap"));
-    expect(resting, "a box read mid-animation describes the animation, not the geometry a pointer meets").toContain(".poll(");
-    expect(resting, "restingToastBox must settle on a condition, not on a delay").not.toContain("waitForTimeout");
+    const capture = harness.slice(harness.indexOf("export function captureRefusalCoverage"), harness.indexOf("export function pointerOwnedByToast"));
+    expect(capture, "the capture has to happen in the page, or its three numbers come from three moments").toContain("page.evaluate(");
+    expect(capture, "both boxes and the hit test are read once, in the frame that stopped the polling").toContain("getBoundingClientRect");
+    expect(capture, "ownership means the notification card, not a sibling").toContain('closest("[data-sonner-toast]")');
+    expect(capture, "the probe must ask the browser what owns the point").toContain("document.elementFromPoint");
+    expect(capture, "a card on its way out is still mounted, and its resting place is off the top edge").toContain('getAttribute("data-removed")');
+    expect(capture, "a card that has faded is not a card a pointer can meet").toContain('opacity === "0"');
+    expect(capture, "the capture must settle on a condition, not on a delay").toContain("requestAnimationFrame");
+    expect(capture, "captureRefusalCoverage must not sleep").not.toContain("waitForTimeout");
+    expect(capture, "a missing refusal card has to be reported as one, not measured as an empty overlap").toContain("expected exactly one live refusal card");
   });
 
   it("clearToasts still waits for the notification stack to empty rather than for a fixed delay", () => {
