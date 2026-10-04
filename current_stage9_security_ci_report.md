@@ -3659,6 +3659,30 @@ a ceiling, not a promise.
     within the 9-second `REFUSAL_TOAST_MS` lifetime can keep the covering toast up for as long as they
     hover. This stage did not touch product CSS or toast geometry (D-S9-9's repair is confined to test
     action order), so the finding is handed over rather than silently fixed: owner action 12.
+    **Superseded in Arc 2 Phase 2 by the product repair `3d42f87`, not by a test change.** Measured
+    before the repair: at 1280×720 the refusal card covered 7953 of the "View Founder access"
+    button's 8443 px (94%), and 100% of it at 768×1024. The repair makes a refusal that names a
+    control on the page pointer-transparent (`[data-sonner-toast].toast--passthrough`, with the
+    card's own `[data-button]` re-enabled) and opts this one refusal in at its `Home.tsx` call
+    site, so the named control keeps the hit test. The message text, the 9-second
+    `REFUSAL_TOAST_MS` lifetime, the card's route and the accessible live-region announcement are
+    all unchanged — no duration was shortened and no test-only CSS was added. The two Stage 8
+    journeys now press the call-out *while the card is still up* and assert the card does not own
+    the pointer — the customer journey across `desktop 1280x720`, `tablet 768x1024` and
+    `mobile 390x844`, the reviewer journey at its own viewport — and
+    `tests/e2e-refusal-toast-occlusion.contract.test.ts`
+    replaced the ordering rule with geometry pins on the class, the opt-in wiring and the call site.
+    Residual, stated rather than closed: the card still *visually* overlaps the call-out's copy for
+    up to 9 seconds at desktop and tablet widths — nothing is blocked, but the overlap is now an
+    appearance question for the owner, not an operability defect.
+    **Second-order residue, found by this branch's own CI and repaired by `b80725a`.** The geometry
+    proof `3d42f87` shipped with was itself wall-clock dependent: its "settled at rest" criterion was
+    two consecutive equal reads, which a card that has finished leaving also satisfies, and reading it
+    cost ~2.4-2.6 s of the product's own 9 s refusal lifetime on an idle laptop. CI run `37202389761`
+    reported exactly that (`the refusal card at 384,-22 356x130 covers 0px^2`) before the card could
+    be clicked. The product repair never failed in that run — every click and route assertion passed —
+    so this was a test defect, and it is recorded in `docs/CONSUMER_LIVE_PROGRESS.md` row H rather
+    than reopened here.
 18. **The runner still carries the pre-rename checkout.** After the repository was renamed,
     `~/actions-runner-dueweave/_work/` holds both `DueWeave/DueWeave` (the workspace every run from 22
     onward uses) and the old `project-ar1/project-ar1` workspace from runs 18–21, plus the runner's own
@@ -4076,6 +4100,13 @@ a ceiling, not a promise.
     (`top-left`/`bottom-*`), shorten `REFUSAL_TOAST_MS`, or add a non-overlapping affordance in the
     call-out itself. Whichever is chosen, `tests/e2e-refusal-toast-occlusion.contract.test.ts` keeps
     the journeys honest about waiting for the stack to clear either way.
+    **Answered by Arc 2 Phase 2 with a product change** (`3d42f87`), and not by taking one of those
+    three options: the measurement showed the defect was the card owning the hit test, not its
+    position or its lifetime. A refusal that names a control on the page is now pointer-transparent
+    with its own action re-enabled, so the button keeps the hit test; the message, the 9-second
+    lifetime, the route and the accessible announcement are unchanged. Limitation 17 carries the
+    before/after geometry. What is left to the owner is the narrower appearance question — the card
+    still visually overlaps the call-out's copy for up to 9 seconds — not the operability defect.
 13. **Decide the runner's stale workspace.** `~/actions-runner-dueweave/_work/project-ar1` is the
     checkout runs 18–21 executed in, kept after the repository rename because this report's
     run-18/19/21 citations were read from it (limitation 18). It is ~one full working copy of disk on
