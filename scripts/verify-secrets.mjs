@@ -83,16 +83,23 @@ const nonLiteral = /\$\{|process\.env|import\.meta\.env|<[A-Za-z0-9_.-]+>|\.{3}|
 // that stops matching is itself a failure.
 const allowlist = [];
 
+// Every sentence that states a scope reads these two values, because `--dir` mode used to print the
+// default mode's closing line: a CI artefact scan of one untracked file claimed it had opened "the
+// tracked tree or the built bundle" (Stage 9 limitation 4). A finding's wording is part of its
+// truthfulness for the same reason -- an artefact file is not tracked by anything.
+const fullTreeScope = "the tracked tree or the built bundle";
+
 function readTargetFiles(argv) {
   const dirFlag = argv.indexOf("--dir");
   if (dirFlag !== -1 && argv[dirFlag + 1]) {
-    const root = path.resolve(projectRoot, argv[dirFlag + 1]);
+    const target = argv[dirFlag + 1].replace(/[\\/]+$/, "");
+    const root = path.resolve(projectRoot, target);
     const walk = (dir) =>
       readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
         const full = path.join(dir, entry.name);
         return entry.isDirectory() ? walk(full) : [path.relative(projectRoot, full)];
       });
-    return walk(root);
+    return { files: walk(root), scope: `the directory ${target}`, tracked: false };
   }
   const tracked = spawnSync("git", ["ls-files", "-z"], { cwd: projectRoot, encoding: "utf8" });
   if (tracked.status !== 0) {
@@ -104,7 +111,7 @@ function readTargetFiles(argv) {
   if (existsSync(path.join(projectRoot, "dist"))) {
     files.push(...walkDir("dist").map((file) => path.relative(projectRoot, file)));
   }
-  return files;
+  return { files, scope: fullTreeScope, tracked: true };
 }
 
 function walkDir(dir) {
@@ -158,17 +165,18 @@ function redact(matched) {
 }
 
 const argv = process.argv.slice(2);
-const files = readTargetFiles(argv);
+const { files, scope, tracked } = readTargetFiles(argv);
 const all = files.flatMap(scan);
 
 // A committed environment file is a finding whatever its contents, because the next
 // value appended to it inherits the same exposure. `.env.example` is the documented
 // exception: it carries names and placeholder values on purpose.
-const trackedEnvFiles = files
+const environmentFiles = files
   .map((file) => file.replace(/\\/g, "/"))
   .filter((file) => /(^|\/)\.env(\..*)?$/.test(file) && !/\.env\.example$/.test(file));
-for (const file of trackedEnvFiles) {
-  all.push({ file, line: 0, rule: "committed-env-file", describe: "an environment file is tracked by git", hard: true, evidence: `${file} is in the release tree` });
+for (const file of environmentFiles) {
+  const where = tracked ? "is tracked by git and in the release tree" : `is inside the directory scanned (${scope})`;
+  all.push({ file, line: 0, rule: "committed-env-file", describe: `an environment file ${where}`, hard: true, evidence: `${file} ${where}` });
 }
 
 const matchesAllowEntry = (entry, finding) => {
@@ -200,4 +208,4 @@ if (deadAllowlistEntries.length) {
   for (const entry of deadAllowlistEntries) console.error(`  ${entry.file} / ${entry.rule}`);
 }
 if (findings.length || deadAllowlistEntries.length) process.exit(1);
-console.log("No privileged credential found in the tracked tree or the built bundle.");
+console.log(`No privileged credential found in ${scope}.`);
