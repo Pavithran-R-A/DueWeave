@@ -130,11 +130,24 @@ never sees it.
 
 ## Residual gaps, recorded rather than papered over
 
-1. **Malformed phone is proven on the edit path only.**
+1. ~~**Malformed phone is proven on the edit path only.**~~ **Closed in Arc 2 Phase 2.**
    `tests/stage4-local-edit-workflows.test.ts:296` applies the create-path rules to
-   `update_client`, including the five-digit phone, but no LIVE test drives
+   `update_client`, including the five-digit phone, but no LIVE test drove
    `create_client` with a malformed phone. The client-side form is covered by
    `e2e/stage6-local-forms.spec.ts`; the database path for the create verb is not.
+   `tests/stage9-abuse-matrix.test.ts` now drives the create verbs live, with the rule
+   read out of `assert_stage3_client_input`
+   (`supabase/migrations/20260812170000_stage3_core_workflows.sql`) rather than
+   invented: strip to digits and a leading plus, then require 10 to 15 digits to be a
+   phone at all. Measured against the local stack, that rule already holds on creation,
+   so no product change was needed and none was made — the gap was evidence, not a
+   defect. Two consequences the suite pins because a reader would not guess them: input
+   carrying no digits (`"call me later"`) is treated as "leave it blank" and is stored
+   as NULL, while a lone `"+"` is phone-shaped input with too few digits and is refused.
+   `12345`, `1234567890123456`, `"+"` and the same five-digit phone through the
+   composite verb the Add-receivable form calls are all refused with `P0001` and the
+   words "Add a valid phone number or leave it blank"; the refused composite left no
+   receivable, and the two accepted controls left exactly two client rows.
 2. **Unicode whitespace is proven on Founder fields, not on free-text ledger fields.**
    The thirteen padding classes and the zero-width/NBSP refusals cover `upi_id`,
    `payee_name` and `support_contact`. `tests/stage6-local-profile.test.ts:159` proves
@@ -155,6 +168,11 @@ never sees it.
   8 accepted (the controls), 2 unchanged, 12 observed. Codes: `22P02` ×152,
   `P0001` ×25, `P0002` ×6, `22007` ×6, `22008` ×4, `42883` ×1, plus the identity and
   wording assertions.
+- Re-measured in Arc 2 Phase 2, after gap 1 closed: the same file is 8 tests, all
+  passing, and the ledger it writes now books 222 probes — 198 refused, 10 accepted,
+  2 unchanged, 12 observed, with `P0001` at ×29. The 6 probes gap 1 added are 2 accepted
+  controls and 4 `P0001` refusals, all worded "Add a valid phone number or leave it
+  blank".
 - `tests/stage2-local-foundation.test.ts`: 12 tests passing after the rename and the
   `42501` pin (2.10 s).
 - `tests/stage6-error-copy.test.ts`: 14 tests passing.

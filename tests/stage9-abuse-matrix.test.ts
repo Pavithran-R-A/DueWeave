@@ -440,4 +440,48 @@ describeLocalStack("Stage 9 malformed id and request-id abuse", () => {
     const sameOwner = (after.promises as Array<{ receivable_id: string }>).every((promise) => promise.receivable_id === owner.ids.receivableId);
     expect(sameOwner, "a refused promise window reached a receivable this account does not own").toBe(true);
   }, 60_000);
+
+  it("holds the phone rule on the create verb, not only on the edit verb", async () => {
+    // Residual gap 1 in docs/STAGE9_ABUSE_MATRIX.md. Stage 4 applies the shared input rules to
+    // `update_client`, five-digit phone included, and the browser form has refused a short phone
+    // since Stage 6 — but no live test ever drove a malformed phone into a create verb, so the
+    // rule was proven on the verb that edits and unproven on the verb that creates.
+    //
+    // The rule is read out of `assert_stage3_client_input` (20260812170000_stage3_core_workflows.sql)
+    // rather than invented: strip to digits and a leading plus, then require 10 to 15 digits to be a
+    // phone at all. Two consequences are pinned here because a reader would not guess them, and both
+    // are measured rather than assumed: input carrying no digits at all is "leave it blank" and is
+    // stored as no phone, while a lone "+" is phone-shaped input with too few digits and is refused.
+    const before = await snapshot(owner.client);
+    const nameFor = (label: string) => `Abuse Phone ${label} ${runTag.slice(-4)}`;
+    const createWith = (name: string, phone: string) =>
+      owner.client.rpc("create_client", { p_name: name, p_company: "", p_phone: phone, p_email: "", p_notes: "" });
+
+    // Controls: the formats the field itself invites ("any Indian format you already use").
+    const international = await createWith(nameFor("international"), "+91 98765 43210");
+    expectAccepted("control: create_client with '+91 98765 43210'", international);
+    expect((international.data as { phone: string }).phone, "the create verb stores what it says it stores").toBe("+919876543210");
+    const noDigits = await createWith(nameFor("letters"), "call me later");
+    expectAccepted("create_client with a digit-free phone leaves it blank", noDigits);
+    expect((noDigits.data as { phone: string | null }).phone, "input with no digits is 'leave it blank', not a malformed phone").toBeNull();
+
+    for (const [label, phone] of [["a five-digit phone", "12345"], ["a sixteen-digit phone", "1234567890123456"], ["a lone plus sign", "+"]] as const) {
+      const text = expectRefused(`create_client with ${label}`, await createWith(nameFor(label.replace(/[^a-z]/g, "")), phone), ["P0001"]);
+      assert(/valid phone number/i.test(text), `create_client with ${label} refused with something else: "${text}"`);
+    }
+
+    // The composite verb is the one the product's Add-receivable form actually calls, so the
+    // refusal has to reach it too: a rule that only holds on the inner verb is a rule the
+    // composite could walk past.
+    const composite = await owner.client.rpc("create_client_and_receivable", {
+      p_client_name: nameFor("composite"), p_company: "", p_phone: "12345", p_email: "", p_client_notes: "",
+      p_label: "Abuse phone invoice", p_invoice_ref: "AP-1", p_amount_due_paise: 1_000, p_due_date: addIndiaBusinessDays(todayInIndia(), 3), p_notes: "",
+    });
+    const compositeText = expectRefused("create_client_and_receivable with a five-digit phone", composite, ["P0001"]);
+    assert(/valid phone number/i.test(compositeText), `the composite verb refused with something else: "${compositeText}"`);
+
+    const after = await snapshot(owner.client);
+    expect((after.clients as unknown[]).length - (before.clients as unknown[]).length, "a refused phone still opened a client row").toBe(2);
+    expect((after.receivables as unknown[]).length - (before.receivables as unknown[]).length, "the refused composite write still opened a receivable").toBe(0);
+  }, 60_000);
 });
