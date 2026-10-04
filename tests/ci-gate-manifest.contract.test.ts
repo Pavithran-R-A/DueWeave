@@ -71,6 +71,32 @@ describe("CI gate manifest", () => {
     expect(gates.length, "the release command expanded to nothing — the scan pattern is wrong").toBeGreaterThan(5);
   });
 
+  // A branch that is not in the push-trigger list gets no run at all. Phase 2 measured exactly
+  // that: pushing `release/consumer-live` produced zero runs for its head (`total_count: 0`), so
+  // the only green evidence in the repository belonged to its parent head `e5b734b`, and a reader
+  // could easily have taken the parent's run for the branch's own.
+  it("starts a run for every branch this roadmap releases from", () => {
+    const triggerBlock = /^on:[ \t]*\r?\n(?:[ \t]+\S.*\r?\n?)*/m.exec(source);
+    expect(triggerBlock, "ci.yml has no `on:` block — the scan pattern is wrong").not.toBeNull();
+    const block = triggerBlock[0];
+    for (const event of ["pull_request", "workflow_dispatch"]) {
+      expect(block, `ci.yml no longer triggers on ${event}`).toContain(`${event}:`);
+    }
+    const branches = [...block.matchAll(/branches:\s*\[([^\]]*)\]/g)].flatMap((match) =>
+      match[1]
+        .split(",")
+        .map((name) => name.trim())
+        .filter(Boolean),
+    );
+    expect(branches.length, "no push branches parsed from ci.yml — the scan pattern is wrong").toBeGreaterThan(1);
+    for (const branch of ["main", "current-stage-9-security-ci", "release/consumer-live"]) {
+      expect(
+        branches,
+        `ci.yml never runs on a push to ${branch}, so a head of that branch has no CI evidence of its own`,
+      ).toContain(branch);
+    }
+  });
+
   it("runs every gate the release is defined to be", () => {
     const missing = gates
       .filter((gate) => !(gate in ciEquivalents))

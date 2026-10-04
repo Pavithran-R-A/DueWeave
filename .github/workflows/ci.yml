@@ -4,11 +4,14 @@ name: CI
 # deleted months ago, so the delivered Stage 8 commit had no run at all and `pnpm test`
 # inside CI silently skipped every database-backed suite. These triggers name the
 # branches this roadmap actually uses, and the jobs below run the suites that cannot
-# skip without an environment.
+# skip without an environment. `release/consumer-live` joins the push list because the
+# consumer-live release line has to carry CI evidence for its own head: measured on
+# 2026-10-04, pushing it produced `total_count: 0` runs, which left only its parent
+# head's green run available to be mistaken for its own.
 on:
   pull_request:
   push:
-    branches: [main, current-stage-9-security-ci]
+    branches: [main, current-stage-9-security-ci, release/consumer-live]
   workflow_dispatch:
 
 concurrency:
