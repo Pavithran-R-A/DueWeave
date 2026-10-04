@@ -46,18 +46,18 @@ if no abuse test was changed:
 | 1 | negative paise | `tests/stage5-local-lifecycle.test.ts:499` (row "negative amount", inside "refuses every invalid payment payload and writes nothing (phase 10)" at `:493`); `tests/stage2-local-foundation.test.ts:105` (direct browser write) | LIVE |
 | 2 | zero paise where invalid | `tests/stage5-local-lifecycle.test.ts:498` and `:500` (rows "zero amount", "no amount"); `tests/stage2-local-foundation.test.ts:91` ("rejects a non-positive receivable amount at the database boundary") | LIVE |
 | 3 | overpayment | `tests/stage5-local-lifecycle.test.ts:506` (row "more than the remaining balance"); `tests/stage5-local-lifecycle.test.ts:541` ("settles an invoice exactly and then refuses further money (phase 10, phase 12)") | LIVE |
-| 4 | future payment date | `tests/stage5-local-lifecycle.test.ts:504` (row "payment dated in the future"), `:505` (row "no payment date"); the date-shaped refusals are also measured on the wire in `tests/stage9-abuse-matrix.test.ts:383` | LIVE |
+| 4 | future payment date | `tests/stage5-local-lifecycle.test.ts:504` (row "payment dated in the future"), `:505` (row "no payment date"); the date-shaped refusals are also measured on the wire in `tests/stage9-abuse-matrix.test.ts:387` | LIVE |
 | 5 | invalid payment method | `tests/stage5-local-lifecycle.test.ts:502` and `:503` (rows "unknown payment channel", "no channel at all") | LIVE |
-| 6 | invalid promise chronology | `tests/stage9-abuse-matrix.test.ts:383` ("holds the promise window open on the server, not only in the form"); `tests/stage5-local-lifecycle.test.ts:1360` ("phase 10: refuses a replacement promise dated before the promise it replaces"); per-case UI wording `e2e/stage6-local-forms.spec.ts:129` ("puts every promise refusal on the field it belongs to") | LIVE + E2E |
-| 7 | malformed UUID / request id | `tests/stage9-abuse-matrix.test.ts:277` ("refuses every malformed id on the ledger's write surface, without naming internals") — 14 literal shapes driven into 11 id slots; `tests/stage9-abuse-matrix.test.ts:324` (the same shapes inside a REST filter) | LIVE |
-| 8 | idempotency conflict | `tests/stage5-local-lifecycle.test.ts:786`, `:810` (same request id re-used for a different payload), `:838` (through the repository the browser uses), `:937` (one id submitted twice concurrently replays to one payment); `tests/stage9-abuse-matrix.test.ts:312` (a rejected payment does not consume the next key), `:363` (a nil request id is refused as the owner-scoped token it is) | LIVE |
+| 6 | invalid promise chronology | `tests/stage9-abuse-matrix.test.ts:387` ("holds the promise window open on the server, not only in the form"); `tests/stage5-local-lifecycle.test.ts:1360` ("phase 10: refuses a replacement promise dated before the promise it replaces"); per-case UI wording `e2e/stage6-local-forms.spec.ts:129` ("puts every promise refusal on the field it belongs to") | LIVE + E2E |
+| 7 | malformed UUID / request id | `tests/stage9-abuse-matrix.test.ts:281` ("refuses every malformed id on the ledger's write surface, without naming internals") — 14 literal shapes driven into 11 id slots; `tests/stage9-abuse-matrix.test.ts:328` (the same shapes inside a REST filter) | LIVE |
+| 8 | idempotency conflict | `tests/stage5-local-lifecycle.test.ts:786`, `:810` (same request id re-used for a different payload), `:838` (through the repository the browser uses), `:937` (one id submitted twice concurrently replays to one payment); `tests/stage9-abuse-matrix.test.ts:316` (a rejected payment does not consume the next key), `tests/stage9-abuse-matrix.test.ts:367` (a nil request id is refused as the owner-scoped token it is) | LIVE |
 | 9 | stale edit token | `tests/stage4-local-edit-workflows.test.ts:244`, `:382`, `:401` (no token at all); `tests/stage4-local-repository-edit.test.ts:148`; `tests/stage6-local-profile.test.ts:134` | LIVE |
-| 10 | foreign record id | `tests/stage9-abuse-matrix.test.ts:292` ("answers a neighbour's real id with the same words as an id that exists nowhere"); `tests/stage5-local-lifecycle.test.ts:509` (row "a receivable that is not this account's"); `tests/stage3-local-rls.test.ts:951`, `:1072`, `:1179`, `:1418`, `:1456`, `:1504`; `e2e/stage9-account-isolation.spec.ts:454` ("the other account's rows cannot be created, patched, or paid into") | LIVE + E2E |
+| 10 | foreign record id | `tests/stage9-abuse-matrix.test.ts:296` ("answers a neighbour's real id with the same words as an id that exists nowhere"); `tests/stage5-local-lifecycle.test.ts:509` (row "a receivable that is not this account's"); `tests/stage3-local-rls.test.ts:951`, `:1072`, `:1179`, `:1418`, `:1456`, `:1504`; `e2e/stage9-account-isolation.spec.ts:454` ("the other account's rows cannot be created, patched, or paid into") | LIVE + E2E |
 | 11 | oversized text | `tests/stage5-local-lifecycle.test.ts:507` and `:508` (rows "reference over 160 characters", "note over 2,000 characters"); `tests/stage4-local-edit-workflows.test.ts:296` (161-character name, 2,001-character notes); `tests/stage6-local-profile.test.ts:152` (business name beyond the real column CHECK); `tests/stage8-local-founder-readiness.test.ts:755` (65-character reference, 121-character payer name); `tests/ledger-search.unit.test.ts:148` (a 10,000-character query) | LIVE + UNIT |
-| 12 | malformed phone | `tests/stage4-local-edit-workflows.test.ts:296` ("a five-digit phone is refused" via `update_client`) | LIVE — **partial**, see gaps |
+| 12 | malformed phone | `tests/stage4-local-edit-workflows.test.ts:296` ("a five-digit phone is refused" via `update_client`); `tests/stage9-abuse-matrix.test.ts:444` drives the create verbs live — three refused shapes, an accepted digit-free control, and the composite verb the Add-receivable form calls | LIVE |
 | 13 | search abuse strings | `tests/ledger-search.unit.test.ts:148`, `:158`, `:169` (the control that keeps the first two from being vacuous); `e2e/stage9-account-isolation.spec.ts:562`; `e2e/stage9-release-journey.spec.ts:347` | UNIT + E2E |
 | 14 | formula-like CSV text | `tests/stage7-data-export.unit.test.ts:261` (`=`, `+`, `-`, `@`, whitespace-prefixed), `:270` (quoted `=HYPERLINK`), `:274` (tab/newline-hidden marker), `:281` (text that merely contains a marker is left alone); `:235` (a typed leading space is kept rather than stripped); `tests/stage7-local-export.test.ts:292` reads the sheets back from live rows | UNIT + LIVE |
-| 15 | Unicode whitespace edge cases | `tests/stage8-local-founder-readiness.test.ts:619` and `:635` (thirteen padding classes — tab, space, newline, NBSP, Ogham, en-quad, hair space, U+2028/29, narrow no-break, medium mathematical, ideographic, BOM — each padded around a valid Founder config that must still read ready); `:530` (zero-width space welded to a VPA is malformed at both boundaries); `:572` (five NBSPs as a support contact → unusable, not a published contact); `tests/stage6-local-profile.test.ts:159` (ledger names are trimmed); `tests/stage7-data-export.unit.test.ts:243` (Tamil, Hindi, accented names survive) | LIVE + UNIT — **partial**, see gaps |
+| 15 | Unicode whitespace edge cases | `tests/stage8-local-founder-readiness.test.ts:619` and `:635` (thirteen padding classes — tab, space, newline, NBSP, Ogham, en-quad, hair space, U+2028/29, narrow no-break, medium mathematical, ideographic, BOM — each padded around a valid Founder config that must still read ready); `:530` (zero-width space welded to a VPA is malformed at both boundaries); `:572` (five NBSPs as a support contact → unusable, not a published contact); `tests/stage6-local-profile.test.ts:159` (ledger names are trimmed); `tests/stage7-data-export.unit.test.ts:243` (Tamil, Hindi, accented names survive); `tests/stage9-abuse-matrix.test.ts:488` (the ledger's six required-field verbs, each blank-tested live against all twenty-five characters `trim()` removes, plus the composite verb the Add-receivable form calls); `tests/ledger-blank-class.contract.test.ts` (the two boundaries hold one class, and it is the browser's class no wider) | LIVE + UNIT |
 | 16 | malformed Founder VPA | `tests/stage8-local-founder-readiness.test.ts:530` (eight shapes, each stored and then refused by `create_founder_claim` / `submit_founder_payment`, not only in the client) | LIVE |
 | 17 | Founder placeholder support | `tests/stage8-local-founder-readiness.test.ts:572` (the shipped column default, padded, tabs, two characters, NBSPs — refused while its status reads `CONFIGURED`); `tests/stage8-local-founder-readiness.test.ts:444` ("opens the gate only through the trusted local configuration path") | LIVE |
 | 18 | duplicate UTR | `tests/stage8-local-founder-readiness.test.ts:820` ("races two accounts on one reference and accepts exactly one"), `:843` (refused across accounts and after a rejection); `tests/stage8-founder-contracts.test.ts:225` (the duplicate-reference rule as a contract) | LIVE + UNIT |
@@ -110,7 +110,7 @@ never sees it.
 
 ## What this phase added, and what it corrected
 
-- `tests/stage9-abuse-matrix.test.ts:383` — the promise-window guard in the Stage 5
+- `tests/stage9-abuse-matrix.test.ts:387` — the promise-window guard in the Stage 5
   migration (`supabase/migrations/20260815100000_current_stage5_promise_chronology.sql:468`,
   `:471`) had never been reached over the wire. Two accepted controls (a same-day promise,
   because the guard compares with `>`; and `+3 days`) precede two refused shapes and a
@@ -148,11 +148,40 @@ never sees it.
    composite verb the Add-receivable form calls are all refused with `P0001` and the
    words "Add a valid phone number or leave it blank"; the refused composite left no
    receivable, and the two accepted controls left exactly two client rows.
-2. **Unicode whitespace is proven on Founder fields, not on free-text ledger fields.**
-   The thirteen padding classes and the zero-width/NBSP refusals cover `upi_id`,
-   `payee_name` and `support_contact`. `tests/stage6-local-profile.test.ts:159` proves
-   ledger names are trimmed, but only against ASCII spaces — not a non-breaking or
-   zero-width pad.
+2. ~~**Unicode whitespace is proven on Founder fields, not on free-text ledger fields.**~~
+   **Closed in Arc 2 Phase 2, with a product change.** The Founder padding matrix
+   (`tests/stage8-local-founder-readiness.test.ts:619`, `:635`) covered `upi_id`,
+   `payee_name` and `support_contact`; `tests/stage6-local-profile.test.ts:159` proved
+   ledger names are trimmed only against ASCII spaces. Reading the ledger's own verbs
+   showed why that mattered: `btrim(x)` with no second argument strips the ASCII space and
+   nothing else, so `assert_stage3_client_input(E'   ', …)` refused while
+   `E'\t\t'`, `E'\u00a0\u00a0'` and `E'\u3000'` were accepted — every character the form's
+   own `!value.trim()` guard refuses. The load-bearing fields were not the names but the
+   reasons: `cancel_receivable` writes its reason into `activities.note` and into the
+   promise outcome, so an invisible reason authorised a cancellation and then entered
+   itself into the owner's history as the explanation for it.
+   One rule now holds at both boundaries, in
+   `supabase/migrations/20261004170000_current_arc2_ledger_required_blank_class.sql`:
+   **a ledger field the product requires is blank when it is empty after trimming the
+   characters the browser trims.** Edge-trim only, matched to `trim()` rather than widened
+   (U+200B stays significant at both boundaries), on the five required sites — client name
+   on both verbs, receivable label on both verbs, both cancellation reasons. The optional
+   ledger text (`p_company`, `p_email`, `p_notes`, `p_invoice_ref`, `p_source`, `p_method`,
+   `p_reference`) is deliberately unchanged: nothing reads those bytes, so widening them
+   would rewrite values the product never claimed to normalise. `create_client`,
+   `update_client` and the composite verb delegate to `assert_stage3_client_input`, so no
+   separate edit was needed and the composite inherits the rule — which the suite proves
+   rather than assumes. `tests/stage9-abuse-matrix.test.ts:488` drives 160 blank probes
+   live (25 classes × 6 verbs, plus the composite) against real-content controls, and
+   `tests/ledger-blank-class.contract.test.ts` pins the class equality in both directions
+   so one boundary cannot be edited without the other again.
+   Writing the migration produced a second finding, recorded here because it will bite the
+   next one too: Stage 3's fail-closed `ddl_command_end` trigger strips `authenticated`
+   EXECUTE from any routine the moment it is redefined, so replacing four browser-callable
+   verbs without re-granting them took those RPCs away from the application — measured as
+   `permission denied for function create_receivable` in the live suite and as the 24-RPC
+   set assertion in `supabase/tests/stage3_02_privileges.sql:137`. The migration now
+   re-grants explicitly, the way Stages 4, 5 and 8 each had to.
 3. **The abuse battery does not attack the Founder reviewer RPCs.** Their arguments are
    checked against the caller's authority before their shape, so a refusal there would
    be indistinguishable from a format refusal. Stage 3 `:1383` and Stage 8 `:974` own
@@ -173,9 +202,28 @@ never sees it.
   2 unchanged, 12 observed, with `P0001` at ×29. The 6 probes gap 1 added are 2 accepted
   controls and 4 `P0001` refusals, all worded "Add a valid phone number or leave it
   blank".
+- Re-measured again in Arc 2 Phase 2, after gap 2 closed: the file is 9 tests, all
+  passing, and the ledger books 392 probes — 358 refused, 20 accepted, 2 unchanged,
+  12 observed. Codes: `22P02` ×152, `P0001` ×189, `P0002` ×6, `22007` ×6, `22008` ×4,
+  `42883` ×1. Gap 2 accounts for the 170 new probes exactly: 160 refusals (the 25
+  whitespace classes driven into each of the six required-field verbs — 150 — plus 10
+  through `create_client_and_receivable`) and 10 accepted probes (the six
+  "takes real content" controls, the composite control, and the three boundary pins that
+  a zero-width pad, an NBSP-padded name and NBSP notes are still stored). `P0001`
+  therefore rose from ×29 to ×189; nothing else moved.
+- `tests/ledger-blank-class.contract.test.ts`: 5 tests, all passing, with no client and
+  no container — it compares the trimmed class between the two migration boundaries and
+  against the JavaScript `trim()` set, and pins the four re-grants.
 - `tests/stage2-local-foundation.test.ts`: 12 tests passing after the rename and the
   `42501` pin (2.10 s).
 - `tests/stage6-error-copy.test.ts`: 14 tests passing.
 - `pnpm test:db` (pgTAP, 8 files): 364 assertions, `Result: PASS`.
 - Full gate set after these changes: `pnpm check` clean, `pnpm lint` clean, `pnpm
   test:unit` 20 files / 337 tests, `pnpm test:live` 9 files / 307 tests (188.55 s).
+  Those are the Stage 9 phase-11 figures, kept as the record for that commit; the same
+  gates re-measured at the Arc 2 Phase 2 gap-2 head are wider because the suites grew:
+  `pnpm check` clean, `pnpm lint` clean, `pnpm test:unit` 30 files / 409 tests (27.98 s),
+  `pnpm test:live` 9 files / 309 tests (201.29 s), `pnpm test:db` 8 files / 364
+  assertions `Result: PASS`, `pnpm db:lint` "No schema errors found", `pnpm verify:types`
+  "matches the local schema (38326 bytes)", `pnpm verify:migrations` 24 on disk and 24
+  applied, and `pnpm verify:secrets` clean.

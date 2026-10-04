@@ -484,4 +484,146 @@ describeLocalStack("Stage 9 malformed id and request-id abuse", () => {
     expect((after.clients as unknown[]).length - (before.clients as unknown[]).length, "a refused phone still opened a client row").toBe(2);
     expect((after.receivables as unknown[]).length - (before.receivables as unknown[]).length, "the refused composite write still opened a receivable").toBe(0);
   }, 60_000);
+
+  it("refuses a required ledger field that is blank in the class the browser trims", async () => {
+    // Residual gap 2 in docs/STAGE9_ABUSE_MATRIX.md, and the ledger's half of the repair
+    // Stage 8 made to the Founder fields.
+    //
+    // `btrim(x)` with no second argument strips the ASCII space and nothing else, so a
+    // client name, receivable label or cancellation reason made of tabs, newlines,
+    // non-breaking spaces or ideographic spaces was content to the database and blank to
+    // the form that refuses it. Measured before this test existed, the literal that
+    // `client/src/components/sheets.tsx` refuses with `!form.name.trim()` reached a row.
+    // The cancellation reason is the worst of the three: it lands in `activities.note` and
+    // in the promise outcome, so an invisible reason authorised a cancellation and wrote
+    // itself into the owner's own history.
+    //
+    // The rule this pins is the one the browser already enforces, and it is deliberately
+    // only as wide as the browser: edge-trim with the characters JavaScript's `trim()`
+    // removes, refuse the result when the field is required, and leave optional text
+    // carrying what its owner typed. U+200B stays significant because `trim()` keeps it —
+    // the class is matched to the client, not widened past it, exactly as Stage 8 decided
+    // for `c_ws`.
+    const account = await bootstrapLedger("blank");
+    const before = await snapshot(account.client);
+    const hex = (character: string) => `U+${character.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0")}`;
+    const stamp = async (table: "clients" | "receivables", id: string) => {
+      assert(id, `no ${table} id was available to stamp, so an earlier control did not return its row`);
+      const { data, error } = await account.client.from(table).select("updated_at").eq("id", id).single();
+      assert(!error && !!data, `the probe account could not re-read its own ${table} row: ${error?.message}`);
+      return (data as { updated_at: string }).updated_at;
+    };
+    const dueDate = addIndiaBusinessDays(todayInIndia(), 3);
+
+    // The ECMAScript WhiteSpace and LineTerminator production, by codepoint — the same
+    // list tests/stage8-founder-contracts.test.ts uses to prove the Founder class.
+    const blanks = [0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x20, 0xa0, 0x1680, 0x2000, 0x2001, 0x2002, 0x2003, 0x2004,
+      0x2005, 0x2006, 0x2007, 0x2008, 0x2009, 0x200a, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000, 0xfeff]
+      .map((code) => String.fromCharCode(code));
+
+    let controlReceivableId = "";
+    const required: Array<{ field: string; wording: RegExp; blank: (value: string) => Promise<Probe>; control: () => Promise<Probe> }> = [
+      {
+        field: "create_client's p_name",
+        wording: /client name of up to 160 characters/i,
+        blank: (value) => account.client.rpc("create_client", { p_name: value, p_company: "", p_phone: "", p_email: "", p_notes: "" }),
+        control: () => account.client.rpc("create_client", { p_name: "Ravi Kumar", p_company: "", p_phone: "", p_email: "", p_notes: "" }),
+      },
+      {
+        field: "update_client's p_name",
+        wording: /client name of up to 160 characters/i,
+        blank: async (value) => account.client.rpc("update_client", { p_client_id: account.ids.clientId, p_name: value, p_company: "", p_phone: "", p_email: "", p_notes: "", p_expected_updated_at: await stamp("clients", account.ids.clientId) }),
+        control: async () => account.client.rpc("update_client", { p_client_id: account.ids.clientId, p_name: "Ravi Kumar", p_company: "", p_phone: "", p_email: "", p_notes: "", p_expected_updated_at: await stamp("clients", account.ids.clientId) }),
+      },
+      {
+        field: "create_receivable's p_label",
+        wording: /receivable label of up to 240 characters/i,
+        blank: (value) => account.client.rpc("create_receivable", { p_client_id: account.ids.clientId, p_label: value, p_invoice_ref: "", p_amount_due_paise: 1_000, p_due_date: dueDate, p_notes: "" }),
+        // The receivable the two edit verbs and the close below are aimed at is the
+        // control's own row: a probe that was refused has no row to point at.
+        control: async () => {
+          const probe = await account.client.rpc("create_receivable", { p_client_id: account.ids.clientId, p_label: "Consulting invoice", p_invoice_ref: "", p_amount_due_paise: 1_000, p_due_date: dueDate, p_notes: "" });
+          if (!probe.error) controlReceivableId = (probe.data as { id: string }).id;
+          return probe;
+        },
+      },
+      {
+        field: "update_receivable_details's p_label",
+        wording: /receivable label of up to 240 characters/i,
+        blank: async (value) => account.client.rpc("update_receivable_details", { p_receivable_id: controlReceivableId, p_label: value, p_invoice_ref: "", p_notes: "", p_expected_updated_at: await stamp("receivables", controlReceivableId) }),
+        control: async () => account.client.rpc("update_receivable_details", { p_receivable_id: controlReceivableId, p_label: "Consulting invoice", p_invoice_ref: "", p_notes: "", p_expected_updated_at: await stamp("receivables", controlReceivableId) }),
+      },
+      {
+        field: "cancel_receivable's p_reason",
+        wording: /short reason for closing this receivable/i,
+        blank: async (value) => account.client.rpc("cancel_receivable", { p_receivable_id: controlReceivableId, p_reason: value }),
+        control: () => account.client.rpc("cancel_receivable", { p_receivable_id: controlReceivableId, p_reason: "The work was never started" }),
+      },
+      {
+        field: "cancel_promise's p_reason",
+        wording: /short reason for withdrawing this promise/i,
+        blank: async (value) => account.client.rpc("cancel_promise", { p_promise_id: account.ids.promiseId, p_reason: value }),
+        control: () => account.client.rpc("cancel_promise", { p_promise_id: account.ids.promiseId, p_reason: "The client went quiet" }),
+      },
+    ];
+
+    // Every verb is proven live on real content first: without that control a lost grant
+    // or a renamed argument would answer each blank probe with a refusal that has nothing
+    // to do with whitespace.
+    for (const verb of required) {
+      expectAccepted(`${verb.field} takes real content`, await verb.control());
+      for (const character of blanks) {
+        const text = expectRefused(`${verb.field} given three ${hex(character)} only`, await verb.blank(character.repeat(3)), ["P0001"]);
+        assert(verb.wording.test(text), `${verb.field} refused a ${hex(character)}-only value with something else: "${text}"`);
+      }
+    }
+
+    // The composite verb is the one the product's Add-receivable form calls, and it
+    // reaches both rules by calling `create_client` and then `create_receivable`. Proving
+    // the inner verbs alone would leave a rule the surface the browser uses could walk
+    // past. One character per class family is enough here — the class itself is proven
+    // whole above — and a refused composite has to leave neither row behind.
+    const composite = (name: string, label: string) =>
+      account.client.rpc("create_client_and_receivable", {
+        p_client_name: name, p_company: "", p_phone: "", p_email: "", p_client_notes: "",
+        p_label: label, p_invoice_ref: "", p_amount_due_paise: 1_000, p_due_date: dueDate, p_notes: "",
+      });
+    expectAccepted("create_client_and_receivable takes real content", await composite("Devi Sharma", "Consulting retainer"));
+    const families = [blanks[5], blanks[0], blanks[6], blanks[23], blanks[24]];
+    for (const character of families) {
+      const nameText = expectRefused(`create_client_and_receivable's p_client_name given three ${hex(character)} only`, await composite(character.repeat(3), "Consulting retainer"), ["P0001"]);
+      assert(/client name of up to 160 characters/i.test(nameText), `the composite refused a ${hex(character)}-only name with something else: "${nameText}"`);
+      const labelText = expectRefused(`create_client_and_receivable's p_label given three ${hex(character)} only`, await composite("Devi Sharma", character.repeat(3)), ["P0001"]);
+      assert(/receivable label of up to 240 characters/i.test(labelText), `the composite refused a ${hex(character)}-only label with something else: "${labelText}"`);
+    }
+
+    // The class stops where the browser's stops: a zero-width space is content to
+    // `trim()`, so it stays content here instead of becoming a blank the form would let
+    // through and the database would refuse.
+    const zeroWidth = await account.client.rpc("create_client", { p_name: "\u200B", p_company: "", p_phone: "", p_email: "", p_notes: "" });
+    expectAccepted("create_client with a zero-width space, which JavaScript keeps", zeroWidth);
+
+    // Edges only: a name padded at its edges with the trimmed class is normalised to what
+    // the owner meant, and a name carrying that character between two letters is left
+    // exactly as typed.
+    const padded = await account.client.rpc("create_client", { p_name: "\u00A0Ravi\u00A0Kumar\u00A0", p_company: "", p_phone: "", p_email: "", p_notes: "" });
+    expectAccepted("create_client with non-breaking edges", padded);
+    expect((padded.data as { name: string }).name, "edge trimming reached into the name's content").toBe("Ravi\u00A0Kumar");
+
+    // The rule's other half, stated as behaviour: an optional ledger field keeps the bytes
+    // it was given, trimmed of the ASCII space as it has always been. Nothing reads those
+    // bytes — no total, no payment URI, no WhatsApp destination — which is why the
+    // widening lands on the required fields only.
+    const optional = await account.client.rpc("create_receivable", { p_client_id: account.ids.clientId, p_label: "Optional padding probe", p_invoice_ref: "", p_amount_due_paise: 1_000, p_due_date: dueDate, p_notes: "\u00A0\u00A0" });
+    expectAccepted("create_receivable with non-breaking notes", optional);
+    expect((optional.data as { notes: string }).notes, "an optional field was rewritten by the required-field rule").toBe("\u00A0\u00A0");
+
+    const after = await snapshot(account.client);
+    // 160 blank probes wrote nothing. The rows that exist are the four controls that each
+    // created something — the client, the receivable, the composite, and the one the
+    // receivable-edit control edited without creating — plus the zero-width and
+    // padded-edge clients and the optional-notes receivable.
+    expect((after.clients as unknown[]).length - (before.clients as unknown[]).length, "a refused blank name opened a client row").toBe(4);
+    expect((after.receivables as unknown[]).length - (before.receivables as unknown[]).length, "a refused blank label opened a receivable").toBe(3);
+  }, 180_000);
 });
