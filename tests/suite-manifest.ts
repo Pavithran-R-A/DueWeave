@@ -15,6 +15,7 @@ export const databaseSuites = [
   "tests/stage7-local-export.test.ts",
   "tests/stage8-local-founder-readiness.test.ts",
   "tests/stage9-abuse-matrix.test.ts",
+  "tests/arc3c-local-account-erasure.test.ts",
 ];
 
 // Not a database suite and not a static suite: this one addresses a hosted Supabase

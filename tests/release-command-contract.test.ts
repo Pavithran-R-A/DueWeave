@@ -63,7 +63,10 @@ describe("Stage 9 release command composition", () => {
 // when no stack is up. `tests/suite-manifest.ts:1-6` says the split "cannot be left to a
 // naming convention that a later file might break" — so the convention is checked here
 // rather than trusted.
-const LOOKS_LIVE = /^stage\d+-local-.*\.test\.ts$|\.live\.test\.ts$/;
+// The pattern carries the post-Stage-9 phase prefixes too: Arc 3C's erasure suite opens a
+// client against the local database, and a checker that only knew `stageN-local-` would let
+// it into the static half on a name nobody had to approve.
+const LOOKS_LIVE = /^stage\d+-local-.*\.test\.ts$|^arc3c-local-.*\.test\.ts$|\.live\.test\.ts$/;
 
 describe("Stage 9 suite split", () => {
   const listed = [...databaseSuites, ...hostedOnlySuites];

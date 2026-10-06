@@ -1,7 +1,7 @@
 // Quiet Ledger style reminder: sheets reduce the emotional and cognitive cost of action; every form is short, editable, and explicit about what DueWeave does not do for you.
 
 import { FormEvent, useState } from "react";
-import { ArrowUpRight, Check, Copy, FileText, MessageCircle, RotateCcw, ShieldCheck } from "lucide-react";
+import { ArrowUpRight, Check, Copy, Download, FileText, MessageCircle, RotateCcw, ShieldCheck, Trash2 } from "lucide-react";
 import { feedback } from "@/components/ui/sonner";
 import { addIndiaBusinessDays, formatDate, formatINR, getOutstanding, parseINRToPaise } from "@/lib/finance";
 import { contactNote, followUpDraft, messageValues, suggestedTemplate, TEMPLATE_ORDER, templateLabels, type FollowUpTemplate } from "@/lib/follow-up";
@@ -9,6 +9,7 @@ import { whatsappActionLabel, whatsappRecipient, whatsappUrl } from "@/lib/whats
 import { newRequestId } from "@/lib/request-id";
 import { todayInIndia } from "@/lib/business-clock";
 import { BUSINESS_NAME_LIMIT, DISPLAY_NAME_LIMIT, validateBusinessName, validateDisplayName } from "@/lib/profile";
+import { ACCOUNT_DELETION_CONFIRMATION, isExactConfirmation } from "@/lib/account-deletion";
 import type { Client, LedgerState, PaymentMethod, PromiseRecord, PromiseSource, Receivable } from "@/types/domain";
 import { Field, Sheet } from "@/components/finance-ui";
 
@@ -203,4 +204,22 @@ export function SnoozeSheet({ onClose, onSubmit }: { onClose: () => void; onSubm
   const [dateError, setDateError] = useState("");
   function submit(event: FormEvent) { event.preventDefault(); if (until < todayInIndia()) { setDateError("Choose today or a future date."); return; } onSubmit(until); }
   return <Sheet title="Snooze follow-up" eyebrow="Keep it out of sight, not out of the story" onClose={onClose} footer={<><button className="button-secondary" onClick={onClose}>Cancel</button><button form="snooze-form" className="button-primary">Save snooze <Check size={16} /></button></>}><form id="snooze-form" className="form-stack" onSubmit={submit} noValidate><p className="sheet-intro">DueWeave records the pause in the private timeline. It never sends anything for you.</p><Field label="Bring this back on" error={dateError}><input className={inputClass} data-autofocus type="date" min={todayInIndia()} value={until} onChange={(event) => { setUntil(event.target.value); setDateError(""); }} required aria-invalid={Boolean(dateError)} /></Field></form></Sheet>;
+}
+
+// Arc 3C STEP 5 — the one destructive action in the product, and the only sheet whose submit button
+// starts disabled. Three rules shape it, in order of what they cost:
+//
+//   - Nothing here is a one-click path. The phrase is the confirmation; the button reads it, not the
+//     person's intention, so an accidental press on an open sheet cannot be the thing that erases a
+//     ledger. `onSubmit` is reachable only through the guarded form.
+//   - The export is offered inside the sheet rather than only mentioned beside it, because this is the
+//     last moment the archive can still be taken.
+//   - `errorText` is a sentence the client wrote for itself (see client/src/lib/account-deletion.ts).
+//     What the endpoint said stays out of the markup: a refusal the person can act on is more useful
+//     than a transcript of a database error, and a transcript is what an unattended reply would be.
+export function DeleteAccountSheet({ email, busy, errorText, onClose, onExportFirst, onSubmit }: { email: string; busy: boolean; errorText: string; onClose: () => void; onExportFirst: () => void; onSubmit: () => void }) {
+  const [typed, setTyped] = useState("");
+  const exact = isExactConfirmation(typed);
+  function submit(event: FormEvent) { event.preventDefault(); if (busy || !exact) return; onSubmit(); }
+  return <Sheet title="Delete your account" eyebrow="Nothing after this can be undone" onClose={onClose} footer={<><button className="button-secondary" onClick={onClose}>Keep my account</button><button form="delete-account-form" className="button-danger" disabled={!exact || busy} aria-busy={busy}>Delete my account <Trash2 size={16} /></button></>}><form id="delete-account-form" className="form-stack" onSubmit={submit} noValidate><p className="sheet-intro">This closes your sign-in and removes every record in this ledger: clients, receivables, promises, payments, and the history behind them. DueWeave keeps nothing back to restore, and there is no grace period. Once it has happened, it cannot be undone.</p><div className="deletion-scope"><div className="deletion-scope__row"><span className="deletion-scope__label">Removed</span><strong>{email}</strong><span>Your sign-in and your sessions on every device, with the workspace that belongs to them.</span></div><div className="deletion-scope__row"><span className="deletion-scope__label">Removed</span><strong>Every amount, and the story of it</strong><span>Settled, cancelled and closed records go with the open ones — history is part of the account, not a separate file.</span></div></div><p className="sheet-intro">An account named in a Founder review is refused instead of erased. That review is DueWeave's own record of a decision about money, and closing an account does not quietly remove the audit trail beside it.</p><button type="button" className="button-secondary deletion-export" onClick={onExportFirst}><Download size={16} />Download the full data archive first</button><div className="field"><label className="field__label" htmlFor="delete-account-phrase">Type <strong className="confirm-phrase">{ACCOUNT_DELETION_CONFIRMATION}</strong> to unlock the button</label><input id="delete-account-phrase" className={inputClass} data-autofocus autoComplete="off" spellCheck={false} placeholder="The phrase above, exactly as written" value={typed} aria-invalid={!exact} aria-describedby="delete-account-phrase-hint" onChange={(event) => setTyped(event.target.value)} /><p className="field__hint" id="delete-account-phrase-hint">Case-sensitive, one spelling. Nothing is asked of DueWeave until it matches.</p>{typed.length > 0 && !exact && <p className="field__error" role="alert">That is not the phrase yet, so the button stays disabled.</p>}</div>{errorText && <p className="field__error" role="alert">{errorText}</p>}<p className="sheet-intro">This is not closing DueWeave on this device. Signing out keeps every record exactly where it is.</p></form></Sheet>;
 }

@@ -6,6 +6,9 @@
   --ink: #16272d; --ink-soft: #3d4e53; --muted: #788387; --faint: #aeb8b8; --rule: #dfe2dd;
   --teal: #137b78; --teal-dark: #0b5f5d; --teal-soft: #dcefea; --amber: #b87924; --amber-soft: #f7ead0;
   --coral: #c35d54; --coral-soft: #f7e0dc; --blue-soft: #dfe9ee;
+  /* --coral is 3.6:1 as text on the paper surface, so the erasure affordance — the one control in the
+     app whose label a person must read correctly — carries a deeper shade for text and fills. */
+  --coral-deep: #9c4740; --coral-deep-soft: #f0d3ce;
   --radius-sm: 8px; --radius-md: 13px; --radius-lg: 20px; --shadow-soft: 0 12px 35px rgba(22,39,45,.07);
   --ease-out: cubic-bezier(.23,1,.32,1); --font-ui: "DM Sans", ui-sans-serif, system-ui, sans-serif; --font-display: "Fraunces", Georgia, serif;
 }
@@ -206,3 +209,27 @@ behind the home indicator or pays for the same inset twice. */ .sheet-footer { p
 .export-chip { padding:8px 11px; color:var(--ink-soft); background:var(--canvas-2); border:1px solid var(--rule); border-radius:999px; font-size:11px; font-weight:600; }
 .export-chip:hover:not(:disabled) { color:var(--teal-dark); border-color:var(--teal); }
 .export-chip:disabled { opacity:.55; cursor:default; }
+
+/* Arc 3C: the erasure affordance is the only control in DueWeave that cannot be taken back, so it is
+   dressed to be told apart from sign-out at a glance — deeper tone, its own row treatment, and a
+   disabled state that reads as "not unlocked yet" rather than "this one doesn't work". */
+.app-shell--dark { --coral-deep:#f0a89c; --coral-deep-soft:#4c3030; }
+.button-danger { display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:42px; padding:0 16px; color:#fff; background:var(--coral-deep); border:0; border-radius:10px; font-weight:700; box-shadow:0 6px 18px rgba(156,71,64,.18); transition:transform 150ms var(--ease-out),background 150ms var(--ease-out),box-shadow 150ms var(--ease-out); }
+.button-danger:hover:not(:disabled) { background:var(--coral); transform:translateY(-1px); }
+.button-danger:active:not(:disabled) { transform:scale(.97); }
+.button-danger:focus-visible { outline-color:color-mix(in srgb,var(--coral) 45%,transparent); }
+.button-danger:disabled { color:var(--muted); background:var(--canvas-2); box-shadow:none; cursor:not-allowed; transform:none; }
+.app-shell--dark .button-danger { color:#2a1512; }
+.settings-row--danger { color:var(--coral-deep); }
+.settings-row--danger:hover { color:var(--coral-deep); }
+.settings-row--danger strong { font-weight:750; }
+.settings-row--danger .settings-icon { color:var(--coral-deep); background:var(--coral-deep-soft); }
+.settings-row--danger .settings-value { padding:4px 8px; color:var(--coral-deep); background:var(--coral-deep-soft); border-radius:999px; font-size:9.5px; font-weight:750; letter-spacing:.05em; text-transform:uppercase; }
+.settings-row--danger div span { color:var(--ink-soft); }
+.deletion-scope { display:grid; gap:11px; padding:14px; background:var(--canvas-2); border:1px solid var(--rule); border-radius:12px; }
+.deletion-scope__row { display:grid; gap:3px; }
+.deletion-scope__label { color:var(--coral-deep); font-size:9.5px; font-weight:800; letter-spacing:.09em; text-transform:uppercase; }
+.deletion-scope__row strong { font-size:12.5px; overflow-wrap:anywhere; }
+.deletion-scope__row>span:not(.deletion-scope__label) { color:var(--muted); font-size:10.5px; line-height:1.5; }
+.deletion-export { width:100%; }
+.confirm-phrase { padding:2px 7px; color:var(--coral-deep); background:var(--coral-deep-soft); border-radius:6px; font-size:11px; font-weight:800; letter-spacing:.06em; white-space:nowrap; }
