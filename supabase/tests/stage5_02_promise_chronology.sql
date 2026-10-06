@@ -297,8 +297,9 @@ select is((select count(*) from pg_proc p
 
 select is((select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
            where n.nspname = 'public' and has_function_privilege('authenticated', p.oid, 'EXECUTE')),
-          24::bigint,
-          'the browser-reachable routine count is unchanged at 24: the repair reshaped one signature, it did not add a capability');
+          25::bigint,
+          'the browser-reachable routine count is 25: Stage 5 added none of its own, and the 25th is '
+          || 'delete_my_account(), granted deliberately by the Arc 3C erasure migration');
 
 select is((select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
            where n.nspname = 'public'
