@@ -25,10 +25,29 @@ import { ERASURE_CONFIRMATION_PHRASE } from "../supabase/functions/delete-accoun
 // the local runtime — a 404 or a 501 from that block is a finding about the environment, which is
 // why the tests report it instead of accepting it.
 //
-// STATUS: written, NOT EXECUTED. `pnpm test:live` refuses to start without a loopback stack
-// (tests/live-stack-guard.mjs) and the Docker daemon on this machine answers neither the host nor
-// WSL — free space recovered past the agreed floor, so the disk is not what blocks this file.
-// Nothing in this file is claimed as passing; the Phase 3C verdict says so explicitly.
+// STATUS: EXECUTED, 22/22, inside `pnpm verify:release:local` at exit 0 on 2026-10-06 (that run's
+// live stage started 17:01:24 host time = 11:31:24Z, and this file answered
+// `tests/arc3c-local-account-erasure.test.ts (22 tests) 24731ms` inside
+// `Test Files 10 passed (10) / Tests 331 passed (331)`, with the function served and
+// `ALLOWED_APP_ORIGIN` set). Three red or empty executions are part of the record rather
+// than hidden by it: a full-suite run lost F.8 to Vitest's 5 s default before the ceiling below was
+// measured; a serve driven by `scripts/local-functions-serve.mjs` from a Windows checkout answered
+// `Tests 9 failed | 13 passed (22)` with every `F.*` claim on HTTP **502** (the 13 passes are the
+// `docker exec` claims, which never touch Kong); and the re-run after the ceiling below was added
+// failed fast at **exit 1 with 22 tests skipped** on
+// ``docker exec` … did not answer within 30000 ms (ETIMEDOUT)`.
+// The 502 mechanism is measured, not guessed: that serve log (11:46:30Z→11:48:33Z) holds 12
+// `File change detected` WRITE events, 7 `Serving functions on…` re-setups and only 2 requests that
+// reached `serving the request`, and a 502 from Kong is the no-upstream answer a restarting runtime
+// gives. The WRITE events do not correspond to writes — `index.ts`/`contract.ts` carry host mtimes
+// ~3.5 h before that window, and the `.env` events postdate that file's only write at 11:46:25Z — and
+// they are specific to the Windows side: every Windows serve captured this phase churned (24 events /
+// 8 setups, 19 / 7), while the WSL serve of the same tree logged 1 setup, 0 change events and the 104
+// requests this pass ran against. Why a Windows-side watcher reports writes at all is NOT established.
+// What is NOT executed: this battery re-run against the env file `local-functions-serve.mjs` writes
+// (`ALLOWED_APP_ORIGIN` only). That is a narrower gap than it sounds — the CLI skips the `SUPABASE_*`
+// names in any env file, so the runtime is configured by `ALLOWED_APP_ORIGIN` either way — but the
+// re-run needs `docker exec`, so it stays unclaimed until the daemon answers.
 
 const url = process.env.VITE_SUPABASE_URL ?? "";
 const anonKey = process.env.VITE_SUPABASE_ANON_KEY ?? "";
@@ -64,11 +83,29 @@ const OWNER_TABLES: [table: string, key: string][] = [
 
 const localDbContainer = process.env.ARC3C_LOCAL_DB_CONTAINER ?? "supabase_db_dueweave";
 
+// A synchronous `docker exec` against a wedged daemon never returns, and while it blocks the
+// worker Vitest's own timers cannot fire either: measured as 300 s of a run that printed no test
+// results at all, exit 124, while every HTTP endpoint on the same stack answered in milliseconds.
+// A gate that cannot fail is worse than a gate that fails, so the read has a ceiling and the
+// ceiling is reported as what it is — an environment fault, not a passing or failing product claim.
+const dockerExecTimeoutMs = 30_000;
+
 function runSql(sql: string): { ok: boolean; out: string } {
-  const result = spawnSync("docker", ["exec", "-i", localDbContainer, "psql", "-U", "postgres", "-d", "postgres", "-A", "-t", "-f", "-"], {
+  // `ON_ERROR_STOP=1` is what makes `ok` mean anything: without it psql keeps going after a failed
+  // statement and exits 0, so a refused delete — the outcome half of these claims are asking for —
+  // reads as a successful one.
+  const result = spawnSync("docker", ["exec", "-i", localDbContainer, "psql", "-U", "postgres", "-d", "postgres", "-v", "ON_ERROR_STOP=1", "-A", "-t", "-f", "-"], {
     input: `${sql}\n`,
     encoding: "utf8",
+    timeout: dockerExecTimeoutMs,
   });
+  if (result.status === null) {
+    throw new Error(
+      `\`docker exec\` against ${localDbContainer} did not answer within ${dockerExecTimeoutMs} ms ` +
+        `(${result.error?.code ?? "no exit status"}) — the container runtime is unavailable, so this ` +
+        `suite has no database to attack. Reported as a blocked gate, not a passed one.`,
+    );
+  }
   return { ok: result.status === 0, out: `${result.stdout ?? ""}${result.stderr ?? ""}` };
 }
 
@@ -116,13 +153,18 @@ const functionUrl = `${url.replace(/\/+$/, "")}/functions/v1/delete-account`;
 type FunctionCall = { method?: string; token?: string; body?: string; origin?: string };
 
 async function callDeletionFunction(call: FunctionCall): Promise<{ status: number; json: Record<string, unknown>; text: string }> {
+  const method = call.method ?? "POST";
   const headers: Record<string, string> = { apikey: anonKey };
   if (call.token) headers.authorization = `Bearer ${call.token}`;
   if (call.origin) headers.origin = call.origin;
-  if (call.body !== undefined) headers["content-type"] = "application/json";
+  // `fetch` refuses a body on GET/HEAD before it leaves the process, so the method claims would end
+  // in a harness error instead of the endpoint's answer. The body is carried on the methods that can
+  // take one; the refusal being asserted is the endpoint's, not the transport's.
+  const canCarryBody = call.body !== undefined && method !== "GET" && method !== "HEAD";
+  if (canCarryBody) headers["content-type"] = "application/json";
   // One request, whatever the runtime answers. No retry, no sleep — a refused deletion that needs a
   // second attempt is a finding, not something this harness smooths over.
-  const reply = await fetch(functionUrl, { method: call.method ?? "POST", headers, body: call.body });
+  const reply = await fetch(functionUrl, { method, headers, body: canCarryBody ? call.body : undefined });
   const text = await reply.text();
   let json: Record<string, unknown> = {};
   try {
@@ -168,7 +210,13 @@ async function seedHistory(account: Account, tag: string): Promise<void> {
 
 const accounts: Record<string, Account> = {};
 
-describeLocalStack("Arc 3C account erasure against the live local database", () => {
+// Measured, not guessed: F.8 is the battery's slowest test at 4.28 s when this file runs alone and
+// over 5 s when the other nine database suites have just run against the same Postgres, because the
+// test spends its time in ~14 `docker exec psql` row-count round trips (before, after, and the
+// cross-tenant re-reads) rather than in the erasure itself. Vitest's 5 s default therefore cuts a
+// passing journey off; `Stage 7`/`Stage 8` live suites already carry their own measured ceilings,
+// and this does the same. It is a ceiling, not a retry — a wedged request still fails, at 30 s.
+describeLocalStack("Arc 3C account erasure against the live local database", { timeout: 30_000, hookTimeout: 60_000 }, () => {
   // alpha is erased through the RPC. beta survives every probe untouched. gamma carries the Founder
   // entanglement. delta is the B17 baseline: history, no purge, admin delete must still fail.
   // epsilon is erased through the Edge Function's HTTP endpoint — the only account in this suite

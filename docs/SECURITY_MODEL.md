@@ -4,11 +4,14 @@ Stage 9 PHASE 30, carried forward through Arc 3C. The catalog numbers below were
 2026-09-29 against the project's own disposable loopback Supabase (23 committed migrations replayed
 from zero) by `pnpm exec supabase db query --local "<sql>"`, `pnpm test:db` (pgTAP) and
 `pnpm test:live`. The chain now carries **25** committed migrations: `20261004170000_current_arc2_ledger_required_blank_class.sql`
-and `20261006120000_current_arc3c_account_erasure_path.sql`. Nothing in Arc 3C's migration has been
-replayed — the Docker daemon on this machine answers neither the host nor WSL, so the replay, pgTAP
-and live gates did not run. Anything sourced rather than measured is marked
-**(source, not yet measured)**, and `docs/ACCOUNT_ERASURE_DESIGN.md` keeps the full list of blocked
-gates. Where a claim could be executed it was; the test citations are the same ones
+and `20261006120000_current_arc3c_account_erasure_path.sql`. The Arc 3C migration **has** been replayed
+from zero on the loopback stack (`pnpm verify:migrations` → 25 on disk, 25 applied), with pgTAP at
+`Files=9, Tests=405 … PASS` and the ten live suites at 331 tests including the 22-claim erasure battery
+with the Edge Function served — all inside `pnpm verify:release:local` at exit 0 on 2026-10-06. What has
+*not* executed is its CI half and its browser half, and the hosted project has no copy of it. Anything
+sourced rather than measured is marked
+**(source, not yet measured)**, and `docs/ACCOUNT_ERASURE_DESIGN.md` keeps the full gate list with its
+measurements. Where a claim could be executed it was; the test citations are the same ones
 `docs/SECURITY_CONTRACT_REQUALIFICATION.md` pins, and `tests/security-contract.test.ts` fails the
 release if that map drifts. None of the figures in this section were run against a hosted project;
 the hosted re-measurement Phase 3B performed is recorded in `docs/CONSUMER_LIVE_PROGRESS.md`.
@@ -184,7 +187,7 @@ owner, `auth.uid()` is that same account, and `current_user` is `postgres`. The 
 browser-reachable path through it is `delete_my_account()`, which takes no argument and deletes in
 explicit child-first order. `delete_my_business_data()` stays revoked exactly where Stage 2 left it.
 An account that appears in the Founder review ledger is refused before the context is armed (B19).
-Full design, threat model and the blocked gates: `docs/ACCOUNT_ERASURE_DESIGN.md`.
+Full design, threat model and the executed gate numbers: `docs/ACCOUNT_ERASURE_DESIGN.md`.
 
 ## Export privacy
 
@@ -238,7 +241,7 @@ through this path because the browser calls the function through the caller's ow
 | Accessibility conformance | Stage 6's targeted keyboard/screen-reader/reduced-motion qualification is retained (`e2e/stage6-local-accessibility.spec.ts`); it is not a WCAG certification. |
 | Leaked-password protection on the hosted project | Measured off: `password_hibp_enabled = false` (read 2026-10-06). It is a project-level Auth configuration write, and enabling it is an owner decision about the plan; this phase was instructed to spend nothing and write nothing hosted. The application-side eight-character floor is what this repository can enforce — see *Password posture*. |
 | Erasure of a Founder-entangled account (B19) | The purge refuses an account named in `founder_audit_events` because two RESTRICT edges protect review provenance. Erasing it would mean deleting reviewer evidence Stage 8 made immutable, which is a product decision about the review ledger, not a detail of this repair. |
-| The Arc 3C gates themselves | `20261006120000_current_arc3c_account_erasure_path.sql` and `supabase/functions/delete-account/` have never executed: the machine's Docker daemon answers neither from the host nor from WSL, so replay, pgTAP, the live suites and every browser gate are open. `docs/ACCOUNT_ERASURE_DESIGN.md` keeps the list, and B17's verdict is **NOT READY** until it closes. |
+| The Arc 3C gates CI and a browser would run | The migration, pgTAP and the live erasure battery have executed against the loopback stack (2026-10-06, numbers in `docs/ACCOUNT_ERASURE_DESIGN.md`). Still open: no Phase 3C head has run CI's `database` job, which is what now serves `delete-account` before `pnpm test:live`; the battery has not been re-run against that script-managed serve, whose env file carries only `ALLOWED_APP_ORIGIN`; and the erasure sheet has never been rendered in a browser. B17's verdict is **not closed** until those, the exact-SHA three-job green and the owner's deploy have happened. |
 
 ## Reproducing
 

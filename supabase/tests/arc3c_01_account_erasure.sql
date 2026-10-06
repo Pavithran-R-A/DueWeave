@@ -103,27 +103,27 @@ select ok((select position('tg_op = ''DELETE'' and public.erasure_allows_delete(
            from pg_proc where oid = 'public.prevent_immutable_history_changes()'::regprocedure),
     'the payments/activities/promise_events guard asks the helper only for DELETE');
 
-select is((select count(*) from regexp_split_to_array(
+select is((select cardinality(regexp_split_to_array(
              (select prosrc from pg_proc where oid = 'public.prevent_immutable_history_changes()'::regprocedure),
-             'erasure_allows_delete')) - 1, 1::bigint,
+             'erasure_allows_delete')) - 1)::bigint, 1::bigint,
     'and asks it exactly once, so there is no second branch that opened UPDATE by mistake');
 
 select ok((select position('tg_op = ''DELETE'' and public.erasure_allows_delete(old.owner_id)' in prosrc) > 0
            from pg_proc where oid = 'public.guard_promise_history()'::regprocedure),
     'the promise-history guard asks the helper only for DELETE');
 
-select is((select count(*) from regexp_split_to_array(
+select is((select cardinality(regexp_split_to_array(
              (select prosrc from pg_proc where oid = 'public.guard_promise_history()'::regprocedure),
-             'erasure_allows_delete')) - 1, 1::bigint,
+             'erasure_allows_delete')) - 1)::bigint, 1::bigint,
     'once, in the promise guard too');
 
 select ok((select position('tg_op = ''DELETE'' and public.erasure_allows_delete(old.owner_id)' in prosrc) > 0
            from pg_proc where oid = 'public.prevent_direct_purchase_claim_change()'::regprocedure),
     'the Founder-claim guard asks the helper only for DELETE');
 
-select is((select count(*) from regexp_split_to_array(
+select is((select cardinality(regexp_split_to_array(
              (select prosrc from pg_proc where oid = 'public.prevent_direct_purchase_claim_change()'::regprocedure),
-             'erasure_allows_delete')) - 1, 1::bigint,
+             'erasure_allows_delete')) - 1)::bigint, 1::bigint,
     'once, in the claim guard too');
 
 -- ---------------------------------------------------------------------------
@@ -156,15 +156,17 @@ select is((select count(*) from pg_trigger t join pg_class c on c.oid = t.tgreli
              and (t.tgtype & 8) <> 0), 5::bigint,
     'and still fire on DELETE, so the guard is the thing deciding, not an absent trigger');
 
-select is((select coalesce(array_agg(c.relname order by c.relname), '{}'::text[])
+-- Counted rather than aggregated: pgTAP's `is()` has no array overload, so the version of this
+-- assertion that compared an array failed to even parse on first execution.
+select is((select count(*)
            from pg_class c
            join pg_namespace n on n.oid = c.relnamespace
            cross join aclexplode(coalesce(c.relacl, '{}'::aclitem[])) a
            join pg_roles r on r.oid = a.grantee
            where n.nspname = 'public'
              and c.relname in ('payments', 'activities', 'promise_events', 'promises', 'purchase_claims')
-             and r.rolname = 'authenticated'
-             and a.privilege_type in ('DELETE', 'INSERT', 'UPDATE')), '{}'::text[],
+             and r.rolname in ('authenticated', 'anon')
+             and a.privilege_type in ('DELETE', 'INSERT', 'UPDATE')), 0::bigint,
     'a browser role still holds no table DML on any guarded history table — history cannot be '
     || 'deleted directly no matter what a session sets (profiles is excluded on purpose: its '
     || 'owner-side UPDATE grant is Stage 3''s measured exception)');

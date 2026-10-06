@@ -120,12 +120,20 @@ pnpm audit --prod --audit-level=high    # runtime dependency graph
 **Database verification** is the part that executes SQL, and it is the reason Docker is required:
 
 ```bash
-pnpm db:reset:local   # replay all 23 committed migrations onto a fresh Postgres
+pnpm db:reset:local   # replay all 25 committed migrations onto a fresh Postgres
 pnpm verify:types     # generated types must equal the live schema, byte for byte
 pnpm verify:migrations   # committed migration files must equal the applied set
 pnpm test:db          # pgTAP: policies, triggers, privileges, money and lifecycle invariants
 pnpm db:lint          # Supabase schema lint
+node scripts/local-functions-serve.mjs start
+                      # only `pnpm test:live` needs this: it serves the delete-account Edge Function
+                      # the erasure battery calls, detached, and waits until the endpoint answers 401
+                      # for a caller with no token (404 = not mounted, 501 = the origin never reached
+                      # the runtime). The env file it writes carries ALLOWED_APP_ORIGIN and nothing
+                      # else — the CLI injects the Supabase keys into the container itself
 pnpm test:live        # the Stage 2-9 suites that talk to the real database over PostgREST
+node scripts/local-functions-serve.mjs stop
+                      # terminates that watcher and stops only this project's edge-runtime container
 ```
 
 **Browser verification** drives the built bundle in Chromium. `playwright.config.ts` declares a
@@ -259,8 +267,8 @@ The documents a Stage 9 reviewer reads are
 [the executed security proofs](docs/SECURITY_CONTRACT_REQUALIFICATION.md),
 [the security model as measured](docs/SECURITY_MODEL.md),
 [the abuse matrix](docs/STAGE9_ABUSE_MATRIX.md),
-[the account erasure design](docs/ACCOUNT_ERASURE_DESIGN.md) (B17 — design and source only; its
-database gates are listed as unexecuted there),
+[the account erasure design](docs/ACCOUNT_ERASURE_DESIGN.md) (B17 — design, threat model and the
+gate numbers executed against a replayed local database; not deployed, and not yet executed in CI),
 [the integration plan](docs/PR_INTEGRATION_PLAN.md) (design only — no PR was opened by this stage)
 and [the branch protection plan](docs/RELEASE_PROTECTION.md) (prepared only — no GitHub setting
 was changed).

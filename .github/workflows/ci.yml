@@ -109,8 +109,35 @@ jobs:
       - name: Schema lint
         run: pnpm db:lint
 
+      # Arc 3C row U (`docs/RELEASE_GATE_MATRIX.md`): the erasure battery in `tests/arc3c-local-account-erasure.test.ts`
+      # calls `delete-account` over HTTP, so `pnpm test:live` needs this checkout's Edge Function
+      # served as well as its schema replayed. Until now the workflow had no such step, which is why
+      # the row could never be executed by a run. The script owns the watcher's lifecycle because
+      # `supabase functions serve` is a foreground process — a plain `run:` step would never finish —
+      # and it decides readiness from the endpoint's own answer rather than from a sleep: 404 means
+      # the function is not mounted, 501 means `ALLOWED_APP_ORIGIN` never reached the container, and
+      # only 401-for-a-caller-with-no-token means served-and-configured. Readiness polls every 500 ms
+      # against a 90 s ceiling (both constants live in the script), and a missed ceiling is reported as
+      # a blocked gate rather than a pass. No workflow has executed this step yet, so the step is
+      # written-and-dry-run-verified only; locally, a serve whose watcher was running against the
+      # Windows path never reached served-and-configured at all and the battery answered 502 — the
+      # churn and its counts are recorded in `docs/CONSUMER_LIVE_PROGRESS.md` and
+      # `docs/RELEASE_GATE_MATRIX.md` note 8, which is why readiness is read from the endpoint and not
+      # from a sleep.
+      - name: Serve the delete-account Edge Function for the erasure battery
+        run: node scripts/local-functions-serve.mjs start
+
       - name: Database-backed contract suites
         run: pnpm test:live
+
+      # `if: always()`, and scoped: the script terminates only the pid this checkout recorded and
+      # stops only `supabase_edge_runtime_<this project id>`, so the release does not reach the other
+      # stack on this host. It then proves the endpoint stopped answering. `release-local-ci-state`
+      # still stops the whole stack afterwards; this step is what keeps the watcher itself from
+      # outliving the job.
+      - name: Release the served Edge Function
+        if: ${{ always() }}
+        run: node scripts/local-functions-serve.mjs stop
 
       - uses: ./.github/actions/release-local-ci-state
         if: ${{ always() }}

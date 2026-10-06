@@ -1,13 +1,13 @@
 # Account erasure design (B17) — Arc 3C
 
-Status: **design and source only. Nothing here has been executed against a database.** Every
-catalog number below is either read from a committed migration or from the retained Phase 3B hosted
-catalog dumps (`fk-delete-action.raw`, `triggers.raw`, captured 2026-10-05 against
-`ugzdqcytouwfdlcjujqv` at 24/24 migration parity, which Phase 3B proved identical to the local
-chain). The gates that would normally turn this design into measurement — clean replay, pgTAP, the
-live suites, the browser journeys — need Docker, and the Docker daemon on this machine does not
-answer; see *Execution status*
-at the end.
+Status: **design and source, replayed and executed against the loopback stack on 2026-10-06, and not
+deployed anywhere.** Every catalog number below is either read from a committed migration or from the
+retained Phase 3B hosted catalog dumps (`fk-delete-action.raw`, `triggers.raw`, captured 2026-10-05
+against `ugzdqcytouwfdlcjujqv` at 24/24 migration parity, which Phase 3B proved identical to the local
+chain). When this section was first written the executing gates could not run; they have since —
+STEP 1's reproduction, the clean 25-migration replay, pgTAP, the ten live suites with the function
+served, and `pnpm verify:release:local` at exit 0 — and *Execution status* at the end carries the
+measured numbers, the gates that still have not run, and the boundary this phase stops at.
 
 ## The defect this closes
 
@@ -146,7 +146,7 @@ Two files, split on purpose:
 | File | Role | Executed by |
 | --- | --- | --- |
 | `contract.ts` | every decision — confirmation shape, bearer extraction, origin policy, method policy, failure copy. No Deno, no fetch, no client import | `tests/arc3c-erasure-contract.test.ts`, **run and green (19 tests)** |
-| `index.ts` | the wiring: read the request, ask GoTrue who the caller is, run the two privileged steps in order | the same file, structurally (source assertions), and behaviourally by the `F.*` claims in `tests/arc3c-local-account-erasure.test.ts` (**not executed**) |
+| `index.ts` | the wiring: read the request, ask GoTrue who the caller is, run the two privileged steps in order | the same file, structurally (source assertions), and behaviourally by the `F.*` claims in `tests/arc3c-local-account-erasure.test.ts` — **run and green (22 tests, 2026-10-06, with the function served)** |
 
 The three properties that make it safe, in the order they are checkable:
 
@@ -197,40 +197,43 @@ record of something done:
    undeployed. Neither action is a data migration, and neither is needed to leave the app as it is
    today — until steps 1-3 run, production behaves exactly as it did at Phase 3B.
 
-Local serving, when a machine has the disk for it: `supabase functions serve delete-account
---env-file supabase/functions/.env` (copy from `.env.example`), with `ALLOWED_APP_ORIGIN` set to the
-Vite origin, otherwise every `F.*` claim in the live suite fails with the 501 rather than passing
-vacuously.
+Local serving, for the machine that has a working container runtime: `node
+scripts/local-functions-serve.mjs start` — which runs `supabase functions serve delete-account
+--env-file supabase/functions/.env` detached, waits until the endpoint answers 401 for a caller with
+no token (404 means the function is not mounted, 501 means `ALLOWED_APP_ORIGIN` never reached the
+runtime), and writes its pid and log under the gitignored `supabase/.temp/`; `stop` terminates that
+pid, stops only `supabase_edge_runtime_<this checkout's project id>`, and then proves the endpoint
+stopped answering. The env file it creates carries `ALLOWED_APP_ORIGIN` and nothing else, because the
+CLI injects `SUPABASE_URL`, `SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` into the runtime
+container itself — no privileged value has to exist on disk for the battery to run. Without the origin
+set, every `F.*` claim fails with the 501 rather than passing vacuously.
 
 ## Execution status
 
-Both authorised Docker passes reclaimed **0 B** — the build cache measured 0 B total and there were 0
-dangling images, so the two permitted pruning commands had nothing to remove, and volumes are
-untouched because 168 of them are anonymous and the same daemon hosts another product's running
-stack. Free space on C: then rose on its own to `6,986,805,248` bytes (6.51 GiB, measured
-2026-10-06), which is above the agreed 4 GB floor — so the floor is no longer what blocks these
-gates. What blocks them is the daemon itself, re-probed on 2026-10-06 and unresponsive from both
-sides of the machine:
+These gates ran on 2026-10-06 between roughly 10:15 UTC and 11:36 UTC, and the machine then wedged
+again; both halves are recorded, because "the daemon answers" is a property of the moment rather than
+of the repository. Disk stopped being the constraint the same day: the two authorised prune passes
+reclaimed **0 B** (build cache already 0 B, 0 dangling images; `image prune -a`, every `system prune`
+form and every volume prune were refused by rule — 168 anonymous volumes, and another product's live
+stack shares this daemon) and free space rose on its own to `6,986,805,248` bytes, above the agreed
+4 GB floor.
 
-| Probe | Result |
+| Gate | Measured result |
 | --- | --- |
-| `docker version --format …` (host) | exit 124 after 25 s, **0 bytes** of output |
-| `docker ps --format …` (host) | exit 124 after 40 s, **0 bytes** |
-| `docker info …` inside WSL Ubuntu | exit 124 after 75 s, **0 bytes** (`wsl -l -v` shows Ubuntu *Running*, so the distro answers and the daemon does not) |
+| STEP 1 RED reproduction, on a clean replay of the 24 committed migrations | **EXECUTED.** Direct `DELETE` by an `authenticated` session on `payments` / `activities` / `promise_events` → `42501 permission denied for table`; `delete_my_business_data()` as `authenticated` → `42501 permission denied for function`; `auth.admin.deleteUser` against an account holding history → `Database error deleting user`. Probing the same deletes as the migration role names the function that aborts each one: `prevent_immutable_history_changes()` raises `Historical records cannot be changed [P0001]` on `payments`, `activities` and `promise_events`; `guard_promise_history()` raises `Promise history cannot be deleted [P0001]` on `promises`, on `profiles` (reached through the `auth.users → profiles → promises` cascade) and on the whole `auth.users` delete — that is the message B17 answers with. `purchase_claims` is held by `prevent_direct_purchase_claim_change()`, and the Founder edge is not a trigger at all: deleting `auth.users` while a Founder audit row exists dies at `23503 … violates foreign key constraint "founder_audit_events_target_user_id_fkey"`. Every statement rolled back, and the probe fixture read back intact (`payments 1, activities 7, promise_events 3, promises 2, clients 1, receivables 2, profiles 1, auth_users 1`) |
+| 25th migration applied, clean zero replay | **EXECUTED.** `pnpm db:reset:local` recreated the database and applied all 25 in order, ending `Finished supabase db reset on branch release/consumer-live`; `pnpm verify:migrations` → "Migrations on disk: 25. Applied in the local database: 25." |
+| Generated types re-cut | **EXECUTED.** `pnpm db:types` against the replayed schema added `delete_my_account` and `erasure_allows_delete`, and `pnpm verify:types` → "client\\src\\types\\database.generated.ts matches the local schema (38464 bytes)." |
+| pgTAP, incl. the 24→25 routine-count pins | **EXECUTED — red twice, then green.** Run 1: `function is(name[], text[], text) does not exist` at `supabase/tests/arc3c_01_account_erasure.sql:170`, with subtests 18, 20 and 22 red. Run 2: `function is(integer, bigint, unknown) does not exist` at `:109` (planned 41, ran 17). Run 3: `Files=9, Tests=405 … Result: PASS`, with `stage3_02_privileges.sql` and `stage5_02_promise_chronology.sql` both answering 25. The two repairs are pgTAP-signature fixes (count the rows instead of comparing an array, cast to `bigint`) and neither relaxed a claim: the privilege assertion that could not parse now counts DML grants held by `authenticated` **or** `anon` across the five guarded tables and demands 0, which is wider than the version it replaced |
+| Schema lint | **EXECUTED.** `pnpm db:lint` → "No schema errors found" |
+| The ten live DB suites with `delete-account` served | **EXECUTED.** `pnpm test:live` → `Test Files 10 passed (10)`, `Tests 331 passed (331)`, with `tests/arc3c-local-account-erasure.test.ts` 22/22 and its destructive journey F.8 at 4413 ms. The caveat has to travel with the number: that serve is the WSL-side one (`serve-wsl.log`: 1 setup, 0 change events, 104 served requests), and the `supabase/functions/.env` in front of it still held this stack's own values. Those values are skipped by the CLI itself (`Env name cannot start with SUPABASE_, skipping: …`), so the runtime saw only `ALLOWED_APP_ORIGIN` either way — but the battery has **not** been re-executed against the single-variable env file `scripts/local-functions-serve.mjs` writes, which is the shape CI uses, and that re-run needs `docker exec` |
+| `pnpm verify:release:local` | **EXECUTED, exit 0** (its `test:live` stage started 11:31:24Z and `test:unit` 11:35:14Z, host clock +5:30): `verify:db:local` (reset → types → migrations → pgTAP → lint), the `test:live` above, `pnpm build` (`✓ built in 13.56s`), `pnpm test:unit` (33 files / 463 tests), `pnpm lint` 0, `pnpm check` 0, `pnpm verify:secrets` 0, `pnpm audit --prod` 0 |
+| Two findings the execution produced | (1) **PostgREST version sensitivity.** `tests/stage4-local-edit-workflows.test.ts` and `tests/stage4-local-repository-edit.test.ts` first failed (4 of 21, then 3 of 14 even at a 60 s ceiling) with requests that hung rather than answered. This laptop's stack was serving `postgrest v14.18` while the pinned CLI (2.117.0) asks for `postgrest:v16.2`; the same database and the same suites answered **21/21 in 4.85 s** behind a v16.2 process. The hang therefore belongs to a stale local image, not to the schema, and CI — which starts a CLI-pinned stack for every job — never inherits it. The laptop's own v14.18 container was stopped, not deleted; restoring it is phase-close work. (2) **Serving from a Windows path is not stable.** A watcher started against the `C:\…` checkout logged 12 "File change detected" events and re-created the edge runtime 7 times, which is what produced the 502s in the 9-of-22 red run; the WSL-side serve of the same tree logged 1 setup and 0 change events. Counted from the serve logs, the difference is not subtle: the churning window (`supabase/.temp/functions-serve.log`, 11:46:30Z→11:48:33Z) let only **2** requests reach `serving the request`, while the stable serve (`serve-wsl.log`, 10:35:46Z→11:37:15Z) served **104** — the battery whose 22/22 is the row above. The churn is not one serve misbehaving: all three Windows-side captures this phase churned (24 events / 8 setups at 10:23–10:28Z in `functions-serve.log`, 19 / 7 at 10:29–10:32Z in `serve-debug.log`, 12 / 7 in the red run). A 502 is Kong's answer when the mounted route has no upstream worker, which is why even the tokenless probe that answers 401 on a stable serve answered 502 there. The events are also **not writes**: `index.ts` and `contract.ts` carry host mtimes of 13:34:30 and 13:35:50 (= 08:04Z, 08:05Z, ~3.5 h before the window), their directory 13:35:50, and `.env`'s two later events postdate that file's only write at 11:46:25Z — so no content changed while the runtime was being torn down and rebuilt. What is **not** established is *why* a Windows-side watcher reports those writes at all, which is a bind-mount question rather than a repository one. CI serves from the WSL path, and readiness is decided from the endpoint's own answer (404 not mounted, 501 unconfigured, 401 served-and-configured) so a mis-served function is reported rather than absorbed |
+| F.8's measured ceiling | 4413 ms inside a full-suite run, 4.28 s with the file alone, and over Vitest's 5 s default once the other nine suites had just used the same Postgres. The file carries `{ timeout: 30_000, hookTimeout: 60_000 }` for that reason — a ceiling, not a retry: a wedged request still fails |
+| Browser smoke, React-warning gate, full E2E | **PARTLY EXECUTED.** `node scripts/run-e2e.mjs` over 5 of the 7 smoke specs (14:24:36Z→14:32:40Z): `47 passed / 1 failed / 10 did not run (8.0 m)`, `--workers=1`, `retries: 0`; the single red was the describe's shared console guard (`e2e/stage7-local-export.spec.ts:157`) receiving `net::ERR_NAME_NOT_RESOLVED` for the Google Fonts stylesheet `client/index.html:16-18` loads — the test body itself passed, including `:256`'s assertion that no Import/Restore/Delete-my-account affordance was invented beside the export files. Classified against the network rather than inherited: `getent hosts fonts.googleapis.com` and `curl` of the same URL answered (200) minutes later, and the file alone re-ran **13 passed (3.4 m)** — the failed test plus all 10 that had not run. **58 slots green across the two executions, 0 failed, 0 skipped.** `pnpm test:e2e:react-warnings` → **3 passed (43.8 s)**, exit 0. Still NOT executed: the two Stage 8 Founder specs (they shell to `docker exec`, which this host cannot give) and therefore the **complete** smoke gate — and **the erasure sheet has never been rendered in a browser**, so STEP 5's UX claims rest on source plus DOM-level tests |
+| CI at a Phase 3C head | **NOT RUN.** The commits are local. The runner is self-hosted on this same machine, and the Docker **CLI** stopped answering during the phase — `docker version` exit 124 at 25 s and again at 100 s, `docker ps` exit 124 at 40 s and 130 s, `docker version` inside WSL exit 124 at 20 s — while the already-running containers kept answering HTTP (a tokenless `POST /functions/v1/delete-account` still returned 401, and `node scripts/local-stack-check.mjs` was **exit 0** at 15:18Z). The retained proof that the CLI is the blocker is the battery's own fail-fast at **14:18:36Z: exit 1, 22 tests skipped**, ``docker exec` against supabase_db_dueweave did not answer within 30000 ms (ETIMEDOUT)`. Pushing now would buy a run whose container steps fail for that reason, so nothing was pushed and no CI pass is claimed. Nothing was restarted, killed or pruned to chase the daemon |
+| Production migration apply, Edge Function deploy, hosted Auth change | **NOT PERFORMED, by instruction.** This phase made no hosted write of any kind |
 
-Nothing was started, restarted or killed to try to fix that: the daemon is shared, and a wedged
-Docker Desktop is the other product's runtime as much as DueWeave's.
-
-| Gate | Status |
-| --- | --- |
-| STEP 1 local RED reproduction (A/B/C) | **NOT EXECUTED** — mechanism is measured from the catalog and the guards' committed text; the aborting function per table is named above |
-| Migration apply + clean replay | **NOT EXECUTED** |
-| pgTAP (incl. the 24→25 routine-count pins at `supabase/tests/stage3_02_privileges.sql:137` and `stage5_02_promise_chronology.sql:300`) | **NOT EXECUTED** — assertions written, awaiting a database |
-| Live DB suites, account-deletion regression suite | **NOT EXECUTED** |
-| Browser smoke / full E2E / `verify:release:local` | **NOT EXECUTED** |
-| `pnpm lint`, `pnpm check`, `pnpm build`, `pnpm test:unit`, `pnpm verify:secrets`, `pnpm audit --prod` | runs without Docker — see the phase record |
-| Edge Function served locally | **NOT EXECUTED** — no Deno on either side and no `edge-runtime` image cached |
-| Production migration apply, Edge Function deploy, hosted Auth change | **NOT PERFORMED, by instruction** |
-
-No line above is claimed as passing. The B17 verdict stays **NOT READY FOR PRODUCTION DEPLOY** until
-the database gates execute somewhere with a working container runtime.
+B17's verdict moves from "written, blocked" to **replayed and executed against a real Postgres and a
+real function runtime, not yet proven in CI and not deployed**. What still separates the row from
+closed: the browser half, the battery re-executed under the script-managed serve, the delivered SHA's
+own three-job green, and the owner's `db push` plus `functions deploy`.

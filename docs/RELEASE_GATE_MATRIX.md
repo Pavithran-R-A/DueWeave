@@ -49,7 +49,7 @@ of the property that neither a laptop nor CI can prove.
 | R | Stage 8 Founder customer / reviewer | `pnpm test:live` · `pnpm test:e2e:smoke` | `tests/stage8-local-founder-readiness.test.ts`, `tests/stage8-founder-contracts.test.ts`; `e2e/stage8-local-founder-customer.spec.ts`, `e2e/stage8-local-founder-reviewer.spec.ts` | loopback stack + `TEST`-mode offer | database + browser | real UPI/VPA settlement, live-mode review | yes |
 | S | Logout / login persistence | `pnpm test:e2e:smoke` · `pnpm verify:e2e:local` | `e2e/stage9-release-journey.spec.ts:452` (profile edit → sign out → sign in → same ledger), `e2e/stage6-local-auth-ux.spec.ts:256` (sign-out leaves nothing), `:304` (lost stored session returns to the gateway) | loopback stack | browser (the journey) | — | yes |
 | T | Abuse / validation cases | `pnpm test:live` (+ `test:unit`, `test:db`, `test:e2e:smoke` for the rest) | `docs/STAGE9_ABUSE_MATRIX.md` is the ledger of all 20 cases and names, per case, the file that reaches the failure. `tests/stage9-abuse-matrix.test.ts` (7 tests) is that executed proof for 5 of them — cases 4, 6, 7, 8, 10 — and the remaining 15 are executed across the live, unit, pgTAP and browser files the ledger cites | loopback stack | database | — | yes |
-| U | Arc 3C account erasure (B17): an authenticated owner can delete their own account and its ledger history without reopening immutability | `pnpm test:live` (the erasure battery) · `pnpm test:db` (the pgTAP file) · `node scripts/verify-secrets.mjs --dir supabase/functions` (measured: 3 files, no finding) | `tests/arc3c-local-account-erasure.test.ts` (the brief's STEP 6 battery; needs the stack **and** `supabase functions serve delete-account --env-file supabase/functions/.env` with `ALLOWED_APP_ORIGIN` set), `supabase/tests/arc3c_01_account_erasure.sql` (`plan(41)`); the static halves that did run are `tests/arc3c-erasure-contract.test.ts` (19 tests) and `tests/arc3c-account-deletion.test.ts` (26). Design and threat model: `docs/ACCOUNT_ERASURE_DESIGN.md` | loopback stack + the function served | **none as the workflow stands** — no CI job starts `supabase functions serve`, so a green `database` job could not prove this row even after the 25th migration replays; only the two static suites reach CI, via `static` | the migration applying to the hosted project, the function deploying, and one real deletion of a real account — B17 and B19 stay open until then | yes — **and NOT EXECUTED at the Phase 3C head.** Read that as the answer "cannot run", not as a pass |
+| U | Arc 3C account erasure (B17): an authenticated owner can delete their own account and its ledger history without reopening immutability | `pnpm test:live` (the erasure battery) · `pnpm test:db` (the pgTAP file) · `node scripts/local-functions-serve.mjs start` / `stop` (the CI serve of the function the battery calls) · `node scripts/verify-secrets.mjs --dir supabase/functions` | `tests/arc3c-local-account-erasure.test.ts` (the brief's STEP 6 battery — **measured 22/22 on 2026-10-06** with the function served; it needs the stack **and** `ALLOWED_APP_ORIGIN` reaching the runtime, which the serve script supplies), `supabase/tests/arc3c_01_account_erasure.sql` (`plan(41)`, **measured inside `Files=9, Tests=405, PASS`**); the static halves are `tests/arc3c-erasure-contract.test.ts` (19 tests) and `tests/arc3c-account-deletion.test.ts` (26). Design and threat model: `docs/ACCOUNT_ERASURE_DESIGN.md` | loopback stack + the function served | database — **written this phase, not yet proven by a run.** `.github/workflows/ci.yml` now serves `delete-account` (from an env file carrying only `ALLOWED_APP_ORIGIN`) immediately before `pnpm test:live` and releases it under `if: always()`, so the row is reachable by CI; no Phase 3C head has executed that job yet, and the two static suites alone reach CI via `static` | the migration applying to the hosted project, the function deploying, and one real deletion of a real account — B17 and B19 stay open until then | yes — **executed locally at the Phase 3C head, not executed in CI.** The browser half (the erasure sheet actually rendered) has still never run |
 
 ### What has moved since these measurements were taken
 
@@ -58,16 +58,19 @@ that is what makes them usable as a baseline. Four numbers in them are now known
 tree, and a reviewer should read them with this pointer:
 
 - Row H says 23 migrations. The chain committed **24** before this phase (Phase 3B applied all 24 to
-  the hosted project and measured parity), and Arc 3C adds a **25th** which has replayed on **no**
-  machine, local or hosted.
-- Row J says `Files=8, Tests=364`. There are **9** pgTAP files on disk now (`arc3c_01_account_erasure.sql`);
-  the ninth has never been planned or run.
+  the hosted project and measured parity), and Arc 3C adds a **25th**: it has replayed from zero on the
+  loopback stack (`pnpm verify:migrations` → "Migrations on disk: 25. Applied in the local database:
+  25.") and it is **not** applied to the hosted project, because this phase made no hosted write.
+- Row J says `Files=8, Tests=364`. There are **9** pgTAP files on disk now, and the measured run is
+  `Files=9, Tests=405 … Result: PASS` — the ninth being `arc3c_01_account_erasure.sql`, which plans 41.
 - Row D's unit counts are the Stage 9 series. At the Phase 3C head `pnpm test:unit` measures
-  **33 files / 463 tests, 0 skipped**, and the live manifest has a **10th** file (`tests/suite-manifest.ts`)
-  which has never executed.
-- Row U is new work and its executing gates were blocked by an unresponsive Docker daemon; the
-  measurements, the two authorised prune passes and the probe timings are in
-  `docs/CONSUMER_LIVE_PROGRESS.md`, section "Phase 3C — account erasure (B17)".
+  **33 files / 463 tests, 0 skipped**, and the live manifest's **10th** file
+  (`tests/arc3c-local-account-erasure.test.ts`) has now executed inside `pnpm test:live`
+  (**10 files / 331 tests**, 22 of them that file's).
+- Row U's executing gates ran on 2026-10-06 against the loopback stack; they have **not** run in CI.
+  The measurements, the two red pgTAP executions that preceded the green one, the authorised prune
+  passes and the daemon probe timings are in `docs/CONSUMER_LIVE_PROGRESS.md` ("Phase 3C — account
+  erasure (B17)") and `docs/ACCOUNT_ERASURE_DESIGN.md` ("Execution status").
 
 ## "Cannot run" is a different answer from "passed"
 
@@ -155,3 +158,36 @@ turning the gate red) was measured the same day.
 6. **One port, one stack.** Two simultaneous browser runs share `127.0.0.1:3000` and the same
    Postgres; the measured failure mode is `net::ERR_CONNECTION_REFUSED` mid-flight, which is why
    the canonical commands default to `--workers=1`.
+7. **Row U's CI half, and one caveat about its local half.** The erasure battery has executed against
+   the loopback stack and `ci.yml` now serves the function in the `database` job, but no Phase 3C head
+   has run that job — so a green release at this head is not yet evidence that *CI* can erase an
+   account. The local 22/22 also rests on the serve in `serve-wsl.log` (WSL side of this tree, 1 setup /
+   0 change events / 104 requests), not on the one `scripts/local-functions-serve.mjs` brings up from
+   Windows; the battery has not been re-run against that script's single-variable env file, which is the
+   shape CI will use. That gap is narrower than the env files look apart — the CLI skips the `SUPABASE_*`
+   names it injects itself, so the runtime is configured by `ALLOWED_APP_ORIGIN` either way — but it is
+   still a re-run this matrix has not seen. Neither claim is softened by the pass above, and the erasure
+   sheet has never been rendered in a browser.
+8. **An open finding against row U, with its mechanism read from the serve logs and the mtimes.** One
+   execution of the battery under a script-started serve from the Windows checkout answered
+   `Tests 9 failed | 13 passed (22)` with every `F.*` claim on HTTP **502** (some also
+   `Test timed out in 30000ms`) — and the 13 passes are precisely the `docker exec` claims, which never
+   reach Kong. The serve log for exactly that window
+   (`supabase/.temp/functions-serve.log`, 11:46:30Z → 11:48:33Z) records **12** `File change detected`
+   WRITE events, **7** `Serving functions on…` re-setups, and only **2** requests that reached
+   `serving the request` — so the runtime spent the run tearing down and re-setting-up, and a request
+   landing inside that window gets Kong's **502**, not a function answer; the tokenless probe that the
+   stable serve answers 401 answered 502 there, which is the signature of *no upstream*, not of a
+   refused deletion. The events are not writes: `index.ts`/`contract.ts` carry host mtimes of 13:34:30
+   and 13:35:50 (= 08:04Z, 08:05Z, ~3.5 h before that window), their directory 13:35:50, and `.env`'s
+   two later events postdate that file's only write at 11:46:25Z. Nor is it one serve misbehaving: all
+   three Windows-side captures this phase churned (24 events / 8 setups at 10:23–10:28Z, 19 / 7 at
+   10:29–10:32Z, 12 / 7 in the red run), while the WSL-side serve of the identical tree logged **1**
+   setup, **0** change events and the **104** requests the 22/22 ran against. What remains
+   **unestablished** is *why* a Windows-side watcher reports writes at all — a bind-mount question, not
+   a repository one. `contract.ts` has no import specifiers, so a Deno remote-import failure is not the
+   explanation either. The re-run that would close this needs
+   `docker exec`, and the attempt after the ceiling was added answered **exit 1 with 22 tests skipped**
+   (`docker exec` ETIMEDOUT at 30 s) — the blocked-gate path, working as designed. Until that re-run
+   happens on a responsive daemon, the 22/22 belongs to the stable serve only, and this row is
+   **not** re-qualified by it.
