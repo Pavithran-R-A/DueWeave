@@ -1,8 +1,11 @@
 # Local development configuration only.
 #
 # `project_id` names the local Docker stack created by `supabase start`. It is not
-# a hosted project reference and this repository is intentionally never linked to
-# a remote Supabase project (`supabase link` / `db push` are out of scope).
+# a hosted project reference. The repository has since been linked to one for the
+# Phase 3 production work (`supabase link` + `db push` of the committed migration
+# chain, both recorded in docs/CONSUMER_LIVE_PROGRESS.md), so this file governs the
+# local stack while the linked reference in the gitignored `supabase/.temp/` decides
+# where `--linked` commands go. Nothing here changes hosted configuration on its own.
 project_id = "dueweave"
 
 [api]
@@ -27,3 +30,11 @@ enable_signup = true
 enable_signup = true
 double_confirm_changes = true
 enable_confirmations = false
+
+# The account-deletion endpoint (Arc 3C STEP 4). Pinned explicitly rather than left to the
+# platform default: the gateway must verify the caller's JWT before the handler runs, on top of the
+# handler's own `getUser()` check, so a deployment that forgets this setting is a visible diff rather
+# than a silent widening of a destructive route. Secrets for it are never in this file — see
+# supabase/functions/.env.example and docs/ACCOUNT_ERASURE_DESIGN.md.
+[functions."delete-account"]
+verify_jwt = true
