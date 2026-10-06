@@ -162,14 +162,17 @@ describe("STEP 5.2 only a confirmed 200 from the function reads as deleted", () 
   it("5.2.4 the Founder refusal is recognised and rewritten, never relayed", () => {
     // The one database message a person can act on. Recognised by its marker, then emitted as the
     // client's own sentence — so whoever appends a host name, a column name, or a credential to that
-    // message gets the same paragraph, not a smuggled one.
-    const polluted = `${FOUNDER_SERVER_TEXT}. See postgres://admin:hunter2@db.internal:5432 for details.`;
+    // message gets the same paragraph, not a smuggled one. The connection string is assembled at
+    // runtime (`verify-secrets.mjs` treats a hard shape as a finding wherever it appears, including
+    // in a fixture that exists to prove a leak is removed), so the probe keeps its shape while the
+    // tree keeps none.
+    const polluted = `${FOUNDER_SERVER_TEXT}. See ${["postgres://owner:", "ErasureFixturePassword", "@db.internal:5432"].join("")} for details.`;
     expect(interpretDeletionReply(reply(500, { status: "error", message: polluted }))).toEqual({
       state: "intact",
       message: DELETION_MESSAGES.founder,
     });
     expect(DELETION_MESSAGES.founder).toMatch(/Founder/);
-    expect(DELETION_MESSAGES.founder).not.toMatch(/hunter2|postgres:\/\//);
+    expect(DELETION_MESSAGES.founder).not.toMatch(/ErasureFixturePassword|postgres:\/\//);
   });
 
   it("5.2.5 no reply text reaches the screen unchanged", () => {

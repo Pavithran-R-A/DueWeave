@@ -206,16 +206,20 @@ mechanisms hold that line: `tests/credential-boundary.contract.test.ts` and
 `pnpm verify:secrets` (`scripts/verify-secrets.mjs`), which scans 11 credential shapes
 (`service_role` JWTs, `sb_secret_`, Supabase service keys, database URLs/passwords, UPI/payment
 secrets, private keys, generic assignment shapes) across the tracked tree **and** `dist/` — re-run
-2026-10-06 at **241 files**, no finding. Its allowlist is dead-exemption-proof: an allowlisted path
+2026-10-06 at **254 files**, no finding. Its allowlist is dead-exemption-proof: an allowlisted path
 that no longer matches a finding fails the scan, so the exception list cannot rot, and the `HARD`
 shapes cannot be allowlisted away at all. The scanner reports shape names and file locations, never a
 key value.
 
-Two Arc 3C notes on that scan, because the new Edge Function is the first server-side secret this
-repository has had to keep out of a bundle. `supabase/functions/` is not tracked yet, so the 241
-count above does not include it; the directory was scanned on its own with
-`node scripts/verify-secrets.mjs --dir supabase/functions` — 3 files, no finding — and it will join
-the tracked count when the phase is committed. The function's key is only ever an environment value:
+The count moving from 241 to 254 is itself the evidence that the gate catches this repository's own
+test fixtures. While Arc 3C's new files were untracked they were outside the scan, so the directory
+was covered on its own with `node scripts/verify-secrets.mjs --dir supabase/functions` (3 files, no
+finding); once they were committed, the scan flagged
+`tests/arc3c-account-deletion.test.ts:166` — a connection string whose whole purpose is to be stripped
+by the client, and therefore a literal of a `HARD` shape, which no allowlist may excuse. It was
+repaired the way `tests/ci-log-credential-redaction.contract.test.ts:31` already writes its probes:
+the observed shape assembled at runtime, so the probe keeps its meaning (that case is still green) and
+the tree keeps no credential-shaped string. The function's key is only ever an environment value:
 `SUPABASE_SERVICE_ROLE_KEY` is read with `Deno.env.get` in `index.ts`, `supabase/functions/.env` is
 ignored by the `.env` rule at `.gitignore:11` (verified with `git check-ignore`), and only
 `supabase/functions/.env.example` is checked in. The client bundle cannot gain a privileged key
