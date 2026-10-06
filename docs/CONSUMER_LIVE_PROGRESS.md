@@ -3,7 +3,14 @@
 **This file is the authoritative continuation record for the rest of this project.** One row per
 phase, and each phase updates it before it closes. Every number below was measured on the date it
 carries, on this machine, against this repository's own disposable loopback Supabase unless a line
-says otherwise. Nothing here was run against a hosted project, because no hosted project exists yet.
+says otherwise.
+
+**Superseded as of Phase 3B (2026-10-05).** The sentence "nothing here was run against a hosted
+project, because no hosted project exists yet" was true of Phases 1 and 2 and is no longer. Phases
+above 3B are loopback measurements; **Phase 3B's are against the real hosted project**
+(ref `ugzdqcytouwfdlcjujqv`), and every hosted number in this file carries the query or command that
+produced it. Earlier phases are not rewritten — a reader can tell which world a number came from by
+which section it sits in.
 
 Scope rule that governs this file: Founder monetization stays fail-closed until a human owner
 configures and verifies it, and no business, payment, legal or support fact is ever invented by an
@@ -11,6 +18,20 @@ engineering pass. Cost rule: nothing is purchased, upgraded, or created whose co
 unclear without the owner's explicit confirmation.
 
 ## Current phase
+
+**Phase 3B — prove hosted authorization and tenant isolation against the real Supabase project, with
+two disposable QA identities.** Scope as briefed and as executed: correctness and security only. This
+phase tested **no** real email delivery, configured **no** SMTP, deployed **no** frontend, and
+activated **no** Founder payment. It stopped at the boundary it was given: the verdict below is
+followed by nothing, because frontend deployment is the next phase's decision, not this one's.
+
+The result is recorded in "Phase 3B — hosted isolation qualification" below. Two things came out of
+it: the hosted project behaves exactly as the loopback qualification claims (0 cross-tenant reads,
+0 cross-tenant writes, 0 anonymous access, 24/24 SECURITY DEFINER grants proven intentional, Founder
+still fail-closed), **and** one real hosted defect was found while testing the cleanup step — the
+immutability triggers make `auth.admin.deleteUser` impossible for any account that has ledger
+history. That is recorded as blocker **B17**, with the measured reproduction and the supported
+purge path, because it is the kind of defect a loopback suite structurally cannot see.
 
 **Phase 2 — make `release/consumer-live` independently release-qualified, and close every
 repository-side blocker that can be closed before a hosted backend exists.** No hosted Supabase
@@ -266,6 +287,353 @@ to produce Phase 2's closing green run would change the workflow under the exact
 collected, and adding retries or timeouts would be the cover-up the brief forbids. It is handed to the
 next phase as a named item with the numbers above attached.
 
+## Phase 3B — hosted authorization and tenant isolation qualification (measured 2026-10-05)
+
+Everything in this section was executed against the **real hosted project**, not the loopback stack:
+ref `ugzdqcytouwfdlcjujqv` ("DueWeave Production", `ap-south-1`), release source `release/consumer-live`
+at `271e6a58642bceed87234a4bfb780dae126dcb11`. The phase tested correctness and security only. It
+configured no SMTP, changed no Auth setting, deployed no frontend, and activated no Founder payment.
+No DDL was run against hosted and no migration history was touched; the only writes to hosted data
+were the two disposable QA accounts' own rows and their teardown.
+
+**Where the evidence lives, and the limitation that follows.** The probe harness and its raw outputs
+were deliberately kept **outside** the repository (`C:\Windows\Temp\p3bg\`), because they carry
+session tokens and per-account identifiers. Nothing in this section is reproducible by a reader from
+the repo alone — the queries are quoted inline so each claim can be re-run, but the harness itself is
+not committed and is not claimed as a standing gate. **No hosted assertion in this file is backed by
+a test that CI executes.** That gap is named in "What Phase 3B did not prove" below rather than left
+implicit.
+
+### Identity, parity and posture — re-measured after cleanup, not inherited
+
+Read once at the start of the phase and again after cleanup; the post-cleanup numbers are the ones
+below, so a reader knows the phase left the posture it found.
+
+| Item | Hosted value | How it was measured |
+| --- | --- | --- |
+| Migrations applied | **24**, equal to the 24 committed on disk | `select count(*) from supabase_migrations.schema_migrations` → `24` |
+| Public tables | 13, **13 with RLS enabled (100%)** | `pg_class.relrowsecurity` over `relkind='r'` in `nspname='public'` |
+| RLS policies | 15 | `count(*)` over `pg_policy` joined to public tables |
+| Public routines | 49 | `count(*)` from `pg_proc` in namespace `public` |
+| Routines with `authenticated` EXECUTE | **24** | `aclexplode(proacl)` filtered to `rolname='authenticated'` and `EXECUTE` |
+| Routines with `anon` EXECUTE | **0** | same predicate, `rolname='anon'` |
+| Routines with `PUBLIC` (grantee 0) EXECUTE | **0** | `a.grantee = 0` |
+| SECURITY DEFINER routines | 28, of which exactly the 24 above are executable by `authenticated` | `pg_proc.prosecdef` combined with the grant predicate |
+
+The grant set is the load-bearing row: the 24 functions carrying `authenticated` EXECUTE are **set-identical**
+to the 24 rows the Security Advisor flags, matched by `cache_key`, and the advisor re-read returned the
+same 24 names after cleanup as before. `authenticated` can therefore call precisely the functions the
+product surface is meant to call, and nothing else.
+
+### STEP 1-2 — two disposable identities, and the boundary they were created through
+
+`dueweave-qa-a@example.com` (`bee72378-d566-4f91-a3f6-2312afcd35e2`) and
+`dueweave-qa-b@example.com` (`1c92b60b-781d-4fb8-8dac-5bc6736806b0`), created 2026-10-05T10:34:17Z.
+
+They were created through the server-side admin API (`auth.admin.createUser`, `email_confirm: true`)
+because that is the only way to obtain two confirmed accounts on a project with **no SMTP configured**
+— and this phase was forbidden from configuring SMTP. **This is a scope concession, not a proof.** It
+buys the ability to test hosted RLS; it proves nothing about signup email delivery (see STEP 1-2 of
+"Auth configuration posture" below for why real confirmation is still unmeasured). From sign-in
+onward every call used a **normal user session** through the public Auth client and the publishable
+key; the privileged key was never used to make a probe, and no `service_role` token was ever held by
+a tenant-isolation assertion — the brief's rule that isolation must never be tested with the
+service key, held.
+
+Passwords were random, strong, written to a `0600` file outside the repository, never printed, and are
+gone with the accounts. Sign-in at 10:35:57Z established that both sessions work through the public
+endpoint.
+
+### STEP 3 — the app's own happy path, on production, through production RPCs
+
+17 probes, 10:41:12Z→10:41:16Z, all through RPCs the browser calls — `create_client`,
+`create_receivable`, `record_payment`, `create_promise`, `record_contacted`, `snooze_receivable`,
+`mark_due_promises_broken`, `update_client` with its own `expected_updated_at`, then a read-model
+inventory. Every one succeeded. QA-A's own row counts after the walk:
+
+`profiles 1, clients 1, receivables 1, payments 1, promises 1, promise_events 1, activities 5,
+analytics_events 1, entitlements 1, purchase_claims 0`
+
+Three of those results are the ones worth naming, because they are the product's invariants rather
+than its plumbing:
+
+- **`handle_new_user()` fires on hosted.** The AFTER INSERT trigger created both the profile and the
+  `entitlements` row, and the read-back said `plan FREE, status ACTIVE, source DEFAULT`. The
+  onboarding path that Stage 6 depends on exists on the real project, not only on a replayed laptop.
+- **The optimistic-concurrency edit worked.** `update_client` at the correct `expected_updated_at`
+  returned the updated row — Stage 4's safe-edit contract is live on hosted.
+- **A reviewer surface refused a non-reviewer.** `get_founder_funnel` for QA-A returned
+  `P0001: Founder review access is not available for this account`, while `get_founder_offer` returned
+  200 with only public offer fields. The customer/reviewer split holds on production data.
+
+QA-B's own inventory after creating its own client and receivable contained **none** of QA-A's rows
+(`clients 1, receivables 1, payments 0, promises 0, activities 1`), and QA-A saw exactly one client.
+That is the isolation baseline the attacks below are measured against.
+
+### STEP 4 — cross-tenant attack matrix, 95 probes, using only QA-B's normal token
+
+11:22:59Z→11:23:06Z. `qa_a_mutations_detected: 0`, `fail_outcomes: []`, `review_outcomes: []`.
+
+| Outcome | Count | What it means on the wire |
+| --- | --- | --- |
+| `REFUSED` | 35 | RPC raised `P0001` with an owner-scoping message |
+| `DENIED_OR_NOOP` | 15 | write denied, or 200 with 0 rows affected |
+| `DENIED_OR_EMPTY` | 13 | read returned nothing belonging to QA-A |
+| `CLEAN` | 10 | probe left no residue |
+| `UNCHANGED` | 10 | all ten QA-A table digests byte-identical after the whole matrix |
+| `NOT_BROWSER_EXECUTABLE` | 8 | internal helpers: `403`/`42501 permission denied for function` |
+| `CALLABLE_NO_FOREIGN_EFFECT` | 4 | legitimately callable by B, measured to touch only B's own data |
+
+The refusals are not generic. QA-B was given QA-A's real UUIDs — taken from the happy-path evidence,
+not guessed — and the server answered with the specific rule it applied:
+
+`Client is not available for this account` · `Receivable is not available for this account` ·
+`Promise is not available for this account` · `Receivable is not available to snooze` ·
+`That client/receivable is not available in this private ledger` ·
+`This payment claim is not available for this account` ·
+`Founder review access is not available for this account` ·
+`Founder payment instructions are not ready yet` · `Payment instructions are not ready for submission`
+
+Escalation was refused at every layer that a token can reach. A PATCH of B's *own* `profiles.plan` to
+`FOUNDER` affected 0 rows — `Plan changes require a protected entitlement workflow`. A PATCH rewriting
+B's own profile identity to A's user id affected 0 rows — `Profile identity cannot be changed`. Twelve
+forged INSERTs each attributing a row to QA-A's owner id wrote nothing. Reparenting was refused. Direct
+reads of `founder_admins` returned `403 / 42501: permission denied for table`.
+
+Reads on the same tenant boundary behave the way RLS should rather than the way an error would: a
+targeted read of one of QA-A's rows by id answers `200` with **zero rows**, so a probe cannot
+distinguish "not yours" from "not there" — no existence oracle. The unfiltered list probes returned
+only QA-B's own rows (`contains_qa_a_data: false`).
+
+**One defect in the probe harness itself was found and fixed before this matrix could be trusted.**
+An early run reported `DISCLOSED(FAIL)` on an `activities` read. Root cause was the harness, not
+hosted: that table had no per-target filter key, so its "targeted" read silently degraded to an
+unfiltered read and returned QA-B's *own* row. Rewriting the filter map to name every target
+explicitly and re-running is what produced the 0-failure result above. Recorded because a false
+positive in a security matrix is as dangerous as a false negative.
+
+### STEP 5 — anonymous matrix, 92 probes, publishable key and no session
+
+11:35:04Z→11:35:11Z. `qa_a_mutations_detected: 0`. Every one of the 24 `authenticated` RPCs returned
+`401 / 42501: permission denied for function` — denied at the **grant** gate, before any RLS or
+function body runs; the catalog answer (`anon` EXECUTE on 0 routines) and the wire answer agree. The
+12 forged anonymous INSERTs (one per table, each naming QA-A's owner id) all failed with
+`42501: permission denied for table`. Targeted reads and PATCH/DELETE probes against QA-A's real ids
+returned 0 rows or 401, and the ten QA-A digests were again byte-identical. No table is reachable by
+`anon` on the hosted project.
+
+### STEP 6 — the 24-row classification, and why none of it needed repair
+
+`evidence/step6-classification.md` (outside the repo) carries one row per advisor WARN, generated at
+12:16:06Z from four independent sources rather than from one opinion: the live `pg_proc` ACL, the
+literal `grant execute … to authenticated` statements in the committed migrations, the function bodies
+read from the hosted catalog, and the two attack matrices.
+
+**24 rows classified `INTENTIONAL + HOSTED AUTHORIZATION PROVEN`. 0 rows `NEEDS REPAIR`.** Therefore
+no forward migration, no local replay, no production patch — the STOP-and-repair branch of the brief
+was never entered, and that is a measured outcome, not an avoided one.
+
+The classification rests on three things agreeing: the live ACL set equals the advisor's set exactly;
+each grant is written explicitly in a committed migration (the Stage 3 fail-closed default-privileges
+trigger strips `authenticated` from any redefined routine, so a grant that survives on hosted had to
+have been restated deliberately); and the body-level guard read from the hosted catalog names the
+mechanism — `auth.uid()` owner scoping, the founder-admin gate, or the offer-readiness gate. The one
+composite, `create_client_and_receivable`, has no guard of its own; it is proven by its live body
+delegating to `create_client` and `create_receivable`, each `auth.uid()`-scoped.
+
+Not dismissed for convenience: `security_definer` + `authenticated` EXECUTE is only safe if the
+function cannot be walked out of its own scope, so each of the 24 was additionally *executed* by the
+wrong principal and measured. `search_path` pinning and the 500/P0002-vs-refusal mapping are recorded
+in the same file so a reader can check the reasoning rather than the conclusion.
+
+### STEP 7 — advisors re-read, and one number that moved
+
+**Security Advisor.** Post-cleanup reading: **24 WARN** (`authenticated_security_definer_function_executable`)
+**+ 3 INFO** (`rls_enabled_no_policy` on `founder_admins`, `founder_audit_events`,
+`founder_offer_config`). The 24 WARN are the set classified above; the same `cache_key`s are present
+before and after, so nothing in this phase added or removed one. The 3 INFO are the designed deny-all:
+those tables have RLS on and **no** policy, which is why QA-B's direct read of `founder_admins`
+answered `403`. Not treated as noise, and not dismissed because local tests passed — the brief's rule;
+each of the 24 had to be proven by execution.
+
+One honest reading-change is recorded rather than smoothed: the pre-QA capture carried a **25th** WARN,
+`auth_leaked_password_protection` (a project-level Auth setting: "Enable this feature"), for 28 total.
+Post-cleanup **three consecutive** reads return 27 without it. This phase wrote no Auth configuration,
+so the disappearance is the advisor's own observation behaviour around account state, not a repair
+made here. It is a standing item, not a closed one: leaked-password protection being **off** on a
+consumer project is the finding's actual content, and turning it on is an owner action.
+
+**Performance Advisor — the correction the owner asked for.** The live advisor is **not** empty, and
+"0 issues" was never an acceptable reading. `pnpm db:lint`/CLI output is *not* the authority here: the
+CLI renders only WARN/ERROR and prints "No issues found" while INFO findings exist. The Management API
+route (`GET /v1/projects/{ref}/advisors/{type}`) returns INFO, wrapped as `{ "lints": [...] }`, and is
+what every number below comes from.
+
+| Reading | Total INFO | `unindexed_foreign_keys` | `unused_index` | When |
+| --- | --- | --- | --- | --- |
+| Owner-supplied verified BEFORE baseline | **21** | 5 | **16** | before this session's QA traffic |
+| This session's first capture | 10 | 5 | 5 | 12:17Z, after the happy-path and both attack matrices |
+| Post-cleanup, and again on 3 reruns | **9** | 5 | **4** | 12:42Z |
+
+The movement is explained by measurement, not assumption. `pg_stat_user_indexes.idx_scan` is the
+ground truth under the advisor's `unused_index` lint: 11 of the originally-16 zero-scan indexes had
+become `idx_scan > 0` by the time of the second capture, because the QA workload's real reads and
+writes exercised them. Reconciling the third capture exactly: 36 public indexes, 13 at
+`idx_scan = 0`, and of those 13 precisely **4** are non-unique, non-primary-key indexes — which are
+the 4 `unused_index` findings, one for one (`receivables.receivables_client_idx`,
+`activities.activities_receivable_timeline_idx`, `founder_audit_events.founder_audit_claim_idx`,
+`purchase_claims.purchase_claims_status_submitted_idx`). The other 9 zero-scan indexes are PK and
+unique-constraint indexes, which this lint does not report and which back real constraints. The
+single finding that dropped between the second and third captures, `founder_audit_target_idx`, now
+measures `idx_scan = 3`.
+
+**No index was created and none was deleted.** The 5 unindexed FKs, recorded for the owner's review
+*after* correctness and security qualification rather than acted on here:
+
+| Table | Constraint | Column |
+| --- | --- | --- |
+| `activities` | `activities_client_id_fkey` | `client_id` |
+| `activities` | `activities_promise_id_fkey` | `promise_id` |
+| `founder_admins` | `founder_admins_created_by_fkey` | `created_by` |
+| `founder_audit_events` | `founder_audit_events_actor_user_id_fkey` | `actor_user_id` |
+| `promise_events` | `promise_events_receivable_id_fkey` | `receivable_id` |
+
+Unused-index findings on a database holding 0 rows are not evidence that an index should be dropped —
+they are evidence that nothing has queried it yet. On a three-day-old project with no organic traffic,
+`idx_scan = 0` is the expected state of an index that future queries will need.
+
+### STEP 8 — Founder stays fail-closed on production, with no real data configured
+
+`founder_offer_payment_ready(config)` was evaluated **on the hosted row**, since the function itself is
+revoked from `public`, `anon` and `authenticated` and cannot be called from a browser at all:
+
+| `enabled` | `payment_destination_status` | `amount_paise` | UPI blank? | `support_contact_status` | `refund_policy_status` | `disclosures_status` | **ready** | reviewers | claims | audit events | FOUNDER entitlements |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| true | `PLACEHOLDER` | 49900 | **true** | `PENDING` | `PENDING_APPROVAL` | `PENDING` | **false** | 0 | 0 | 0 | 0 |
+
+Fail-closed is the correct state, and it is the *measured* state on the real project. From QA-A's
+normal session `get_founder_offer` returned the public projection (₹499.00, cap 50, 50 spots,
+`upi_id: null`, `support_contact: "Support contact not configured"`) — the customer can see the offer;
+`create_founder_claim` then raised `Founder payment instructions are not ready yet`, and the reviewer
+surfaces (`get_founder_funnel`, `list_pending_founder_claims`, `list_rejected_founder_claims`) raised
+`Founder review access is not available for this account`. **No Founder business, payment, legal or
+support fact was invented or configured by this phase.** The price is the only field with a value, and
+49900 is the committed `FOUNDER_V1` contract, not something chosen here.
+
+### STEP 9 — cleanup, and the real defect cleanup found
+
+This is the phase's most valuable result, and it came from *following* the brief's cleanup step rather
+than skipping it.
+
+**`auth.admin.deleteUser` failed for both accounts.** Both returned `Database error deleting user`,
+and `rows_before` equalled `rows_after` for every table — nothing was deleted, nothing was half
+deleted. Reproduced deterministically against the hosted database with a plain statement, rolled back:
+
+```
+begin; delete from auth.users where id = '1c92b60b-781d-4fb8-8dac-5bc6736806b0'; rollback;
+
+ERROR:  P0001: Historical records cannot be changed
+CONTEXT:  function prevent_immutable_history_changes() line 3 at RAISE
+SQL statement "DELETE FROM ONLY "public"."activities" WHERE $1 OPERATOR(pg_catalog.=) owner_id"
+```
+
+**Root cause, read from the schema rather than inferred from the message.** The FK topology is
+`auth.users → profiles → activities / payments / promise_events`, each `ON DELETE CASCADE`. Those
+three tables carry `BEFORE UPDATE OR DELETE` triggers (`activities_immutable`, `payments_immutable`,
+`promise_events_immutable`, created at `20260812150500_secure_foundation.sql:354-358`) whose function
+raises unconditionally (`:311-319`). PostgreSQL executes cascade deletes as part of the triggering
+statement, triggers included — so the immutability guard fires *inside* the cascade and aborts the
+whole account deletion. The guard is doing exactly what it was written to do; the consequence was
+never reconciled against the admin deletion path.
+
+**Why no local gate could have caught this.** Every stage test tears its fixtures down with
+`set local session_replication_role = replica` (the recipe in
+`tests/stage5-local-lifecycle.test.ts:59-85`, repeated across eight stage files), which disables
+triggers for that transaction. The cascade therefore never runs through the guard locally. A second
+masking factor: `delete_my_business_data()` — the RPC that *would* have exposed this in a user-facing
+journey — is revoked from `authenticated` at `20260812160500_revoke_unused_delete_rpc.sql:3`, and the
+hosted ACL (read 2026-10-05, re-read from `pg_proc`/`aclexplode` on 2026-10-06 to confirm this row)
+confirms its only grantee is `postgres`. The local suite pins that revocation as intended
+behaviour (`tests/stage3-local-rls.test.ts:1995-1999`, in a group literally named `immutability`).
+
+So the finding is wider than "admin delete is broken": **there is currently no deletion path at all for
+an account with ledger history** — not self-service (deliberately revoked), and not administrative
+(measured to fail). The only mechanism that works is a privileged server operation that turns the
+guards off. That is blocker **B17**, and it has to be a product decision before consumer-live, not a
+migration written under time pressure.
+
+**What was actually used to remove the fixtures.** The brief said to use supported product/admin
+cleanup paths; the supported admin path is the one that failed. Rather than leave two QA accounts and
+their rows in a production database, the fixtures were removed with the repository's **own** defined
+fixture-purge recipe — the same one its test suite uses — scoped by email pattern, inside one
+transaction, with no DDL and no trigger being dropped or altered:
+
+```sql
+begin;
+set local session_replication_role = replica;
+delete from public.activities     where owner_id in (select id from auth.users where email like 'dueweave-qa-%@example.com');
+-- … the same scoped delete for promise_events, payments, promises, receivables, clients,
+--    analytics_events, entitlements (user_id) and profiles (id) …
+delete from auth.users            where email like 'dueweave-qa-%@example.com';
+commit;
+```
+
+`code=0`. `session_replication_role` with `set local` is transaction-scoped, so the guards were
+disabled for that purge and nothing else; the read-back below proves they came back enabled.
+
+### Post-cleanup integrity read-back
+
+| Check | Result |
+| --- | --- |
+| QA users remaining | `auth_users = 0` (the whole project has 0 accounts) |
+| QA rows remaining | `profiles, clients, receivables, payments, promises, promise_events, activities, analytics_events, entitlements, purchase_claims` all **0** |
+| Founder rows untouched | `founder_offer_config = 1`, `founder_admins = 0`, `founder_audit_events = 0` — identical to the pre-QA baseline |
+| Security guards still enabled | `activities_immutable=O, payments_immutable=O, profiles_prevent_plan_change=O, promise_events_immutable=O, purchase_claims_protect_workflow=O`; 30 non-internal triggers present |
+| Migration history | **24/24**, unchanged |
+
+`tgenabled = 'O'` is the point of the guard row: it is the proof that the `session_replication_role`
+purge was transaction-local rather than a durable weakening of the immutability posture. Nothing in
+the production schema was deleted, renamed, or repurposed.
+
+### Auth configuration posture (read-only, nothing changed)
+
+`GET /v1/projects/ugzdqcytouwfdlcjujqv/config/auth` answered with the fields that matter for what this
+phase may and may not claim: `mailer_autoconfirm = false`, `smtp_host = null`, `smtp_port = null`,
+`smtp_admin_email = null`, `smtp_user = null`, `smtp_pass` present and **empty**, `site_url =
+http://localhost:3000`, `jwt_exp = 3600`, `disable_signup = false`,
+`security_manual_linking_enabled = false`. Only these keys were extracted; the response was read into
+a `0600` temporary file and discarded immediately, because that endpoint also carries credential
+fields. No configuration write was made, so the brief's "do not change `mailer_autoconfirm`, Site URL,
+redirect URLs or SMTP" is satisfied by both the intent and the recorded values.
+
+Two consequences are stated plainly, because they are the difference between "backend qualified" and
+"consumer-live":
+
+1. **Real email delivery is unproven and cannot be proven here.** With no SMTP configured and
+   `mailer_autoconfirm = false`, a genuine signup on this project would receive no confirmation email
+   and would remain unconfirmed. The QA accounts bypassed that through the admin API, which is why
+   they exist — not evidence that the flow works.
+2. **`site_url` still points at `http://localhost:3000`.** A password-recovery email sent today would
+   carry a localhost link a consumer cannot open. Setting it is an owner action tied to the frontend
+   deployment that this phase deliberately did not perform.
+
+### What Phase 3B did not prove
+
+Not a caveat list — the named boundary a reader must not walk past:
+
+- No real email, signup-confirmation or password-recovery delivery (no SMTP by design).
+- No browser journey against hosted. Every probe was an authenticated REST/RPC call shaped like the
+  client's, not the client itself; the 8 class-E `controlled *` specs that need a hosted QA account are
+  **still not executed**.
+- No frontend deployment, no public HTTPS URL, no domain.
+- No load, concurrency or volume behaviour. Two accounts and ~20 rows prove *authorization topology*,
+  not scale; the 5 unindexed FKs are exactly the kind of thing that stays invisible at this volume.
+- No key rotation, backup, PITR or recovery rehearsal.
+- Nothing here is pinned by a test CI runs. The hosted matrices were executed by a harness kept
+  outside the repo and are reproducible only by rebuilding it. A future phase should decide whether to
+  productise that harness as a gated suite; recording hosted truth in a document that no pipeline
+  checks is how drift starts.
+
 ## Remaining production blockers
 
 
@@ -275,25 +643,30 @@ be closed by a claim.
 
 | ID | Blocker | Status now | What closes it |
 | --- | --- | --- | --- |
-| B01 | **No production backend exists.** No hosted Supabase project has been created, linked or configured. | none | Owner decision (plan and cost), project creation, `supabase link`, migrations pushed, then re-measurement of the hosted database. Re-measured in Arc 2 Phase 2: it is also what holds the 8 class-E `controlled *` browser specs at "not executed" (`pnpm verify:e2e:local` = 173 passed / 8 skipped), so no amount of local re-running turns them green |
+| B01 | **No production backend exists.** No hosted Supabase project has been created, linked or configured. | **substantially closed by Phase 3B — a hosted project now exists and is qualified for authorization.** Ref `ugzdqcytouwfdlcjujqv` ("DueWeave Production", ap-south-1), 24/24 migrations applied, 13/13 tables RLS-enabled, 15 policies, 49 routines with `authenticated` EXECUTE on exactly 24 and `anon`/`PUBLIC` on 0. What still separates it from "closed": no frontend points at it, no SMTP, `site_url` is still localhost, and it has 0 accounts and 0 rows | Owner decision (plan and cost), project creation, `supabase link`, migrations pushed, then re-measurement of the hosted database — all performed; the remaining part is B02/B04. Arc 2 Phase 2 also closed the other half of this row: the 8 class-E `controlled *` browser specs are still "not executed" (`pnpm verify:e2e:local` = 173 passed / 8 skipped) because they need a *deployed* frontend plus a hosted QA account, and Phase 3B provisioned accounts against the API, not against a deployment |
 | B02 | **No hosting configuration and no public HTTPS URL.** | none | A static host for `dist/` with a real domain; TLS; then `docs/RELEASE_GATE_MATRIX.md` browser gates pointed at the deployed URL |
 | B03 | **`main` has no CI workflow file at all** (`git show main:.github/workflows/ci.yml` fails). The three named checks arrive only with the integration PR. | true on `main` | The integration PR; then the required-check picker can see the names |
-| B04 | **Hosted Auth is unproven**: signup email confirmation, Site URL, redirect allow-list, and real password-recovery delivery to a mailbox. `supabase/config.toml` disables signup confirmation locally and the recovery journey reads the local Inbucket inbox. | local-only proofs | Hosted Auth configuration plus a hosted smoke journey that signs up, confirms, signs out and recovers through real email |
-| B05 | **Hosted project's own default privileges and role grants are unmeasured.** Fail-closed defaults are proved for this repository's migration role on the loopback stack only (`docs/SECURITY_MODEL.md`, "Known gaps"). | loopback-only | The two catalog queries in `docs/SECURITY_MODEL.md`, re-run against the hosted database after B01 |
+| B04 | **Hosted Auth is unproven**: signup email confirmation, Site URL, redirect allow-list, and real password-recovery delivery to a mailbox. `supabase/config.toml` disables signup confirmation locally and the recovery journey reads the local Inbucket inbox. | **configuration now measured, delivery still unproven — and unprovable in this phase by design.** Hosted reads: `mailer_autoconfirm = false`, `smtp_host/port/admin_email/user` all `null`, `smtp_pass` empty, `site_url = http://localhost:3000`, `jwt_exp = 3600`, `disable_signup = false`. Two accounts did sign in through the public Auth client with the publishable key, so **password sign-in on hosted works**; they were created with `email_confirm: true` through the admin API, which proves nothing about confirmation. A recovery email sent today would carry a localhost link | Owner action, in this order: configure an email provider/SMTP, set the real Site URL and redirect allow-list, then one hosted smoke journey that signs up, confirms **from a real mailbox**, signs out and recovers. Phase 3B was instructed not to touch any of these settings and touched none |
+| B05 | **Hosted project's own default privileges and role grants are unmeasured.** Fail-closed defaults are proved for this repository's migration role on the loopback stack only (`docs/SECURITY_MODEL.md`, "Known gaps"). | **closed for routines and for behavior; open for one catalog read.** Measured on hosted: `authenticated` EXECUTE on exactly 24 of 49 public routines, `anon` EXECUTE on **0**, `PUBLIC` (grantee 0) EXECUTE on **0**; and behaviorally, every one of the 92 anonymous probes died at the grant gate with `42501`, as did all 12 forged anonymous INSERTs and every write to an internal table. What was *not* re-extracted from the hosted catalog is `pg_default_acl` itself — the fail-closed defaults were proven by their observable consequences plus the committed `alter default privileges` text, not by reading that column on the real project | The one remaining query is `pg_default_acl` against hosted, after B01's project is in steady state. Not urgent: 0 accounts, 0 rows, and every browser-reachable path already answers as if it were closed |
 | B06 | **Branch protection and rulesets are empty**; `main` accepts direct pushes, force pushes and deletion, and all three merge styles are allowed. | 404 / `[]` | Owner enables the rule in `docs/RELEASE_PROTECTION.md`; the plan's entitlement for private repos is UNKNOWN |
 | B07 | **Founder monetization is fail-closed with 7 owner gaps and 0 reviewers.** `FOUNDER_V1` reports `destination-not-live`, `vpa-missing`, `support-pending`, `support-contact-unusable`, `refund-policy-pending`, `refund-policy-text-missing`, `disclosures-pending`; `select count(*) from public.founder_admins` is 0 on the delivered database. | NOT READY, by design | Only the owner's 12-step order in `docs/STAGE_4_2_OPERATOR_CONFIGURATION.md` plus the reads in `docs/FOUNDER_LIVE_ACTIVATION_CHECKLIST.md` and `docs/OPERATOR_BOOTSTRAP.md`. Never fabricated by a workstream |
-| B08 | **The committed migrations (24 on disk as of `0983171`, up from 23 at the takeover head) have never been applied anywhere except a disposable local Postgres.** | local replays | Hosted `supabase db push` (or the dashboard) after B01, then `pnpm verify:migrations` and `pnpm verify:types` against the hosted schema |
+| B08 | **The committed migrations (24 on disk as of `0983171`, up from 23 at the takeover head) have never been applied anywhere except a disposable local Postgres.** | **closed by Phase 3.** All 24 were applied to the hosted project from the committed chain, forward-only, and the hosted catalog reads **24** rows in `supabase_migrations.schema_migrations` both during and after this phase — no history rewrite, no repair, no ad-hoc production patch. Generated types were re-cut from the *hosted* schema, not the local one. Precision a reader needs: `pnpm verify:migrations` and `pnpm verify:types` are written against the loopback stack; the hosted parity claim rests on the catalog count above and on the hosted type generation, not on running those two scripts against production | Was: hosted `supabase db push` after B01, then parity proven against the hosted schema. Done, by the measurements in this row |
 | B09 | **CI cannot see this branch**: `release/consumer-live` was not in the workflow's push triggers and no PR exists. | **closed in Arc 2 Phase 2** | `f34d340` added the branch to `.github/workflows/ci.yml`'s `push` triggers; the branch has since produced fourteen runs of its own (thirteen still readable through the API plus one that vanished — see the Phase-2 run table), of which two are green on all three jobs on the self-hosted runner — run `37206353353` at head `b80725a` (`workflow_dispatch`) and run `37215752557` at head `63e422e`, produced by this branch's own `push` trigger with no operator dispatch (79 + 3 browser slots passed, 0 failed/skipped/flaky at `retries: 0`). That push-event green is the direct GitHub Actions evidence this phase existed to obtain — see the Phase-2 CI run table |
 | B10 | **Accessibility is a targeted qualification, not a conformance claim.** `e2e/stage6-local-accessibility.spec.ts` holds keyboard, focus, announcement and reduced-motion behaviour. | gate passes, no cert | A WCAG decision by the owner if a certification is required |
 | B11 | **No performance or concurrency qualification** exists; nothing measures multiple simultaneous users. | not attempted | Load work after B01/B02; stated as out of scope for every gate so far |
 | B12 | **Development-tree advisories, repaired as far as a compatible change reaches: 41 → 7.** `pnpm audit --prod` stays `No known vulnerabilities found`. The 7 remaining are the `vitest@2.1.9` cluster in B16. | reduced, not closed | See "Development-toolchain advisories, repaired and remaining"; closes only when B16 closes |
 | B13 | **Two documented test gaps** (residual gaps 1-2 of `docs/STAGE9_ABUSE_MATRIX.md`). | **closed in Arc 2 Phase 2** | Gap 1 closed by `7f87f21`: LIVE probes drive the malformed-phone rule through `create_client` and `create_client_and_receivable`, read from the verbs' existing behaviour rather than invented. Gap 2 closed by `0983171`: one explicit product rule (a required ledger field is blank in exactly the class `String.prototype.trim()` treats as blank; optional text is not widened), forward migration `20261004170000_current_arc2_ledger_required_blank_class.sql`, 170 new LIVE probes and a 5-test no-container contract pin |
 | B14 | **Operational and legal surface does not exist yet**: published privacy terms, consumer disclosures, refund text, a monitored support address, the manual bank-review operating procedure, backups, secret rotation, log retention, rate limits at the edge. | none | Owner work with their own advice; `docs/OPERATOR_BOOTSTRAP.md` is the review runbook the product assumes |
-| B15 | **No rollback or recovery instructions for a deployed environment.** Every recovery document here assumes a laptop stack, not a hosted database. | none | A `docs/PRODUCTION_ROLLBACK.md` written after B01/B08 exist, and rehearsed |
+| B15 | **No rollback or recovery instructions for a deployed environment.** Every recovery document here assumes a laptop stack, not a hosted database. | none, but Phase 3B put two real ingredients on the table: the hosted project is at 24/24 forward-only with no repair history, and the only mechanism that can remove data from the guarded tables is documented in STEP 9 above | A `docs/PRODUCTION_ROLLBACK.md` written after B02 exists, covering migration rollback (there is none — forward-only), PITR, and the fact that **account deletion currently requires the privileged purge**, and rehearsed |
 | B16 | **Seven development-tree advisories that only a Vitest-major upgrade clears** (1 critical, 1 high, 5 moderate), all reachable through `vitest@2.1.9` and the `vite@5.4.21` it carries. `pnpm audit --prod` is clean; no script, gate or runbook in this repository starts the Vitest UI server or a Vitest-owned dev server. | open, recorded | `vitest` to `>=4.1.11` as its own change, re-qualifying 30 unit files / 409 tests, 9 live files / 309 tests and the 82-slot browser battery on the new runner's semantics — not bundled into a dependency-number fix. Details in "Development-toolchain advisories, repaired and remaining" |
+| B17 | **No deletion path exists for an account that has ledger history — neither self-service nor administrative.** Found by *executing* the cleanup step of Phase 3B, not by reading the schema for it. `auth.admin.deleteUser` fails on the hosted project with `Database error deleting user`, because `activities_immutable` / `payments_immutable` / `promise_events_immutable` raise inside the `auth.users → profiles → …` cascade and abort the whole statement. `delete_my_business_data()` is revoked from `authenticated` (and hosted confirms its only grantee is `postgres`), so it is not a workaround either. This is a consumer-safety and data-handling gap, not a performance one: no user can be deleted and no erasure request can be honoured by any supported path | **open — found 2026-10-05**, with the measured rolled-back reproduction and the root cause in STEP 9 of the Phase 3B section | A product decision first, then a migration. Which of these does DueWeave promise: (a) deletion with the ledger preserved under a retention rule, (b) anonymisation that severs the identity but leaves the immutable rows, or (c) a sanctioned operator purge written as a controlled function with its own audit trail rather than a hand-run `session_replication_role` statement? Whichever is chosen must be pinned by a test CI executes — the reason this survived nine stages of local qualification is that every local teardown disables triggers. **Do not resolve by relaxing the immutability guard**; it is what makes the product's history claim true |
+| B18 | **Advisor findings handed to the owner for review, deliberately not acted on in this phase.** (i) 5 unindexed foreign keys, named by table/constraint/column in STEP 7. (ii) Leaked-password protection appears **off** on the hosted Auth configuration: `auth_leaked_password_protection` was a WARN in the pre-QA advisor capture and names an Auth setting, and this phase wrote no setting. (iii) 4 `unused_index` INFO findings, which must **not** be read as licence to drop anything | open, recorded with measurements | (i) index only after real traffic shows the cost, then as a forward migration with a local replay. (ii) owner action in the Auth dashboard, then re-read the advisor to confirm the WARN cleared. (iii) revisit once the project has organic rows — `idx_scan = 0` on a database holding 0 rows says nothing about future query plans |
 
 Anything that would make the product "100% consumer-live" but is not in this table is not yet known;
-this table is the audit's whole answer.
+this table is the audit's whole answer. Phase 3B's contribution to that answer is B17: it is the first
+blocker in this file discovered by testing the production project rather than by auditing the
+repository, which is precisely why the phase ran the cleanup step instead of stopping at the passing
+tests.
 
 ## Development-toolchain advisories, repaired and remaining
 
@@ -421,14 +794,16 @@ Deliberately not performed by this workstream, and not performable by any engine
 
 | Field | Value |
 | --- | --- |
-| Production URL | **does not exist yet** |
-| Hosted Supabase project ref | **does not exist yet** |
-| Deployment provider | **not chosen** |
-| First successful production migration replay | **not performed** |
-| First CI run green at a `release/consumer-live` head | **performed 2026-10-04.** First by manual dispatch: run `37206353353`, head `b80725a`, event `workflow_dispatch`, `completed / success`, all three jobs green on the self-hosted runner. Then by the branch's own trigger, which is the one that matters for a branch with no PR: run `37215752557`, head `63e422e`, event `push`, attempt 1, `completed / success`, 79 + 3 browser slots passed (`gh run view 37215752557 --json status,conclusion,attempt,headSha,jobs`). These are the only rows above that are no longer a gap; the other four still describe a pre-deployment project, and a green run here says nothing about hosting |
+| Production URL | **does not exist yet** — no frontend was deployed in Phase 3B, and this is the boundary the phase stopped at |
+| Hosted Supabase project ref | **`ugzdqcytouwfdlcjujqv`** ("DueWeave Production", `ap-south-1`). Verified by `supabase projects list` and `supabase link --project-ref`, and re-confirmed by every catalog read in the Phase 3B section answering against that ref |
+| Deployment provider | **not chosen** — B02 unchanged |
+| First successful production migration replay | **performed 2026-10-05** as part of Phase 3's earlier steps: the 24 committed migrations applied forward to the hosted project, and `select count(*) from supabase_migrations.schema_migrations` on hosted answers **24** both during and after Phase 3B, with no repair and no history rewrite |
+| First CI run green at a `release/consumer-live` head | **performed 2026-10-04.** First by manual dispatch: run `37206353353`, head `b80725a`, event `workflow_dispatch`, `completed / success`, all three jobs green on the self-hosted runner. Then by the branch's own trigger, which is the one that matters for a branch with no PR: run `37215752557`, head `63e422e`, event `push`, attempt 1, `completed / success`, 79 + 3 browser slots passed (`gh run view 37215752557 --json status,conclusion,attempt,headSha,jobs`). Those rows still describe CI at *local* Supabase only — no job in `.github/workflows/ci.yml` reaches the hosted project, so the hosted qualification in the Phase 3B section is **not** covered by any green run |
 
 These five rows are what tells a reader whether the project has left pre-deployment. Fill them in the
-phase that creates the thing, with the measurement command beside each value.
+phase that creates the thing, with the measurement command beside each value. **One of the five is now
+filled: a hosted backend exists and is authorization-qualified. Two still decide the answer — there is
+no URL, and no CI job or test executed against the hosted project.**
 
 ## Phase 2 closure — how each exit condition is proven, not claimed
 
@@ -481,11 +856,13 @@ only by the run that commit itself produces.
 | --- | --- | --- | --- | --- | --- |
 | 1 | 2026-10-04 | Takeover, preflight and repository audit | `release/consumer-live`, created at `e5b734b6a24489b80fde65b0909f14bb7a56d64b` | The static gate set re-executed on this branch (lint, typecheck, 386-test unit half with the three class-C contracts then executed against a fresh `dist/`, secret scan over 237 files, clean production audit, counted dev-tree advisories); CI run `37009951112` read job-by-job and step-by-step; PR list, protection state, rulesets, trigger list and the absence of any hosting surface measured | B01-B15 recorded; none closed |
 | 2 | 2026-10-04 | Branch-local CI evidence, repository-side residues A-H, full local gate re-measurement | `release/consumer-live`, code head `b80725ad212c5e2bebd707e7bad9c8d4e2474891`; the recording head is this file's own commit, read with `git rev-parse HEAD` / `git ls-remote origin refs/heads/release/consumer-live` | Phase 1's CI attribution corrected against the API (it produced no run at all); `release/consumer-live` added to the workflow's push triggers (`f34d340`) and fourteen branch-local runs read job-by-job and step-by-step: two green across all three jobs (run `37206353353` at the code head `b80725a`, by dispatch; run `37215752557` at this file's own head `63e422e`, produced by the branch's `push` trigger with no operator dispatch), five red kept in the trail (`37193639709` external network, `37202389761` the test defect residue H fixed, `37206031787` this workstream's own laptop/CI stack overlap, `37222377935` the host powering off mid-run at the first closure head, `37259377698` the registry timing out inside `pnpm install` at the second), six cancelled by the workflow's documented supersede policy, and one (`37213354566`) that vanished from the GitHub control plane and is recorded with the runner-journal proof that no job of it was ever handed to the machine; residues A-G repaired (`83e3a8f`, `06818f4`, `2150308`, `3d42f87`, `7f87f21`, `0983171`, `5718b6a`) and residue H (`b80725a`) found and fixed *by this branch's own CI*; the whole local gate set re-executed against the disposable stack (24 migrations from zero, pgTAP 8 files/364 assertions, 9 live files/309 tests, 30 unit files/409 tests with 0 skipped, 241-file credential scan, prod audit clean, dev audit 7 recorded with exit 1, browser batteries 79 passed and 3 passed with 0 skipped at `retries: 0`, full local battery 173 passed / 8 class-E not-executed) and as the `pnpm verify:release:local` composite, re-run to **exit 0** after its first status read failed to produce a valid code; ADR-001 recorded as a proposal with measured facts and no resource created | B09 **closed**, B13 **closed**, B12/B16 re-measured and re-stated (41 → 7, not closed), B01 restated with the 8 class-E browser specs it holds, B02-B08 and B10-B11, B14-B15 unchanged: none of them can be closed without an owner decision or a hosted backend |
+| 3 | 2026-10-05, the day every hosted read was taken; 2026-10-06, the day this recording commit lands | **Phase 3B — hosted authorization and tenant isolation against the real Supabase project** `ugzdqcytouwfdlcjujqv` | `release/consumer-live`, execution head `271e6a58642bceed87234a4bfb780dae126dcb11`; the recording head is this file's own commit, read with `git rev-parse HEAD` / `git ls-remote origin refs/heads/release/consumer-live` | Two disposable QA identities created **only** through the server-side admin API with `email_confirm: true` (10:34:17Z) and removed again before the phase closed; every probe after sign-in (10:35:57Z, "no service key used from here on") carried a normal token from the public Auth client and the publishable key — tenant isolation was never tested with `service_role`. A 17-probe app-shaped happy path executed on production through the app's own public RPCs (QA-A inventory `profiles 1 / clients 1 / receivables 1 / payments 1 / promises 1 / promise_events 1 / activities 5 / analytics_events 1 / entitlements 1 / purchase_claims 0`; QA-B's inventory containing none of it; `get_founder_funnel` refused with `P0001: Founder review access is not available for this account`). A **95-probe** cross-tenant matrix using only QA-B's token (35 REFUSED, 15 DENIED_OR_NOOP, 13 DENIED_OR_EMPTY, 10 CLEAN, 10 UNCHANGED, 8 NOT_BROWSER_EXECUTABLE, 4 CALLABLE_NO_FOREIGN_EFFECT, `qa_a_mutations_detected: 0`, `fail_outcomes: []`) and a **92-probe** anonymous matrix (15 DENIED_OR_NOOP, 13 DENIED_OR_EMPTY, 12 REFUSED — every one `42501: permission denied for table` — 24 REFUSED_AT_GATE, 10 CLEAN, 10 UNCHANGED, 8 NOT_BROWSER_EXECUTABLE). The 24-row Security-Advisor classification: **24 `INTENTIONAL + HOSTED AUTHORIZATION PROVEN`, 0 `NEEDS REPAIR`**, each row held up by four independent sources (live `pg_proc` ACL, the committed `grant` text, the function body read from the hosted catalog, and execution by the wrong principal), so the brief's STOP-and-forward-migration branch was never entered — a measured outcome, not an avoided one. Advisors re-read through the Management API rather than the CLI: security 24 WARN + 3 INFO `rls_enabled_no_policy`, identical `cache_key`s across three consecutive reads; performance 21 → 10 → 9 INFO, reconciled one for one against `pg_stat_user_indexes.idx_scan` (36 public indexes, 13 at zero scans, exactly 4 of them the non-unique/non-PK indexes that lint reports); the 5 unindexed FKs recorded with table, constraint and column, **no index created and none deleted**. Founder still fail-closed on production with no real data configured (`founder_offer_ready = false`, 1 offer row with placeholder VPA/UPI, 0 reviewers, 0 claims, 0 audit events, both QA accounts `FREE/ACTIVE/DEFAULT`, direct `founder_admins` read `403/42501`). Posture re-measured after cleanup (13 tables / 13 RLS-enabled / 15 policies / 49 routines / 28 SECURITY DEFINER / 24 definer-with-`authenticated` EXECUTE / 0 `anon` / 0 `PUBLIC` / **24 migrations**, matching the loopback chain) and Auth config read **read-only** (`mailer_autoconfirm = false`, no SMTP, `site_url = http://localhost:3000`) with no configuration write. Post-cleanup integrity read-back (`auth_users = 0`, all ten business tables 0 rows, founder rows equal to the pre-QA baseline, all five guards still `tgenabled = 'O'`, 24/24 migrations) proving the purge was transaction-local rather than a durable weakening. **Found while executing the cleanup step:** `auth.admin.deleteUser` fails on hosted with `Database error deleting user` for any account with ledger history, because `activities_immutable` / `payments_immutable` / `promise_events_immutable` raise inside the `auth.users → profiles → …` cascade — reproduced with a rolled-back statement, root-caused from the schema, and widened to "no deletion path exists at all" because the one self-service RPC that would have surfaced it is deliberately revoked. What this phase did **not** do: no real email delivery, no SMTP, no frontend deployment, no domain or public URL, no browser journey, no DDL, no index, no Founder activation, no hosted write from CI (no CI job reaches the hosted project), no merge, no `main` write | B01 **substantially closed** (hosted RLS/authorization proven by execution on the real project, not inherited from loopback); B05 and B08 **closed for their hosted halves** (0 over-permissive routines, 24/24 hosted migration parity, with the precision that `verify:migrations`/`verify:types` remain loopback scripts); B04 re-stated with measured hosted Auth configuration and delivery still unproven; B08's `pg_default_acl` read and B15 stay open, B15 now holding two of its ingredients (hosted backend qualified; erasure path missing); **B17 opened** — no account-deletion path for an account with ledger history, a product decision that must end in a CI-pinned mechanism and must **not** be resolved by relaxing the immutability guard; **B18 opened** — the owner's advisor set (5 unindexed FKs, `auth_leaked_password_protection` off, and the 4 unused-index INFO explicitly *not* to be acted on) |
 
-Phase 1's own commit is the head of `release/consumer-live` when this file lands, so its SHA is read
+A phase's own commit is the head of `release/consumer-live` when this file lands, so its SHA is read
 with `git rev-parse HEAD` or `git ls-remote origin refs/heads/release/consumer-live` rather than
 written here by hand — the same way Stage 9 ended its documentation-head recursion instead of
-chasing a number that cannot contain itself.
+chasing a number that cannot contain itself. This applies to row 1, row 2 and row 3 alike: each row
+names the head the *work* ran at, and the recording head is this file's commit.
 
 ## How to continue
 
