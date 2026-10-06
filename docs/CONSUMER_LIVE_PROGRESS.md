@@ -340,8 +340,13 @@ key; the privileged key was never used to make a probe, and no `service_role` to
 a tenant-isolation assertion — the brief's rule that isolation must never be tested with the
 service key, held.
 
-Passwords were random, strong, written to a `0600` file outside the repository, never printed, and are
-gone with the accounts. Sign-in at 10:35:57Z established that both sessions work through the public
+Passwords were random, strong, written to a `0600` file outside the repository, and never printed. The
+accounts carrying them were removed in STEP 9; the credential file itself, together with the key file
+and the id files, was deleted on **2026-10-06**, after this section was committed — so privileged
+material left the machine one phase-step after the fixtures, not with them. What remains on disk is the
+probe evidence, and it was scanned for the shapes that must not persist: **0** JWT-shaped literals, 0
+service-key literals and 0 password keys across every file in that directory, which is why keeping it
+outside the repo is safe. Sign-in at 10:35:57Z established that both sessions work through the public
 endpoint.
 
 ### STEP 3 — the app's own happy path, on production, through production RPCs
@@ -634,9 +639,53 @@ Not a caveat list — the named boundary a reader must not walk past:
   productise that harness as a gated suite; recording hosted truth in a document that no pipeline
   checks is how drift starts.
 
+### Phase 3B delivery — the gates that covered a documentation change, and the run the head earned
+
+Phase 3B changes no product code, so the gates that cover it are the ones that read the tree:
+`pnpm lint` **exit 0** (`eslint client/src tests e2e scripts vite.config.ts --max-warnings=0`, no
+finding), `pnpm check` **exit 0** (`tsc --noEmit` clean), `pnpm verify:secrets` **exit 0** — `Scanned
+241 files for 11 credential shapes. No privileged credential found in the tracked tree or the built
+bundle`, which is the gate that matters most here because this section names a hosted project ref and
+describes a QA run. The database and browser batteries were not re-executed by hand locally for a
+docs-only commit — they are the Phase-2 measurements above, unchanged — but CI re-ran both of them
+against this head as part of the run below and both jobs passed, so the delivered documentation head is
+release-qualified on the same evidence the code head was. This section's own claims are hosted reads
+rather than loopback runs.
+
+Delivery was `git add docs/CONSUMER_LIVE_PROGRESS.md` alone (the `client/src/types/database.generated.ts`
+`M` flag is the documented `core.autocrlf=true` phantom and was not staged), a forward commit, plain
+`git push`, then `git ls-remote origin refs/heads/release/consumer-live` == `git rev-parse HEAD` ==
+`8ab8d0829847aad587cff17d00734f0e53e0ebc0`.
+
+**The operator precondition had to be restored before that push, and it is recorded because it is the
+single most common cause of a false RED on this branch.** `docker info` could not reach a daemon, the
+runner was `offline`, and `.github/workflows/ci.yml`'s `local-supabase` and pgTAP jobs need the Docker
+daemon through WSL integration, which exists only while Docker Desktop is up. It was started; the
+daemon answered `ServerVersion: 29.8.1` from Windows *and* from WSL; `dueweave-local-ci` then reported
+`online`. The foreign stack that auto-resumed with the daemon (`supabase_*_localvivaahvarnam`, on
+54400/54401/54403) belongs to another product, was left running, and does not collide with the
+`dueweave` project's ports. No `supabase start`/`supabase stop` was issued from the laptop while the
+run was live — the row-45 rule.
+
+| Read | Value |
+| --- | --- |
+| Run | `37420364616`, `run_attempt: 1`, event `push`, `head_sha` `8ab8d08…`, title = this commit |
+| Window | created and started 2026-10-06T05:48:17Z, finished 06:12:54Z (~24.6 min) |
+| `Static verification` | `completed / success`, 13 steps, runner `dueweave-local-ci`, 05:54:07Z→05:55:18Z |
+| `Database contracts` | `completed / success`, 13 steps, `dueweave-local-ci`, 05:48:21Z→05:54:04Z |
+| `Browser release smoke` | `completed / success`, 15 steps, `dueweave-local-ci`, 05:55:21Z→06:12:53Z |
+| Non-`success` step conclusions | exactly one: `Upload failure evidence` = `skipped`, an `if: failure()` step with nothing to upload |
+
+The commit that carries this paragraph is a later documentation head than `8ab8d08`, so it cannot
+record its own run either; read it back with
+`gh api repos/Pavithran-R-A/DueWeave/actions/runs?head_sha=$(git rev-parse HEAD)` and then
+`gh api repos/Pavithran-R-A/DueWeave/actions/runs/<run-id>/jobs`, and accept the phase only if that
+head's run is green on all three jobs with the same single `skipped` step. A phase whose delivered head
+has no run of its own is exactly the Phase-1 situation this file calls out as an inherited-evidence
+defect, so the rule is applied to Phase 3B rather than exempted from it — the same convention Phase 2's
+run rows 45-50 follow.
+
 ## Remaining production blockers
-
-
 
 Ordered by what has to happen first. Each names the gate that proves it closed, so none of them can
 be closed by a claim.
