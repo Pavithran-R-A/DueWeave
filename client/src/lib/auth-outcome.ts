@@ -2,6 +2,8 @@
 // screen has to get right. It lives here rather than beside the hook so the static half of
 // the release gate can test it without configuring credentials — a unit suite that imported
 // the hook would first import the client builder, which refuses to run unconfigured.
+import { PASSWORD_MIN_LENGTH } from "./auth-validation";
+
 export type AuthResult = { error?: string };
 
 // A sign-up attempt ends in one of three genuinely different places, and the two
@@ -28,7 +30,7 @@ export function friendlyAuthError(message: string) {
     return "An account already exists for this email. Try signing in instead.";
   }
   if (normalized.includes("password should") || normalized.includes("password must")) {
-    return "Choose a password with at least 8 characters.";
+    return `Choose a password with at least ${PASSWORD_MIN_LENGTH} characters.`;
   }
   if (normalized.includes("rate limit")) {
     return "Please wait a moment before trying again.";

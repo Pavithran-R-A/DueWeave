@@ -3,12 +3,7 @@ import { ArrowLeft, ArrowRight, CheckCircle2, Loader2, LockKeyhole, Mail, Shield
 import { useLocation } from "wouter";
 import { BRAND } from "@/config/brand";
 import { useSupabaseAuth } from "@/hooks/useSupabaseAuth";
-
-type AuthMode = "signIn" | "signUp" | "forgot" | "update";
-type FieldErrors = { name: string; email: string; password: string };
-
-const noErrors: FieldErrors = { name: "", email: "", password: "" };
-const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+import { PASSWORD_MIN_LENGTH, noFieldErrors, validateAuthFields, type AuthFieldErrors, type AuthMode } from "@/lib/auth-validation";
 
 function copyFor(mode: AuthMode) {
   if (mode === "signUp") return { eyebrow: "A calmer ledger starts here", title: "Keep the promise, not the pressure.", body: "Create your private workspace for the money you are waiting on.", submit: "Create my workspace" };
@@ -17,22 +12,8 @@ function copyFor(mode: AuthMode) {
   return { eyebrow: "Welcome back", title: "Your follow-ups, in one calm place.", body: "Sign in to see the money and promises that need your attention.", submit: "Sign in" };
 }
 
-// What each mode actually needs before it is worth asking the server. Anything the
-// person can still fix by typing is checked here; anything that needs the server
-// (an unknown password, an email that is already taken) is reported by the server.
-function validate(mode: AuthMode, input: { name: string; email: string; password: string }): FieldErrors {
-  const errors: FieldErrors = { ...noErrors };
-  if (mode === "signUp" && !input.name.trim()) errors.name = "Add your name so we know who to greet.";
-  if (mode !== "update") {
-    if (!input.email.trim()) errors.email = "Enter your email address.";
-    else if (!EMAIL_SHAPE.test(input.email.trim())) errors.email = "That does not look like an email address yet.";
-  }
-  if (mode !== "forgot") {
-    if (!input.password) errors.password = "Enter your password.";
-    else if (mode !== "signIn" && input.password.length < 8) errors.password = "Choose a password with at least 8 characters.";
-  }
-  return errors;
-}
+// What each mode actually needs before it is worth asking the server lives in `@/lib/auth-validation`,
+// where the eight-character floor is a rule the unit suite can execute rather than a line in this file.
 
 /** A heading plus a calm, action-only body: a screen that reports an outcome rather than collecting input. */
 function OutcomePanel({ eyebrow, title, body, children }: { eyebrow: string; title: string; body: string; children: ReactNode }) {
@@ -58,7 +39,7 @@ export default function Auth() {
   const [password, setPassword] = useState("");
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
-  const [fieldErrors, setFieldErrors] = useState<FieldErrors>(noErrors);
+  const [fieldErrors, setFieldErrors] = useState<AuthFieldErrors>(noFieldErrors);
   const [submitting, setSubmitting] = useState(false);
   const [unconfirmedEmail, setUnconfirmedEmail] = useState("");
   const content = useMemo(() => copyFor(mode), [mode]);
@@ -87,7 +68,7 @@ export default function Auth() {
     setNotice("");
     setError("");
     setPassword("");
-    setFieldErrors(noErrors);
+    setFieldErrors(noFieldErrors);
     setUnconfirmedEmail("");
   }
 
@@ -96,7 +77,7 @@ export default function Auth() {
     navigate("/auth", { replace: true });
   }
 
-  function clearFieldError(field: keyof FieldErrors) {
+  function clearFieldError(field: keyof AuthFieldErrors) {
     setFieldErrors((current) => ({ ...current, [field]: "" }));
   }
 
@@ -104,7 +85,7 @@ export default function Auth() {
     event.preventDefault();
     setNotice("");
     setError("");
-    const nextErrors = validate(mode, { name, email, password });
+    const nextErrors = validateAuthFields(mode, { name, email, password });
     setFieldErrors(nextErrors);
     if (nextErrors.name || nextErrors.email || nextErrors.password) return;
 
@@ -192,7 +173,7 @@ export default function Auth() {
               </div>}
               {mode !== "forgot" && <div className="field">
                 <label className="field__label" htmlFor="auth-password">{mode === "update" ? "New password" : "Password"}</label>
-                <span className="auth-input"><LockKeyhole size={15} /><input id="auth-password" className="form-input" type="password" autoComplete={mode === "signIn" ? "current-password" : "new-password"} minLength={8} required value={password} aria-invalid={Boolean(fieldErrors.password)} aria-describedby={fieldErrors.password ? "auth-password-error" : undefined} onChange={(event) => { setPassword(event.target.value); clearFieldError("password"); }} placeholder="At least 8 characters" /></span>
+                <span className="auth-input"><LockKeyhole size={15} /><input id="auth-password" className="form-input" type="password" autoComplete={mode === "signIn" ? "current-password" : "new-password"} minLength={PASSWORD_MIN_LENGTH} required value={password} aria-invalid={Boolean(fieldErrors.password)} aria-describedby={fieldErrors.password ? "auth-password-error" : undefined} onChange={(event) => { setPassword(event.target.value); clearFieldError("password"); }} placeholder={`At least ${PASSWORD_MIN_LENGTH} characters`} /></span>
                 {fieldErrors.password && <p className="field__error" id="auth-password-error" role="alert">{fieldErrors.password}</p>}
               </div>}
               {error && <p className="auth-message auth-message--error" role="alert">{error}</p>}

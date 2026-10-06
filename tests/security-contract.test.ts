@@ -24,6 +24,9 @@ const authHook = readFileSync(resolve(root, "client/src/hooks/useSupabaseAuth.ts
 // gate can test it without a configured client. The rules are asserted against the module
 // that now holds them, and against the hook for still routing through it.
 const authOutcome = readFileSync(resolve(root, "client/src/lib/auth-outcome.ts"), "utf8");
+// Same reason: the sign-up form's input rules are only testable because they no longer live
+// inside the page component, which imports the client builder the static job cannot run.
+const authValidation = readFileSync(resolve(root, "client/src/lib/auth-validation.ts"), "utf8");
 const dashboardRepository = readFileSync(resolve(root, "client/src/data/supabase-dashboard-repository.ts"), "utf8");
 const activityRepository = readFileSync(resolve(root, "client/src/data/supabase-activity-repository.ts"), "utf8");
 const founderRepository = readFileSync(resolve(root, "client/src/data/supabase-founder-repository.ts"), "utf8");
@@ -114,10 +117,25 @@ describe("Stage 2 Supabase security contract", () => {
     expect(authPage).toMatch(/Request a new reset link/);
 
     // Unusable input is refused inside the form, with live semantics, before the server is asked.
+    // The rules themselves live in `@/lib/auth-validation`; the page is checked for still
+    // routing through them and for carrying the accessibility wiring around the fields.
     expect(authPage).toMatch(/aria-invalid=\{Boolean\(fieldErrors\.email\)\}/);
     expect(authPage).toMatch(/id="auth-email-error" role="alert"/);
-    expect(authPage).toMatch(/That does not look like an email address yet\./);
+    expect(authValidation).toMatch(/That does not look like an email address yet\./);
+    expect(authPage).toMatch(/validateAuthFields\(mode, \{ name, email, password \}\)/);
     expect(authPage).toMatch(/disabled=\{submitting\}/);
+
+    // The refusal is the handler's, not the browser's: the form opts out of native validation,
+    // so nothing reaches Supabase unless the module's own errors come back empty.
+    expect(authPage).toMatch(/onSubmit=\{onSubmit\} noValidate/);
+    expect(authPage).toMatch(/if \(nextErrors\.name \|\| nextErrors\.email \|\| nextErrors\.password\) return;/);
+
+    // Eight characters is the floor DueWeave owns; the hosted Free-tier setting is lower, so
+    // a signup that passed this form is still held here rather than at the server default.
+    expect(authValidation).toMatch(/export const PASSWORD_MIN_LENGTH = 8/);
+    expect(authValidation).toMatch(/input\.password\.length < PASSWORD_MIN_LENGTH/);
+    expect(authValidation).toMatch(/mode !== "signIn"/);
+    expect(authPage).toMatch(/minLength=\{PASSWORD_MIN_LENGTH\}/);
   });
 
   it("keeps Stage 3 client, receivable, promise-refresh, and snooze workflows authenticated-only", () => {
