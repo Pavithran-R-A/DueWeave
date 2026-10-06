@@ -259,6 +259,8 @@ The documents a Stage 9 reviewer reads are
 [the executed security proofs](docs/SECURITY_CONTRACT_REQUALIFICATION.md),
 [the security model as measured](docs/SECURITY_MODEL.md),
 [the abuse matrix](docs/STAGE9_ABUSE_MATRIX.md),
+[the account erasure design](docs/ACCOUNT_ERASURE_DESIGN.md) (B17 — design and source only; its
+database gates are listed as unexecuted there),
 [the integration plan](docs/PR_INTEGRATION_PLAN.md) (design only — no PR was opened by this stage)
 and [the branch protection plan](docs/RELEASE_PROTECTION.md) (prepared only — no GitHub setting
 was changed).

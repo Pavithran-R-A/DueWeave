@@ -250,6 +250,7 @@ describe("CI gate manifest", () => {
       "docs/PR_INTEGRATION_PLAN.md",
       "docs/RELEASE_PROTECTION.md",
       "docs/STAGE9_ABUSE_MATRIX.md",
+      "docs/ACCOUNT_ERASURE_DESIGN.md",
     ]) {
       expect(readme, `${document} is part of the release evidence but the README never points at it`).toContain(`](${document})`);
     }

@@ -49,6 +49,25 @@ of the property that neither a laptop nor CI can prove.
 | R | Stage 8 Founder customer / reviewer | `pnpm test:live` · `pnpm test:e2e:smoke` | `tests/stage8-local-founder-readiness.test.ts`, `tests/stage8-founder-contracts.test.ts`; `e2e/stage8-local-founder-customer.spec.ts`, `e2e/stage8-local-founder-reviewer.spec.ts` | loopback stack + `TEST`-mode offer | database + browser | real UPI/VPA settlement, live-mode review | yes |
 | S | Logout / login persistence | `pnpm test:e2e:smoke` · `pnpm verify:e2e:local` | `e2e/stage9-release-journey.spec.ts:452` (profile edit → sign out → sign in → same ledger), `e2e/stage6-local-auth-ux.spec.ts:256` (sign-out leaves nothing), `:304` (lost stored session returns to the gateway) | loopback stack | browser (the journey) | — | yes |
 | T | Abuse / validation cases | `pnpm test:live` (+ `test:unit`, `test:db`, `test:e2e:smoke` for the rest) | `docs/STAGE9_ABUSE_MATRIX.md` is the ledger of all 20 cases and names, per case, the file that reaches the failure. `tests/stage9-abuse-matrix.test.ts` (7 tests) is that executed proof for 5 of them — cases 4, 6, 7, 8, 10 — and the remaining 15 are executed across the live, unit, pgTAP and browser files the ledger cites | loopback stack | database | — | yes |
+| U | Arc 3C account erasure (B17): an authenticated owner can delete their own account and its ledger history without reopening immutability | `pnpm test:live` (the erasure battery) · `pnpm test:db` (the pgTAP file) · `node scripts/verify-secrets.mjs --dir supabase/functions` (measured: 3 files, no finding) | `tests/arc3c-local-account-erasure.test.ts` (the brief's STEP 6 battery; needs the stack **and** `supabase functions serve delete-account --env-file supabase/functions/.env` with `ALLOWED_APP_ORIGIN` set), `supabase/tests/arc3c_01_account_erasure.sql` (`plan(41)`); the static halves that did run are `tests/arc3c-erasure-contract.test.ts` (19 tests) and `tests/arc3c-account-deletion.test.ts` (26). Design and threat model: `docs/ACCOUNT_ERASURE_DESIGN.md` | loopback stack + the function served | **none as the workflow stands** — no CI job starts `supabase functions serve`, so a green `database` job could not prove this row even after the 25th migration replays; only the two static suites reach CI, via `static` | the migration applying to the hosted project, the function deploying, and one real deletion of a real account — B17 and B19 stay open until then | yes — **and NOT EXECUTED at the Phase 3C head.** Read that as the answer "cannot run", not as a pass |
+
+### What has moved since these measurements were taken
+
+Rows A-T are the Stage 9 measurement of 2026-09-29 and are deliberately **not** rewritten here —
+that is what makes them usable as a baseline. Four numbers in them are now known to describe an older
+tree, and a reviewer should read them with this pointer:
+
+- Row H says 23 migrations. The chain committed **24** before this phase (Phase 3B applied all 24 to
+  the hosted project and measured parity), and Arc 3C adds a **25th** which has replayed on **no**
+  machine, local or hosted.
+- Row J says `Files=8, Tests=364`. There are **9** pgTAP files on disk now (`arc3c_01_account_erasure.sql`);
+  the ninth has never been planned or run.
+- Row D's unit counts are the Stage 9 series. At the Phase 3C head `pnpm test:unit` measures
+  **33 files / 463 tests, 0 skipped**, and the live manifest has a **10th** file (`tests/suite-manifest.ts`)
+  which has never executed.
+- Row U is new work and its executing gates were blocked by an unresponsive Docker daemon; the
+  measurements, the two authorised prune passes and the probe timings are in
+  `docs/CONSUMER_LIVE_PROGRESS.md`, section "Phase 3C — account erasure (B17)".
 
 ## "Cannot run" is a different answer from "passed"
 

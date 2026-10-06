@@ -1,11 +1,17 @@
 # Security model (as executed, not as intended)
 
-Stage 9 PHASE 30. Every number here was measured on 2026-09-29 against the project's own
-disposable loopback Supabase (23 committed migrations replayed from zero) by
-`pnpm exec supabase db query --local "<sql>"`, `pnpm test:db` (pgTAP) and `pnpm test:live`.
-Where a claim could be executed it was; the test citations are the same ones
+Stage 9 PHASE 30, carried forward through Arc 3C. The catalog numbers below were measured on
+2026-09-29 against the project's own disposable loopback Supabase (23 committed migrations replayed
+from zero) by `pnpm exec supabase db query --local "<sql>"`, `pnpm test:db` (pgTAP) and
+`pnpm test:live`. The chain now carries **25** committed migrations: `20261004170000_current_arc2_ledger_required_blank_class.sql`
+and `20261006120000_current_arc3c_account_erasure_path.sql`. Nothing in Arc 3C's migration has been
+replayed — the Docker daemon on this machine answers neither the host nor WSL, so the replay, pgTAP
+and live gates did not run. Anything sourced rather than measured is marked
+**(source, not yet measured)**, and `docs/ACCOUNT_ERASURE_DESIGN.md` keeps the full list of blocked
+gates. Where a claim could be executed it was; the test citations are the same ones
 `docs/SECURITY_CONTRACT_REQUALIFICATION.md` pins, and `tests/security-contract.test.ts` fails the
-release if that map drifts. Nothing in this file was run against a hosted project.
+release if that map drifts. None of the figures in this section were run against a hosted project;
+the hosted re-measurement Phase 3B performed is recorded in `docs/CONSUMER_LIVE_PROGRESS.md`.
 
 ## Measured shape of the database
 
@@ -14,9 +20,9 @@ release if that map drifts. Nothing in this file was run against a hosted projec
 | Public tables | 13, and **13 have `relrowsecurity = true`** |
 | Row-level-security policies | 15, spread over the 10 browser-visible tables |
 | Functions granted `EXECUTE` to `anon` | **0** |
-| Functions granted `EXECUTE` to `authenticated` | 24 (the whole browser RPC surface, listed below) |
+| Functions granted `EXECUTE` to `authenticated` | 24 measured (the whole browser RPC surface, listed below); **25** once the Arc 3C migration replays, the extra one being `delete_my_account()` **(source, not yet measured)** |
 | Functions executable by the `PUBLIC` pseudo-role | **0** |
-| `SECURITY DEFINER` functions / `SECURITY INVOKER` functions | 28 / 21 |
+| `SECURITY DEFINER` functions / `SECURITY INVOKER` functions | 28 / 21 measured; 29 / 22 with the erasure path — `delete_my_account()` is definer, `erasure_allows_delete(uuid)` is invoker so that `current_user` stays the caller's real role **(source, not yet measured)** |
 | User triggers on public tables | 21 |
 | Event triggers | 7 — 6 Supabase-managed, 1 written here (`stage3_default_privileges_fail_closed`) |
 | Tables with **no** browser-role grant at all | `founder_admins`, `founder_audit_events`, `founder_offer_config` |
@@ -47,11 +53,38 @@ database access is decided from `auth.uid()` inside Postgres. There is no Node s
 layer, no proxy holding a privileged key, and no browser code path that can name a role — the
 PostgREST role comes from the JWT, not from the client.
 
+Arc 3C adds the first server-side component the repository has ever had, and it is source that has
+not been deployed: `supabase/functions/delete-account/`. It is the only place a privileged key
+appears at all, it uses that key for exactly one call (`auth.admin.deleteUser`, on the id GoTrue
+just confirmed for the caller), it accepts no target user id from the browser, and the ledger purge
+it triggers runs on the caller's own token so `auth.uid()` stays truthful inside it. The whole
+threat model, the four conditions the guards require, and the deploy runbook are in
+`docs/ACCOUNT_ERASURE_DESIGN.md`. Everything else in the app still reaches Postgres through the
+caller's JWT and nothing else.
+
 That boundary is executed, not argued: `e2e/stage9-release-journey.spec.ts:210` and `:452` complete
 sign-up, onboarding, the whole money lifecycle, an export and a Founder claim, then a profile edit
 surviving sign-out and sign-back-in, with only the anon key present — a `service_role` dependency
 would fail the run. `scripts/local-stack-check.mjs` requires the same two values and no privileged
 key, and refuses a non-loopback URL.
+
+### Password posture
+
+Three layers touch a password, and they do not enforce the same thing:
+
+| Layer | Enforces | Measured |
+| --- | --- | --- |
+| DueWeave's own sign-up and password-change forms | at least `PASSWORD_MIN_LENGTH = 8` characters | executed — `client/src/lib/auth-validation.test.ts`, 9 tests: the floor refuses 7 and accepts 8, the recovery form carries the same floor, sign-in is deliberately not length-gated, and a refusal names the rule without echoing the password |
+| Hosted Supabase Auth | `password_min_length = 6` | read on 2026-10-06 from `GET /v1/projects/…/config/auth`, keys allowlisted so no credential field was printed; raising it to 8 is a **production Auth configuration action**, deliberately not performed here |
+| Hosted Supabase Auth | leaked-password (HIBP) protection: `password_hibp_enabled = false` | same read. Phase 3B's advisor capture carried the matching `auth_leaked_password_protection` WARN. Turning it on is an owner decision about the plan, and this phase was instructed to spend nothing and write nothing — so it is recorded as an **accepted limitation**, not a repair |
+
+The reason the application owns the rule rather than trusting the server: the hosted floor is 6, and
+this repository cannot raise it without a production configuration write. So an eight-character
+password is guaranteed for accounts created through DueWeave's forms — which is every account today.
+Sign-in is not length-gated, on purpose: a person who set a shorter password before the floor existed
+must still be able to open their ledger. The form runs with `noValidate`, so the refusal is DueWeave's
+own and not the browser's, and a server-side password refusal is mapped through `friendlyAuthError`
+to the same sentence rather than shown verbatim.
 
 ## `owner_id` isolation and RLS
 
@@ -73,7 +106,8 @@ runs 8 attacks and reads the other account's identifiers as nothing, table by ta
 
 ## The `SECURITY DEFINER` RPC model
 
-24 functions are callable from a browser session; that set is the entire product surface:
+24 functions are callable from a browser session — 25 once the Arc 3C migration replays, the 25th
+being `delete_my_account()`; that set is the entire product surface:
 
 ```
 create_client            update_client                create_receivable       update_receivable_details
@@ -83,6 +117,7 @@ mark_due_promises_broken get_founder_offer             get_founder_funnel     cr
 submit_founder_payment   list_pending_founder_claims   list_rejected_founder_claims
 approve_founder_claim    reject_founder_claim          reconsider_founder_claim
 cancel_founder_claim     revoke_founder_entitlement    record_founder_upgrade_view
+delete_my_account   (takes no argument; erases only the caller's own rows — see docs/ACCOUNT_ERASURE_DESIGN.md)
 ```
 
 Definer functions exist so a write can check more than a policy can express (an ownership join,
@@ -138,6 +173,19 @@ cannot rewrite or destroy its own" — and the lifecycle triggers (21 user trigg
 reject state transitions the model does not allow rather than silently coercing them. Founder review
 decisions land in `founder_audit_events`, a table no browser role can read or write directly.
 
+The one exception is erasure, and it is narrow by construction **(source, not yet measured)**. Arc
+3C's migration does not weaken these guards; it gives each of them a DELETE branch that consults a
+single internal function, `erasure_allows_delete(uuid)`, which returns true only when the statement
+is a DELETE (an UPDATE — including the SET NULL update a cascade would generate — is refused
+unconditionally), the transaction-local context `app.dueweave_erasure_owner` names **this row's own**
+owner, `auth.uid()` is that same account, and `current_user` is `postgres`. The context helper is
+`SECURITY INVOKER` so the fourth condition reads the caller's real role, and it is revoked from
+`public`, `anon`, `authenticated` **and** `service_role`, so no session can call it directly. The only
+browser-reachable path through it is `delete_my_account()`, which takes no argument and deletes in
+explicit child-first order. `delete_my_business_data()` stays revoked exactly where Stage 2 left it.
+An account that appears in the Founder review ledger is refused before the context is armed (B19).
+Full design, threat model and the blocked gates: `docs/ACCOUNT_ERASURE_DESIGN.md`.
+
 ## Export privacy
 
 Exports are generated in the owner's browser from rows the owner is already allowed to read, and are
@@ -157,11 +205,22 @@ mechanisms hold that line: `tests/credential-boundary.contract.test.ts` and
 `tests/production-module-graph.contract.test.ts` over the built `dist/`, and
 `pnpm verify:secrets` (`scripts/verify-secrets.mjs`), which scans 11 credential shapes
 (`service_role` JWTs, `sb_secret_`, Supabase service keys, database URLs/passwords, UPI/payment
-secrets, private keys, generic assignment shapes) across the tracked tree **and** `dist/` — measured
-228 files (208 tracked + 20 bundle artefacts), no finding. Its allowlist is dead-exemption-proof: an
-allowlisted path that no longer matches a finding fails the scan, so the exception list cannot rot,
-and the `HARD` shapes cannot be allowlisted away at all. The scanner reports shape names and file
-locations, never a key value.
+secrets, private keys, generic assignment shapes) across the tracked tree **and** `dist/` — re-run
+2026-10-06 at **241 files**, no finding. Its allowlist is dead-exemption-proof: an allowlisted path
+that no longer matches a finding fails the scan, so the exception list cannot rot, and the `HARD`
+shapes cannot be allowlisted away at all. The scanner reports shape names and file locations, never a
+key value.
+
+Two Arc 3C notes on that scan, because the new Edge Function is the first server-side secret this
+repository has had to keep out of a bundle. `supabase/functions/` is not tracked yet, so the 241
+count above does not include it; the directory was scanned on its own with
+`node scripts/verify-secrets.mjs --dir supabase/functions` — 3 files, no finding — and it will join
+the tracked count when the phase is committed. The function's key is only ever an environment value:
+`SUPABASE_SERVICE_ROLE_KEY` is read with `Deno.env.get` in `index.ts`, `supabase/functions/.env` is
+ignored by the `.env` rule at `.gitignore:11` (verified with `git check-ignore`), and only
+`supabase/functions/.env.example` is checked in. The client bundle cannot gain a privileged key
+through this path because the browser calls the function through the caller's own session —
+`client/src/data/supabase-account-deletion-repository.ts` sends one field and sets no bearer.
 
 ## Known gaps that are hosted-only, and therefore not claimed
 
@@ -173,14 +232,23 @@ locations, never a key value.
 | WhatsApp handoff delivery | Only the built URL and the "no contact is recorded without explicit confirmation" rule are proved; the send happens outside DueWeave and cannot be observed. |
 | Transport/infra hardening (WAF, rate limits, backups, secret rotation, log retention) | Hosting properties, not repository properties. |
 | Accessibility conformance | Stage 6's targeted keyboard/screen-reader/reduced-motion qualification is retained (`e2e/stage6-local-accessibility.spec.ts`); it is not a WCAG certification. |
+| Leaked-password protection on the hosted project | Measured off: `password_hibp_enabled = false` (read 2026-10-06). It is a project-level Auth configuration write, and enabling it is an owner decision about the plan; this phase was instructed to spend nothing and write nothing hosted. The application-side eight-character floor is what this repository can enforce — see *Password posture*. |
+| Erasure of a Founder-entangled account (B19) | The purge refuses an account named in `founder_audit_events` because two RESTRICT edges protect review provenance. Erasing it would mean deleting reviewer evidence Stage 8 made immutable, which is a product decision about the review ledger, not a detail of this repair. |
+| The Arc 3C gates themselves | `20261006120000_current_arc3c_account_erasure_path.sql` and `supabase/functions/delete-account/` have never executed: the machine's Docker daemon answers neither from the host nor from WSL, so replay, pgTAP, the live suites and every browser gate are open. `docs/ACCOUNT_ERASURE_DESIGN.md` keeps the list, and B17's verdict is **NOT READY** until it closes. |
 
 ## Reproducing
 
 ```sh
-pnpm db:reset:local && pnpm verify:migrations   # 23 migrations, replayed from zero
-pnpm test:db                                   # pgTAP: 8 files / 364 assertions (measured)
-pnpm test:live                                 # nine database suites incl. the abuse matrix
+pnpm db:reset:local && pnpm verify:migrations   # 25 migrations, replayed from zero
+pnpm test:db                                   # pgTAP: 9 files / 364 assertions measured at 8 files on 2026-09-29
+pnpm test:live                                 # ten database suites incl. the abuse matrix and the erasure suite
 pnpm test:e2e:smoke                            # the two-account and credential-boundary journeys
 pnpm verify:secrets                            # 11 shapes over the tree and dist/
 node scripts/local-stack-check.mjs             # the run needs no privileged key
 ```
+
+The first four of those, plus `local-stack-check.mjs`, need Docker and did **not** run for Arc 3C: the
+daemon on this machine timed out on `docker version`, `docker ps` and the equivalent calls through
+WSL, so the 25th migration, the 9th pgTAP file (`supabase/tests/arc3c_01_account_erasure.sql`) and the
+10th database suite (`tests/arc3c-local-account-erasure.test.ts`) are written and classified, not
+executed. `pnpm verify:secrets` needs no stack and ran green on 2026-10-06.
