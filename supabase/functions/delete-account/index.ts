@@ -79,16 +79,31 @@ Deno.serve(async (request: Request) => {
   if (confirmation) return failure(confirmation, origin.origin);
 
   const url = Deno.env.get("SUPABASE_URL");
-  const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
-  const secretKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!url || !anonKey || !secretKey) {
+
+  // Hosted Edge Functions now receive the current publishable/secret key sets as named JSON
+  // dictionaries. Keep the legacy variables only as a compatibility fallback for older local
+  // Supabase CLI runtimes; hosted production prefers the current key model.
+  function injectedKey(name: "SUPABASE_PUBLISHABLE_KEYS" | "SUPABASE_SECRET_KEYS"): string | null {
+    const raw = Deno.env.get(name);
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      return typeof parsed.default === "string" && parsed.default ? parsed.default : null;
+    } catch {
+      return null;
+    }
+  }
+
+  const publishableKey = injectedKey("SUPABASE_PUBLISHABLE_KEYS") ?? Deno.env.get("SUPABASE_ANON_KEY");
+  const secretKey = injectedKey("SUPABASE_SECRET_KEYS") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!url || !publishableKey || !secretKey) {
     // Names, never values, and only to whoever can already read the deployment's environment.
     return response(501, { status: "error", message: "Account deletion is not configured on this deployment." }, origin.origin);
   }
 
   // The caller's own client: every database step below runs with their authority and their
   // `auth.uid()`, which is what makes the erasure context unforgeable.
-  const caller = createClient(url, anonKey, {
+  const caller = createClient(url, publishableKey, {
     global: { headers: { Authorization: `Bearer ${credential.token}` } },
     auth: { persistSession: false, autoRefreshToken: false },
   });

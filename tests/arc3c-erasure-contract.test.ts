@@ -191,13 +191,18 @@ describe("delete-account handler wiring", () => {
     expect(handler.indexOf("caller.rpc(ERASURE_RPC)")).toBeLessThan(handler.indexOf("auth.admin.deleteUser("));
   });
 
-  it("reads the privileged key from the environment only, and never ships it", () => {
+  it("reads current injected keys with an explicit legacy-local fallback, and never ships them", () => {
     for (const name of ["SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"]) {
       const reads = handler.match(new RegExp(`Deno\\.env\\.get\\("${name}"\\)`, "g")) ?? [];
       expect(reads, `${name} must be read exactly once, from Deno.env`).toHaveLength(1);
     }
+    for (const name of ["SUPABASE_PUBLISHABLE_KEYS", "SUPABASE_SECRET_KEYS"]) {
+      expect(handler, `${name} must be part of the named injected-key path`).toContain(`injectedKey("${name}")`);
+    }
+    expect(handler).toContain('JSON.parse(raw) as Record<string, unknown>');
+    expect(handler).toContain("parsed.default");
     // No interpolation of a key or a token into anything that leaves the process.
-    for (const smuggled of ["${secretKey", "${anonKey", "${url}", "message: purgeError", "message: accountError", "message: error"]) {
+    for (const smuggled of ["${secretKey", "${publishableKey", "${url}", "message: purgeError", "message: accountError", "message: error"]) {
       expect(handler, `${smuggled} would put a credential or a raw database error in a reply`).not.toContain(smuggled);
     }
     for (const logged of handler.match(/console\.\w+\(([^)]*)\)/g) ?? []) {
@@ -208,10 +213,10 @@ describe("delete-account handler wiring", () => {
   it("has exactly one way to reach a value from outside the process", () => {
     // `VITE_*` is compiled into the public bundle and `process.env` is a Node accessor that does not
     // exist on the Edge Runtime; a value read either way is a bug that only shows up when the
-    // endpoint is asked to do its job. Deno.env is the platform's injected-secret mechanism, and four
-    // reads (origin, url, anon key, privileged key) are all this handler is allowed to have.
+    // endpoint is asked to do its job. Deno.env is the platform's injected-secret mechanism. The
+    // handler reads origin + URL, one current-key accessor, and two legacy local fallbacks.
     expect(handler).not.toMatch(/import\.meta\.env|process\.env|VITE_/);
-    expect(handler.match(/Deno\.env\.get\(/g) ?? []).toHaveLength(4);
+    expect(handler.match(/Deno\.env\.get\(/g) ?? []).toHaveLength(5);
   });
 
   it("answers every failure through the sanitised copy, not the received error", () => {
