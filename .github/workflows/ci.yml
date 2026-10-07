@@ -44,7 +44,18 @@ jobs:
       # Before the tests: three contracts inspect the built bundle, and without a build
       # they report "skipped" while the job still goes green.
       - name: Build the production bundle
+        env:
+          VITE_SUPABASE_URL: https://ugzdqcytouwfdlcjujqv.supabase.co
+          VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_K4Vj0A_c_t_OhKjBTt7EwA_g4OuQ-h4
         run: pnpm build
+
+      - name: Preserve deployable production bundle
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dueweave-production-dist
+          path: dist/
+          if-no-files-found: error
+          retention-days: 1
 
       - name: Unit and boundary contracts (no database)
         run: pnpm test:unit
