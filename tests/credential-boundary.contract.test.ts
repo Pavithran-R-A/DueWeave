@@ -128,10 +128,11 @@ describe("Stage 2 privileged-credential boundary", () => {
   it("reads only the browser-safe project URL and publishable key", () => {
     const source = readFileSync(path.join(clientSource, "lib", "supabase.ts"), "utf8");
     expect(source).toMatch(/import\.meta\.env\.VITE_SUPABASE_URL/);
+    expect(source).toMatch(/import\.meta\.env\.VITE_SUPABASE_PUBLISHABLE_KEY/);
     expect(source).toMatch(/import\.meta\.env\.VITE_SUPABASE_ANON_KEY/);
     expect(source).not.toMatch(/process\.env/);
     const envKeys = [...source.matchAll(/import\.meta\.env\.([A-Z_0-9]+)/g)].map((match) => match[1]);
-    expect(envKeys.sort()).toEqual(["VITE_SUPABASE_ANON_KEY", "VITE_SUPABASE_URL"]);
+    expect(envKeys.sort()).toEqual(["VITE_SUPABASE_ANON_KEY", "VITE_SUPABASE_PUBLISHABLE_KEY", "VITE_SUPABASE_URL"]);
   });
 
   it("keeps no privileged credential in any browser source file", () => {
