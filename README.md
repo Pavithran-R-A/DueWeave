@@ -4,7 +4,7 @@
 
 DueWeave is a mobile-first receivables and promise-to-pay ledger for Indian freelancers and small service businesses. The idea is simple: keep promised payment dates, partial payments and follow-up context in one place, so a founder can see who needs attention today without managing the process in a spreadsheet or chat history.
 
-The product is **pre-deployment**. The repository contains an independently buildable static web client and versioned Supabase migrations, and the client is written against Supabase Auth and Postgres. Nothing in this repository is deployed, no real payment destination is configured, and no live external verification has been performed.
+**Production deployment status (2026-10-09):** the GitHub-integrated static frontend is deployed at https://dueweave.pages.dev and the connected production Supabase database has 25 migrations plus a `delete-account` Edge Function. This is a **release candidate, not a certified consumer launch**: hosted email delivery, Auth URL/redirect configuration, authenticated live customer journeys, published support/legal terms, and Founder payment activation are still gated. See [Customer Release Readiness](docs/CUSTOMER_RELEASE_READINESS.md) before accepting a customer.
 
 ## What the app does
 
@@ -27,7 +27,7 @@ All money values are integer paise end to end, and dates are handled on the Indi
 
 ## Architecture
 
-The application is a browser-only React/Vite single-page application. It uses the browser-safe Supabase URL and anonymous key for authenticated user operations; the security boundary is Supabase Auth plus database-enforced row-level security, constraints, and protected RPCs. There is no Node server, tRPC service, Manus runtime, server-side storage proxy, service-role key, payment gateway, or runtime AI component in this deliverable.
+The application is a React/Vite SPA with a Supabase backend. The browser uses the public project URL and **publishable** key (legacy anon fallback only for local compatibility), and authenticated row-level security enforces tenant isolation. A separate server-side Supabase Edge Function performs authenticated account deletion; no privileged key is bundled into browser code. There is no Node application server, payment gateway, automated outbound messaging, or runtime AI.
 
 | Layer | Responsibility | Security boundary |
 | --- | --- | --- |
@@ -46,7 +46,7 @@ The application is a browser-only React/Vite single-page application. It uses th
 
 ## Run locally
 
-Use Node 22 (the version CI is pinned to), or Node 24 as used for the Stage 2 local qualification, together with pnpm 10. The browser client reads `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` from a local ignored environment only. These are publishable browser configuration values, not a service role. Do not commit `.env` files, service-role keys, database passwords, UPI credentials, or manual-test credentials.
+Use Node 22 (the version CI is pinned to), or Node 24 as used for the Stage 2 local qualification, together with pnpm 10. The browser client reads `VITE_SUPABASE_URL` plus `VITE_SUPABASE_PUBLISHABLE_KEY` (or the legacy `VITE_SUPABASE_ANON_KEY` for local compatibility) from the environment. These are publishable browser configuration values, not a service role. Do not commit `.env` files, service-role keys, database passwords, UPI credentials, or manual-test credentials.
 
 ```bash
 pnpm install --frozen-lockfile
@@ -108,7 +108,7 @@ model as it was measured on the running database.
 pnpm lint      # ESLint 10 flat config, --max-warnings=0
 pnpm check     # tsc --noEmit
 pnpm build     # the bundle the browser half and the bundle contracts both read
-pnpm test:unit # 26 files / 371 tests on this tree (CI runs 20–21 printed exactly 25 / 368; runs 18–19 printed 24 / 363): money and date
+pnpm test:unit # latest authoritative file and test counts are in exact-SHA GitHub CI: money and date
                # helpers, domain rules, repository+adapter
                # contracts, and the boundary contracts (no demo import, no privileged
                # credential in source or in dist/, production module graph, gate manifests,

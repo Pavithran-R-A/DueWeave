@@ -482,4 +482,28 @@ test.describe("Stage 9 release journey, one fresh account end to end", () => {
       expect(stored.text, `the ledger was cached on the device: ${fact}`).not.toContain(fact);
     }
   });
+  test("account deletion is gated by exact confirmation and removes the last QA account", async () => {
+    await openSection(page, "More");
+    await page.getByRole("button", { name: /Delete your account/ }).click();
+    const sheet = page.getByRole("dialog", { name: "Delete your account" });
+    await expect(sheet).toBeVisible();
+    await expect(sheet.getByRole("button", { name: /Download the full data archive first/ })).toBeVisible();
+    const destructive = sheet.getByRole("button", { name: /Delete my account/i });
+    const confirm = sheet.locator("#delete-account-phrase");
+    await expect(destructive).toBeDisabled();
+    await confirm.fill("delete my account");
+    await expect(destructive).toBeDisabled();
+    await confirm.fill("DELETE MY ACCOUNT");
+    await expect(destructive).toBeEnabled();
+    // Everything above is a read-only UX gate. This is the last spec, so the test can safely
+    // exercise the genuinely destructive endpoint against its disposable *local* QA account.
+    await destructive.click();
+    await expect(page).toHaveURL(/\/auth$/, { timeout: 30_000 });
+    await expect(page.getByRole("heading", { name: /your follow-ups, in one calm place/i })).toBeVisible();
+    // Auth deletion, not just clearing the browser storage: the old credentials must be refused.
+    await page.getByLabel("Email address").fill(account.email);
+    await page.getByLabel("Password").fill(account.password);
+    await page.locator("button.auth-submit").click();
+    await expect(page.getByText("That email and password combination does not match an account.")).toBeVisible();
+  });
 });

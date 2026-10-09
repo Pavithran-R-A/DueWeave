@@ -157,6 +157,9 @@ jobs:
       # to this checkout: only processes whose working directory is inside this workspace
       # are touched, and only this checkout's two preview ports. Never a global `docker
       # system prune` — this machine runs other projects' containers too.
+      - name: Serve the delete-account Edge Function for real browser erasure QA
+        run: node scripts/local-functions-serve.mjs start
+
       - name: Clear servers and reports a previous DueWeave job left behind
         shell: bash
         run: |
@@ -231,6 +234,10 @@ jobs:
       # The stack and the bundle belong to this job, not to the host: leaving them running
       # would make the next run inherit them, and would hold the loopback ports the
       # developer's own `pnpm supabase:start` needs.
+      - name: Release the browser's served deletion function
+        if: ${{ always() }}
+        run: node scripts/local-functions-serve.mjs stop
+
       - uses: ./.github/actions/release-local-ci-state
         if: ${{ always() }}
 
