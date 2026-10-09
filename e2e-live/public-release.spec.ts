@@ -18,14 +18,11 @@ test("production login, PWA mark and browser errors", async ({ page, request }) 
   expect(uncaught).toEqual([]);
 });
 
-test("signup and password-recovery forms validate without sending email", async ({ page }) => {
+test("unqualified public signup is accurately gated without affecting existing-user sign-in", async ({ page }) => {
   await page.goto("/auth");
-  await page.getByRole("button", { name: /create an account/i }).click();
-  await expect(page.getByRole("heading", { name: /keep the promise/i })).toBeVisible();
-  await page.getByRole("button", { name: /create my workspace/i }).click();
-  await expect(page.getByText("Enter your email address.")).toBeVisible();
-  await expect(page.getByText("Add your name so we know who to greet.")).toBeVisible();
-  await page.getByRole("button", { name: /sign in/i }).click();
+  await expect(page.getByRole("button", { name: /sign in/i })).toBeVisible();
+  await expect(page.getByText(/new registrations are temporarily paused/i)).toBeVisible();
+  await expect(page.getByRole("button", { name: /create an account/i })).toHaveCount(0);
   await page.getByRole("button", { name: /forgot password/i }).click();
   await expect(page.getByRole("heading", { name: /return to your ledger/i })).toBeVisible();
   // No real email is sent by this smoke test.

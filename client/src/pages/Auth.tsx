@@ -42,6 +42,9 @@ export default function Auth() {
   const [fieldErrors, setFieldErrors] = useState<AuthFieldErrors>(noFieldErrors);
   const [submitting, setSubmitting] = useState(false);
   const [unconfirmedEmail, setUnconfirmedEmail] = useState("");
+  // Keep the existing-user sign-in operational while the public email-confirmation sender is
+  // not production-qualified. Local/dev builds retain signup to exercise the complete journey.
+  const publicSignUpEnabled = import.meta.env.VITE_PUBLIC_SIGNUP_ENABLED !== "false";
   const content = useMemo(() => copyFor(mode), [mode]);
   // Three of these four screens collect nothing. Which one a visitor gets is decided
   // by what the server actually returned, never by which button they last pressed.
@@ -188,7 +191,7 @@ export default function Auth() {
               <button className="button-primary auth-submit" disabled={submitting} type="submit">{submitting ? <><Loader2 className="spin" size={17} />Please wait</> : <>{content.submit}<ArrowRight size={16} /></>}</button>
             </form>
 
-            {mode === "signIn" && <div className="auth-actions"><button type="button" className="text-button" onClick={() => changeMode("forgot")}>Forgot password?</button><p>New to DueWeave? <button type="button" className="text-button" onClick={() => changeMode("signUp")}>Create an account</button></p></div>}
+            {mode === "signIn" && <div className="auth-actions"><button type="button" className="text-button" onClick={() => changeMode("forgot")}>Forgot password?</button><p>{publicSignUpEnabled ? <>New to DueWeave? <button type="button" className="text-button" onClick={() => changeMode("signUp")}>Create an account</button></> : <span role="status">New registrations are temporarily paused while we finish secure confirmation-email delivery.</span>}</p></div>}
             {mode === "signUp" && <p className="auth-actions auth-actions--single">Already have an account? <button type="button" className="text-button" onClick={() => changeMode("signIn")}>Sign in</button></p>}
           </>}
 
