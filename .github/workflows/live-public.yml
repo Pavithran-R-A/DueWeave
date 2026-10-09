@@ -1,0 +1,21 @@
+name: Live production public smoke
+
+# Intentionally manual. Execute only after Cloudflare confirms the exact release SHA is deployed;
+# this check tests the real Pages hostname, not the local Supabase stack.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live-public:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: ./.github/actions/setup-toolchain
+      - name: Install real Chromium
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Test production browser and public routes
+        run: pnpm exec playwright test --config=playwright.live-public.config.ts
