@@ -1,8 +1,10 @@
 name: Live production public smoke
 
-# Intentionally manual. Execute only after Cloudflare confirms the exact release SHA is deployed;
-# this check tests the real Pages hostname, not the local Supabase stack.
+# This suite checks the public Pages hostname on release pushes. Deployment may lag CI; the
+# Cloudflare deployment SHA must be verified separately before certifying an exact-head release.
 on:
+  push:
+    branches: [release/consumer-live]
   workflow_dispatch:
 
 permissions:
