@@ -175,6 +175,17 @@ describe("delete-account handler wiring", () => {
   const functionDir = path.resolve(import.meta.dirname, "..", "supabase", "functions", "delete-account");
   const handler = readFileSync(path.join(functionDir, "index.ts"), "utf8");
 
+  it("allows every browser header sent by the Supabase SDK preflight without widening the origin", () => {
+    const headerList = /"access-control-allow-headers": "([^"]+)"/.exec(handler)?.[1] ?? "";
+    const allowedHeaders = new Set(headerList.split(",").map((item) => item.trim()));
+    for (const required of ["authorization", "apikey", "x-client-info", "content-type", "x-retry-count", "traceparent", "tracestate", "baggage"]) {
+      expect(allowedHeaders.has(required), `Missing CORS preflight header: ${required}`).toBe(true);
+    }
+    expect(handler).toContain('Deno.env.get("ALLOWED_APP_ORIGIN") ?? "https://dueweave.pages.dev"');
+    expect(handler).toContain("requestOriginFor(request.headers.get(\"origin\"), configured)");
+    expect(handler).not.toContain('"access-control-allow-origin": "*"');
+  });
+
   it("takes the target from the confirmed session and nowhere else", () => {
     expect(handler).toContain("auth.admin.deleteUser(session.user.id)");
     expect(handler.match(/deleteUser\(/g), "exactly one admin deletion call").toHaveLength(1);

@@ -38,7 +38,7 @@ import {
 } from "./contract.ts";
 
 function response(status: number, body: unknown, allowOrigin: string | null): Response {
-  const headers = new Headers({ "content-type": "application/json" });
+  const headers = new Headers({ "content-type": "application/json", "cache-control": "no-store", "vary": "Origin" });
   // Only ever the configured origin, and only when there was a cross-origin conversation to have.
   if (allowOrigin) headers.set("access-control-allow-origin", allowOrigin);
   return new Response(JSON.stringify(body), { status, headers });
@@ -49,14 +49,17 @@ function failure(outcome: { status: number; message: string }, allowOrigin: stri
 }
 
 Deno.serve(async (request: Request) => {
-  const configured = Deno.env.get("ALLOWED_APP_ORIGIN");
+  // The production origin is public configuration, not a credential. A fixed, exact-match
+  // fallback keeps account deletion available on the canonical Pages hostname before the
+  // dashboard secret is provisioned. Staging origins are rejected unless explicitly configured.
+  const configured = Deno.env.get("ALLOWED_APP_ORIGIN") ?? "https://dueweave.pages.dev";
   const origin = requestOriginFor(request.headers.get("origin"), configured);
   if ("status" in origin) return failure(origin, null);
 
   if (request.method === "OPTIONS") {
     const headers = new Headers({
       "access-control-allow-methods": "POST, OPTIONS",
-      "access-control-allow-headers": "authorization, content-type",
+      "access-control-allow-headers": "authorization, apikey, x-client-info, content-type, x-retry-count, traceparent, tracestate, baggage",
       "access-control-max-age": "600",
     });
     if (origin.origin) headers.set("access-control-allow-origin", origin.origin);
