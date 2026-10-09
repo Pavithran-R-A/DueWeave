@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { collectAllRows } from "./pagination";
 import type { PromiseRecord, PromiseSource } from "@/types/domain";
 import { isUuid } from "@/lib/request-id";
 import { promiseSourceToDatabase, toPromise, userFacingDataError } from "./supabase-adapters";
@@ -15,9 +16,10 @@ export interface CreatePromiseInput {
 
 export class SupabasePromiseRepository {
   async list() {
-    const { data, error } = await supabase.from("promises").select("id, receivable_id, sequence_no, promised_amount_paise, made_on, promised_date, source, note, status, created_at, resolved_at").order("created_at", { ascending: true });
-    if (error) throw new Error(userFacingDataError(error.message));
-    return (data ?? []).map((row) => toPromise(row));
+    const rows = await collectAllRows((from, to) => supabase.from("promises")
+      .select("id, receivable_id, sequence_no, promised_amount_paise, made_on, promised_date, source, note, status, created_at, resolved_at")
+      .order("created_at", { ascending: true }).order("id", { ascending: true }).range(from, to));
+    return rows.map((row) => toPromise(row));
   }
 
   async create(input: CreatePromiseInput): Promise<PromiseRecord> {

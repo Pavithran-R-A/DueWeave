@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { collectAllRows } from "./pagination";
 import type { Receivable } from "@/types/domain";
 import { toReceivable, userFacingDataError } from "./supabase-adapters";
 
@@ -26,9 +27,10 @@ export interface UpdateReceivableDetailsInput {
 
 export class SupabaseReceivableRepository {
   async list() {
-    const { data, error } = await supabase.from("receivables").select("id, client_id, label, invoice_ref, amount_due_paise, outstanding_paise, due_date, notes, status, created_at, updated_at").order("due_date", { ascending: true });
-    if (error) throw new Error(userFacingDataError(error.message, error.code));
-    return (data ?? []).map((row) => toReceivable(row));
+    const rows = await collectAllRows((from, to) => supabase.from("receivables")
+      .select("id, client_id, label, invoice_ref, amount_due_paise, outstanding_paise, due_date, notes, status, created_at, updated_at")
+      .order("due_date", { ascending: true }).order("id", { ascending: true }).range(from, to));
+    return rows.map((row) => toReceivable(row));
   }
 
   async createWithClient(input: CreateReceivableInput): Promise<Receivable> {

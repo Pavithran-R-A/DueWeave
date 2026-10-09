@@ -1,11 +1,13 @@
 import { supabase } from "@/lib/supabase";
+import { collectAllRows } from "./pagination";
 import { toActivity, userFacingDataError } from "./supabase-adapters";
 
 export class SupabaseActivityRepository {
   async list() {
-    const { data, error } = await supabase.from("activities").select("id, client_id, receivable_id, promise_id, type, occurred_at, note, amount_paise, metadata").order("occurred_at", { ascending: false });
-    if (error) throw new Error(userFacingDataError(error.message));
-    return (data ?? []).map((row) => toActivity(row));
+    const rows = await collectAllRows((from, to) => supabase.from("activities")
+      .select("id, client_id, receivable_id, promise_id, type, occurred_at, note, amount_paise, metadata")
+      .order("occurred_at", { ascending: false }).order("id", { ascending: true }).range(from, to));
+    return rows.map((row) => toActivity(row));
   }
 
   async recordContacted(receivableId: string, note = "Follow-up marked as contacted.") {

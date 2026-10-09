@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { collectAllRows } from "./pagination";
 import type { Client } from "@/types/domain";
 import { toClient, userFacingDataError } from "./supabase-adapters";
 
@@ -18,10 +19,11 @@ export interface UpdateClientInput extends CreateClientInput {
 }
 
 export class SupabaseClientRepository {
-  async list(): Promise<Client[]> {
-    const { data, error } = await supabase.from("clients").select("id, name, company, phone, email, notes, created_at, updated_at").is("archived_at", null).order("created_at", { ascending: false });
-    if (error) throw new Error(userFacingDataError(error.message, error.code));
-    return (data ?? []).map((row) => toClient(row));
+  async list() {
+    const rows = await collectAllRows((from, to) => supabase.from("clients")
+      .select("id, name, company, phone, email, notes, created_at, updated_at")
+      .is("archived_at", null).order("created_at", { ascending: false }).order("id", { ascending: true }).range(from, to));
+    return rows.map((row) => toClient(row));
   }
 
   async create(input: CreateClientInput): Promise<Client> {

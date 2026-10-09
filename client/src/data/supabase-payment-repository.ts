@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { collectAllRows } from "./pagination";
 import type { Payment, PaymentMethod } from "@/types/domain";
 import { isUuid } from "@/lib/request-id";
 import { paymentMethodToDatabase, toPayment, userFacingDataError } from "./supabase-adapters";
@@ -16,9 +17,10 @@ export interface RecordPaymentInput {
 
 export class SupabasePaymentRepository {
   async list() {
-    const { data, error } = await supabase.from("payments").select("id, receivable_id, amount_paise, paid_on, method, reference, created_at").order("paid_on", { ascending: false });
-    if (error) throw new Error(userFacingDataError(error.message));
-    return (data ?? []).map((row) => toPayment(row));
+    const rows = await collectAllRows((from, to) => supabase.from("payments")
+      .select("id, receivable_id, amount_paise, paid_on, method, reference, created_at")
+      .order("paid_on", { ascending: false }).order("id", { ascending: true }).range(from, to));
+    return rows.map((row) => toPayment(row));
   }
 
   async record(input: RecordPaymentInput): Promise<Payment> {
