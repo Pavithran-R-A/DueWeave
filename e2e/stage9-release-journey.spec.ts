@@ -203,7 +203,7 @@ test.describe("Stage 9 release journey, one fresh account end to end", () => {
 
   // One watcher spans the journey because one page does; draining keeps the failure
   // attached to the step that caused it instead of the whole narrative.
-  test.afterEach(({}, testInfo) => {
+  test.afterEach((_fixtures, testInfo) => {
     const problems = drainProblems(watch);
     if (testInfo.title === "account deletion is gated by exact confirmation and removes the last QA account") {
       // The test just permanently removed this user's Auth identity. The stale browser token's
