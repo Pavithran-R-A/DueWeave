@@ -203,8 +203,28 @@ test.describe("Stage 9 release journey, one fresh account end to end", () => {
 
   // One watcher spans the journey because one page does; draining keeps the failure
   // attached to the step that caused it instead of the whole narrative.
-  test.afterEach(() => {
-    expect(drainProblems(watch)).toEqual([]);
+  test.afterEach(({}, testInfo) => {
+    const problems = drainProblems(watch);
+    if (testInfo.title === "account deletion is gated by exact confirmation and removes the last QA account") {
+      // The test just permanently removed this user's Auth identity. The stale browser token's
+      // global /logout call can correctly be refused (403). The deliberate sign-in attempt with
+      // that deleted identity is also correctly refused (400). Both are positive evidence of
+      // account removal, not silent transport problems. Only these exact HTTP failure lines,
+      // for this one destructive test, may be discounted; all other page/console errors fail.
+      const expected = [
+        "console: Failed to load resource: the server responded with a status of 403 (Forbidden) [http://127.0.0.1:54321/auth/v1/logout?scope=global]",
+        "console: Failed to load resource: the server responded with a status of 400 (Bad Request) [http://127.0.0.1:54321/auth/v1/token?grant_type=password]",
+      ];
+      const unexpected: string[] = [];
+      for (const entry of problems) {
+        const index = expected.findIndex((message) => message === entry);
+        if (index === -1) unexpected.push(entry);
+        else expected.splice(index, 1); // no repeated/extra failing requests are tolerated
+      }
+      expect(unexpected).toEqual([]);
+      return;
+    }
+    expect(problems).toEqual([]);
   });
 
   test("a stranger signs up, names the workspace, and the name is on the account", async () => {

@@ -48,3 +48,44 @@ test("mobile login stays usable without horizontal overflow", async ({ page }) =
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 2);
   expect(overflow).toBe(false);
 });
+
+test("real hosted account-deletion CORS preflight accepts the production browser and rejects other origins", async ({ request }) => {
+  const endpoint = "https://ugzdqcytouwfdlcjujqv.supabase.co/functions/v1/delete-account";
+  const requestedHeaders = "authorization,apikey,x-client-info,content-type";
+  const allowed = await request.fetch(endpoint, {
+    method: "OPTIONS",
+    headers: {
+      Origin: "https://dueweave.pages.dev",
+      "Access-Control-Request-Method": "POST",
+      "Access-Control-Request-Headers": requestedHeaders,
+    },
+  });
+  expect(allowed.status(), "production browser preflight must reach the Edge Function").toBe(204);
+  expect(allowed.headers()["access-control-allow-origin"]).toBe("https://dueweave.pages.dev");
+  const configured = new Set((allowed.headers()["access-control-allow-headers"] ?? "").split(",").map((x) => x.trim().toLowerCase()));
+  for (const header of requestedHeaders.split(",")) expect(configured.has(header)).toBe(true);
+
+  const foreign = await request.fetch(endpoint, {
+    method: "OPTIONS",
+    headers: {
+      Origin: "https://unauthorized.example.invalid",
+      "Access-Control-Request-Method": "POST",
+      "Access-Control-Request-Headers": requestedHeaders,
+    },
+  });
+  expect(foreign.status()).toBe(403);
+  expect(foreign.headers()["access-control-allow-origin"]).toBeUndefined();
+});
+
+test("common mobile, tablet and desktop widths have no auth-page horizontal overflow", async ({ page }) => {
+  for (const width of [320, 360, 375, 390, 430, 768, 1024, 1280, 1366, 1536, 1920]) {
+    await page.setViewportSize({ width, height: width < 500 ? 844 : 900 });
+    await page.goto("/auth");
+    await expect(page.getByRole("button", { name: /sign in/i })).toBeVisible();
+    const metrics = await page.evaluate(() => ({
+      scrollWidth: document.documentElement.scrollWidth,
+      innerWidth: window.innerWidth,
+    }));
+    expect(metrics.scrollWidth, `Unexpected horizontal overflow at ${width}px viewport`).toBeLessThanOrEqual(metrics.innerWidth + 2);
+  }
+});
