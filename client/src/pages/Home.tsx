@@ -218,7 +218,14 @@ function App() {
     finally { endWrite(); }
   }
 
-  async function handleSignOut() { const result = await signOut(); if (result.error) feedback.error("Could not sign out", { description: result.error }); }
+  async function handleSignOut() {
+    try {
+      const result = await signOut();
+      if (result.error) feedback.error("Could not sign out", { description: result.error });
+    } catch {
+      feedback.error("Could not sign out", { description: "Check your connection and try again." });
+    }
+  }
 
   // Erasure is the one action here that cannot be undone, so it is the one write that is never retried
   // locally and never described before the endpoint has answered. `intact` and `partial` share a path
@@ -240,6 +247,8 @@ function App() {
         return;
       }
       setDeletionError(outcome.message);
+    } catch {
+      setDeletionError("DueWeave could not confirm account deletion. Try signing in again and check whether your account still exists before retrying.");
     } finally { endWrite(); }
   }
 
@@ -259,9 +268,13 @@ function App() {
   }
 
   async function sendRecoveryLink() {
-    const result = await resetPassword(user?.email ?? "");
-    if (result.error) feedback.error("Could not send the reset link", { description: result.error });
-    else feedback.success("Reset link sent", { description: "Open it in this browser to choose a new password." });
+    try {
+      const result = await resetPassword(user?.email ?? "");
+      if (result.error) feedback.error("Could not request a reset link", { description: result.error });
+      else feedback.success("Reset requested", { description: "If a recovery email arrives, open it in this browser to choose a new password." });
+    } catch {
+      feedback.error("Could not request a reset link", { description: "Check your connection and try again." });
+    }
   }
 
   // An export is a read followed by a local file: nothing here writes, and the
