@@ -90,28 +90,35 @@ export default function Auth() {
     if (nextErrors.name || nextErrors.email || nextErrors.password) return;
 
     setSubmitting(true);
+    try {
+      if (mode === "signUp") {
+        const signUpOutcome = await signUp(name, email, password);
+        if (signUpOutcome.status === "error") setError(signUpOutcome.error);
+        // A successful sign-in redirects through the authenticated session gate.
+        if (signUpOutcome.status === "confirmation-required") setUnconfirmedEmail(email.trim());
+        return;
+      }
 
-    if (mode === "signUp") {
-      const signUpOutcome = await signUp(name, email, password);
+      const result = mode === "forgot"
+        ? await resetPassword(email)
+        : mode === "update"
+          ? await updatePassword(password)
+          : await signIn(email, password);
+      if (result.error) {
+        setError(result.error);
+        return;
+      }
+      if (mode === "forgot") setNotice("If that email belongs to a DueWeave account, a reset link is on its way.");
+      if (mode === "update") {
+        setNotice("Your password has been updated. You can return to your ledger.");
+        window.setTimeout(() => navigate("/", { replace: true }), 900);
+      }
+    } catch {
+      // Offline/network exceptions are not Supabase AuthError responses. Without this catch the
+      // submit button stays permanently disabled and a retry requires reloading the whole page.
+      setError("DueWeave could not reach the sign-in service. Check your connection and try again.");
+    } finally {
       setSubmitting(false);
-      if (signUpOutcome.status === "error") setError(signUpOutcome.error);
-      // Nothing is claimed here when a session exists: the authenticated redirect
-      // effect above takes the person straight into workspace setup.
-      if (signUpOutcome.status === "confirmation-required") setUnconfirmedEmail(email.trim());
-      return;
-    }
-
-    const result = mode === "forgot" ? await resetPassword(email) : mode === "update" ? await updatePassword(password) : await signIn(email, password);
-    setSubmitting(false);
-    if (result.error) {
-      setError(result.error);
-      return;
-    }
-
-    if (mode === "forgot") setNotice("If that email belongs to a DueWeave account, a reset link is on its way.");
-    if (mode === "update") {
-      setNotice("Your password has been updated. You can return to your ledger.");
-      window.setTimeout(() => navigate("/", { replace: true }), 900);
     }
   }
 
