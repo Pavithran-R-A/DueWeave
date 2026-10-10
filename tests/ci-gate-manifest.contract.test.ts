@@ -97,6 +97,14 @@ describe("CI gate manifest", () => {
     }
   });
 
+  it("builds release artefacts with the same closed public-signup policy as Cloudflare", () => {
+    const buildStep = source.split("- name: Build the production bundle")[1]?.split("- name: Preserve deployable production bundle")[0];
+    expect(buildStep, "static job's deployable bundle build step was removed").toBeTruthy();
+    expect(buildStep).toMatch(/VITE_PUBLIC_SIGNUP_ENABLED:\s*["']false["']/);
+    // A committed production artefact must never silently enable a flow that the
+    // canonical hosted Pages configuration intentionally disables until SMTP works.
+  });
+
   it("runs every gate the release is defined to be", () => {
     const missing = gates
       .filter((gate) => !(gate in ciEquivalents))

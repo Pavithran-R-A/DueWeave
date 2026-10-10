@@ -47,6 +47,7 @@ jobs:
         env:
           VITE_SUPABASE_URL: https://ugzdqcytouwfdlcjujqv.supabase.co
           VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_K4Vj0A_c_t_OhKjBTt7EwA_g4OuQ-h4
+          VITE_PUBLIC_SIGNUP_ENABLED: "false"
         run: pnpm build
 
       - name: Preserve deployable production bundle
