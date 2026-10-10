@@ -4,7 +4,7 @@ name: Live production public smoke
 # Cloudflare deployment SHA must be verified separately before certifying an exact-head release.
 on:
   push:
-    branches: [release/consumer-live]
+    branches: [release/consumer-live, audit/browser-compat]
   workflow_dispatch:
 
 permissions:
