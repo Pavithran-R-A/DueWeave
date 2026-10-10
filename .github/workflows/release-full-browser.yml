@@ -4,7 +4,7 @@ name: Complete customer-browser regression
 # It must never receive production credentials or connect to the production database.
 on:
   push:
-    branches: [release/consumer-live]
+    branches: [release/consumer-live, audit/deep-release]
   workflow_dispatch:
 
 permissions:
