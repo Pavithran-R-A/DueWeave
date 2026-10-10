@@ -8,8 +8,11 @@ import { todayInIndia } from "@/lib/business-clock";
 describe("finance helpers", () => {
   it("formats paise as Indian rupee amounts", () => {
     expect(formatINR(1200000)).toBe("₹12,000");
-    expect(formatINR(1)).toBe("₹0");
-    expect(formatINR(125050)).toBe("₹1,251");
+    expect(formatINR(1)).toBe("₹0.01");
+    expect(formatINR(125050)).toBe("₹1,250.50");
+    expect(formatINR(100)).toBe("₹1");
+    expect(formatINR(125000)).toBe("₹1,250");
+    expect(formatINR(9999)).toBe("₹99.99");
   });
 
   it("returns a database-compatible India calendar date for live records", () => {

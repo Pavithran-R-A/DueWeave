@@ -33,7 +33,15 @@ export function formatINR(amountPaise: number, compact = false) {
     const lakh = amount / 100000;
     return `₹${lakh.toFixed(lakh % 1 === 0 ? 0 : 1)}L`;
   }
-  return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(amount);
+  // Exact money must never be rounded to whole rupees in a financial ledger.
+  // Keep clean whole-rupee amounts compact, but always show both paise digits
+  // whenever any paise remain (₹0.01 is not ₹0; ₹1,250.50 is not ₹1,251).
+  const hasPaise = amountPaise % 100 !== 0;
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency", currency: "INR",
+    minimumFractionDigits: hasPaise ? 2 : 0,
+    maximumFractionDigits: hasPaise ? 2 : 0,
+  }).format(amount);
 }
 
 export function formatDate(value: string, options: Intl.DateTimeFormatOptions = { day: "numeric", month: "short" }) {

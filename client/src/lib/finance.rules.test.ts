@@ -99,6 +99,9 @@ describe("integer paise parsing", () => {
 describe("rupee display", () => {
   it("groups lakhs the Indian way", () => {
     expect(formatINR(1250000)).toBe("₹12,500");
+    expect(formatINR(1)).toBe("₹0.01");
+    expect(formatINR(101)).toBe("₹1.01");
+    expect(formatINR(125050)).toBe("₹1,250.50");
     expect(formatINR(9900000)).toBe("₹99,000");
     expect(formatINR(12500000)).toBe("₹1,25,000");
   });
