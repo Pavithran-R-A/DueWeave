@@ -11,15 +11,29 @@ export function useSupabaseAuth() {
 
   useEffect(() => {
     let active = true;
+    let authEventReceived = false;
 
-    supabase.auth.getSession().then(({ data }) => {
-      if (!active) return;
-      setSession(data.session);
-      setUser(data.session?.user ?? null);
-      setLoading(false);
-    });
+    // An offline first visit can reject getSession(). Without a rejection path, the
+    // whole application remains on "Opening your private ledger…" indefinitely.
+    // A newer auth-state event always wins over a late session lookup.
+    void supabase.auth.getSession()
+      .then(({ data }) => {
+        if (!active || authEventReceived) return;
+        setSession(data.session);
+        setUser(data.session?.user ?? null);
+        setLoading(false);
+      })
+      .catch(() => {
+        if (!active || authEventReceived) return;
+        // Fail closed; the sign-in page can now show its network-retry message.
+        setSession(null);
+        setUser(null);
+        setLoading(false);
+      });
 
     const { data: subscription } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      if (!active) return;
+      authEventReceived = true;
       setSession(nextSession);
       setUser(nextSession?.user ?? null);
       setLoading(false);

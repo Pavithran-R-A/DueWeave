@@ -1,0 +1,49 @@
+name: Complete customer-browser regression
+# Unlike the release-critical smoke suite, this runs the entire local Playwright battery
+# (all stages and configured flags, one worker against a fresh disposable Supabase stack).
+# It must never receive production credentials or connect to the production database.
+on:
+  push:
+    branches: [release/consumer-live]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: full-browser-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  all-customer-journeys:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 85
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: ./.github/actions/setup-toolchain
+      - uses: ./.github/actions/local-supabase
+
+      - name: Serve local account erasure endpoint
+        run: node scripts/local-functions-serve.mjs start
+
+      - name: Install Chromium and system dependencies
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Build against disposable local Supabase
+        run: pnpm build
+
+      - name: Run ALL configured customer journeys (record legitimate skips explicitly)
+        run: pnpm verify:e2e:local
+
+      - name: Check test evidence for secrets
+        if: ${{ always() }}
+        run: |
+          if [ -d test-results ]; then node scripts/verify-secrets.mjs --dir test-results; fi
+          if [ -d playwright-report ]; then node scripts/verify-secrets.mjs --dir playwright-report; fi
+
+      - name: Stop only this checkout's erasure function
+        if: ${{ always() }}
+        run: node scripts/local-functions-serve.mjs stop
+
+      - uses: ./.github/actions/release-local-ci-state
+        if: ${{ always() }}
