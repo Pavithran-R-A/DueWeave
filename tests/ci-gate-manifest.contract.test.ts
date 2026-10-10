@@ -105,6 +105,15 @@ describe("CI gate manifest", () => {
     // canonical hosted Pages configuration intentionally disables until SMTP works.
   });
 
+  it("executes production public acceptance in three browser engines", () => {
+    const browserConfig = readFileSync(path.join(projectRoot, "playwright.live-public.config.ts"), "utf8");
+    const publicWorkflow = readFileSync(path.join(projectRoot, ".github", "workflows", "live-public.yml"), "utf8");
+    for (const name of ["chromium", "firefox", "webkit"]) {
+      expect(browserConfig, `missing live public browser project ${name}`).toContain(`name: "${name}"`);
+      expect(publicWorkflow, `runner does not install ${name}`).toContain("chromium firefox webkit");
+    }
+  });
+
   it("runs every gate the release is defined to be", () => {
     const missing = gates
       .filter((gate) => !(gate in ciEquivalents))
