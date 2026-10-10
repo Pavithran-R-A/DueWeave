@@ -45,6 +45,7 @@ export default function Auth() {
   // Keep the existing-user sign-in operational while the public email-confirmation sender is
   // not production-qualified. Local/dev builds retain signup to exercise the complete journey.
   const publicSignUpEnabled = import.meta.env.VITE_PUBLIC_SIGNUP_ENABLED !== "false";
+  const authEmailEnabled = import.meta.env.VITE_AUTH_EMAIL_ENABLED !== "false";
   const content = useMemo(() => copyFor(mode), [mode]);
   // Three of these four screens collect nothing. Which one a visitor gets is decided
   // by what the server actually returned, never by which button they last pressed.
@@ -91,6 +92,11 @@ export default function Auth() {
     const nextErrors = validateAuthFields(mode, { name, email, password });
     setFieldErrors(nextErrors);
     if (nextErrors.name || nextErrors.email || nextErrors.password) return;
+
+    if (mode === "forgot" && !authEmailEnabled) {
+      setError("Password recovery email is temporarily unavailable. No reset link has been sent.");
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -158,7 +164,7 @@ export default function Auth() {
           </OutcomePanel>}
 
           {outcome === "no-recovery-session" && <OutcomePanel eyebrow="Account recovery" title="This recovery link is not active." body="For your security, a new password can only be set from the private link DueWeave emails you, opened in this browser. This page has no recovery session, so nothing here could change your password.">
-            <button type="button" className="button-primary auth-submit" onClick={() => changeMode("forgot")}>Request a new reset link<ArrowRight size={16} /></button>
+            {authEmailEnabled ? <button type="button" className="button-primary auth-submit" onClick={() => changeMode("forgot")}>Request a new reset link<ArrowRight size={16} /></button> : <p role="status" className="auth-outcome__note">Password recovery emails are temporarily unavailable. No reset request can be sent right now.</p>}
             <p className="auth-actions auth-actions--single"><button type="button" className="text-button" onClick={goToSignIn}>Back to sign in</button></p>
           </OutcomePanel>}
 
@@ -191,7 +197,7 @@ export default function Auth() {
               <button className="button-primary auth-submit" disabled={submitting} type="submit">{submitting ? <><Loader2 className="spin" size={17} />Please wait</> : <>{content.submit}<ArrowRight size={16} /></>}</button>
             </form>
 
-            {mode === "signIn" && <div className="auth-actions"><button type="button" className="text-button" onClick={() => changeMode("forgot")}>Forgot password?</button><p>{publicSignUpEnabled ? <>New to DueWeave? <button type="button" className="text-button" onClick={() => changeMode("signUp")}>Create an account</button></> : <span role="status">New registrations are temporarily paused while we finish secure confirmation-email delivery.</span>}</p></div>}
+            {mode === "signIn" && <div className="auth-actions">{authEmailEnabled ? <button type="button" className="text-button" onClick={() => changeMode("forgot")}>Forgot password?</button> : <span role="status">Password recovery emails are temporarily unavailable.</span>}<p>{publicSignUpEnabled ? <>New to DueWeave? <button type="button" className="text-button" onClick={() => changeMode("signUp")}>Create an account</button></> : <span role="status">New registrations are temporarily paused while we finish secure confirmation-email delivery.</span>}</p></div>}
             {mode === "signUp" && <p className="auth-actions auth-actions--single">Already have an account? <button type="button" className="text-button" onClick={() => changeMode("signIn")}>Sign in</button></p>}
           </>}
 

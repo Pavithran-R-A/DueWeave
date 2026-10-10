@@ -23,8 +23,8 @@ test("unqualified public signup is accurately gated without affecting existing-u
   await expect(page.getByRole("button", { name: /sign in/i })).toBeVisible();
   await expect(page.getByText(/new registrations are temporarily paused/i)).toBeVisible();
   await expect(page.getByRole("button", { name: /create an account/i })).toHaveCount(0);
-  await page.getByRole("button", { name: /forgot password/i }).click();
-  await expect(page.getByRole("heading", { name: /return to your ledger/i })).toBeVisible();
+  await expect(page.getByRole("button", { name: /forgot password/i })).toHaveCount(0);
+  await expect(page.getByText(/password recovery emails are temporarily unavailable/i)).toBeVisible();
   // No real email is sent by this smoke test.
 });
 
@@ -36,6 +36,7 @@ test("protected routes and unauthenticated recovery cannot reveal a ledger", asy
   }
   await page.goto("/auth/update-password");
   await expect(page.getByRole("heading", { name: /recovery link is not active/i })).toBeVisible();
+  await expect(page.getByRole("button", { name: /request a new reset link/i })).toHaveCount(0);
 });
 
 test("mobile login stays usable without horizontal overflow", async ({ page }) => {
