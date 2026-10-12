@@ -1105,6 +1105,46 @@ container started, stopped or pruned, no test weakened, no timeout or retry rais
 `--no-verify`, no force-push, no history rewrite, no `main` write, nothing from another product's
 configuration read or reused.
 
+### Addendum at the following head — the fourth closure: the first-run ledger, measured
+
+Row 6 covers the head `be6774c`. The pass did not stop at its own commit: the audit's
+`responsive-authenticated` row — "the six-width walk executes … but only for a **seeded** account, so
+the first-run empty-state dashboard has never been measured at 360/390/430/768/1024/1440" — names the
+screen every real new customer is actually handed first, so it was closed too.
+
+`e2e/stage6-local-responsive.spec.ts` gains a sibling describe, "Stage 6 first-run empty ledger", whose
+single test signs up an account through the product's own form, completes workspace setup, and then
+adds **nothing** — the walk is the empty state, not a fixture. The state it measures is read from the
+source rather than guessed: `client/src/pages/Home.tsx:307` is the branch that renders when
+`!state.receivables.length && active === "today"`, `client/src/components/finance-ui.tsx:108` derives
+`freshWorkspace = savedClients === 0` from which the card takes the sentence
+`Make the next conversation easier.`, and `finance-ui.tsx:36` shows the page header draws its own add
+control in every section. At each of the six widths, for each of the four sections, it asserts the
+heading's box is inside the viewport and that neither `documentElement` nor `body` scrolls past it
+(naming up to four offending elements when it does); on Today it additionally measures the empty-state
+card, its primary action (inside the width, at least the same 24 px target floor the seeded walk uses,
+and not below the fold), the client-first secondary action, and whichever navigation is drawn at that
+shape. `settle()` waits for running animations before every measurement, as it must, and the problem
+watch runs on the same page so a console error, an unanswered request or a React warning makes the
+journey red rather than merely noisy.
+
+**One assertion was deliberately not carried over.** The seeded walk requires *exactly one* drawn add
+affordance; the empty state legitimately draws three (the header's compact control, the card's primary
+`Add first receivable`, and `Add a client first` beneath it). Copying that assertion would have encoded
+a claim about a layout that does not exist, so the new test measures each of the three where it is
+drawn instead.
+
+**Which job executes it:** the `Complete customer-browser regression` job only — the same consumer as
+the rest of that file, since `pnpm test:e2e:smoke` does not list it — so its own green is the evidence,
+and it is reported from the run this head produces rather than asserted here in advance. Locally it
+passes `pnpm lint` (exit 0) and `pnpm check` (exit 0); like the other browser batteries it cannot be
+*executed* on this host (no container runtime, no matching Chromium), which is exactly why the gap it
+closes was still open.
+
+**No blocker ID moves here either.** This is coverage of a shipped screen, not a repair: nothing it
+asserts contradicts the current build, and if a future head ever breaks it, that head has a first-run
+layout defect at a phone width with a named offender.
+
 ## Remaining production blockers
 
 Ordered by what has to happen first. Each names the gate that proves it closed, so none of them can
