@@ -121,6 +121,13 @@ export default function Auth() {
       return;
     }
 
+    // The backstop, not the gate: no screen may open registration while the flag is off, and
+    // this line means that a future screen that does would still create nobody.
+    if (mode === "signUp" && !publicSignUpEnabled) {
+      setError("Registration is temporarily paused. No account has been created.");
+      return;
+    }
+
     setSubmitting(true);
     try {
       if (mode === "signUp") {
@@ -188,7 +195,7 @@ export default function Auth() {
             {authEmailEnabled ? <button type="button" className="button-secondary auth-resend" onClick={() => { void sendConfirmationAgain(); }} disabled={resending}>{resending ? <><Loader2 className="spin" size={16} />Please wait</> : <><RefreshCw size={16} />Send the confirmation email again</>}</button> : <p role="status" className="auth-outcome__note">Confirmation emails are temporarily unavailable.</p>}
             {resendNews && <p className="auth-message auth-message--notice" role="status"><CheckCircle2 size={16} />{resendNews}</p>}
             <button type="button" className="button-primary auth-submit" onClick={goToSignIn}>I have confirmed — sign in<ArrowRight size={16} /></button>
-            <p className="auth-actions auth-actions--single">Wrong address? <button type="button" className="text-button" onClick={() => { changeMode("signUp"); setEmail(""); }}>Start again with a different email</button></p>
+            {publicSignUpEnabled ? <p className="auth-actions auth-actions--single">Wrong address? <button type="button" className="text-button" onClick={() => { changeMode("signUp"); setEmail(""); }}>Start again with a different email</button></p> : <p role="status" className="auth-outcome__note">Registration is paused, so a different address cannot be started here.</p>}
           </OutcomePanel>}
 
           {outcome === "checking-recovery" && <OutcomePanel eyebrow="Account recovery" title="Checking your recovery link." body="DueWeave shows the password form only once this page holds a valid recovery session.">

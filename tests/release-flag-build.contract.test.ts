@@ -82,6 +82,27 @@ describe("every CI build states its release flags on purpose", () => {
       });
     expect(problems, `these builds would compile a bundle nobody chose:\n${problems.join("\n")}`).toEqual([]);
   });
+
+  // The paused-bundle browser gate is a fifth build, and it is not a workflow line: it lives in
+  // a script so that a laptop can run the same artifact CI does. Being outside `EXPECTED` would
+  // otherwise make it the one build nothing checks — and a runner that forgot a flag would inherit
+  // it from `.env.local` (where the local generator writes both as `true`) and gate a bundle with
+  // registration switched on while reporting that it had proved registration off.
+  it("states both flags off in the paused-bundle gate's own build", () => {
+    const runner = readFileSync(path.join(root, "scripts", "run-paused-e2e.mjs"), "utf8");
+    for (const flag of RELEASE_FLAG_NAMES) {
+      expect(
+        new RegExp(`^\\s+${flag}: "false",$`, "m").exec(runner),
+        `${flag} is not stated as "false" in the paused-bundle gate's build env`,
+      ).not.toBeNull();
+    }
+    // `--outDir` is what keeps this artifact separate from the `dist/` the enabled-state suites
+    // serve; a gate reading whichever build last wrote a shared directory proves nothing.
+    expect(runner, "the paused gate builds over the directory the enabled-state suites serve").toContain(
+      '"--outDir", "../dist-paused"',
+    );
+    expect(runner).toContain("playwright.paused-bundle.config.ts");
+  });
 });
 
 describe("the settings a developer and a reviewer can read", () => {

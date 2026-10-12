@@ -68,7 +68,11 @@ function runScripts(source: string): string[] {
 
 /** The loopback ports the release suites bind their servers to, read from the suites. */
 function suitePorts(): string[] {
-  return ["playwright.config.ts", "playwright.react-warnings.config.ts"].map((config) => {
+  return [
+    "playwright.config.ts",
+    "playwright.react-warnings.config.ts",
+    "playwright.paused-bundle.config.ts",
+  ].map((config) => {
     const text = readFileSync(path.join(projectRoot, config), "utf8");
     const port = /--port\s+(\d+)\s+--strictPort\s+--host\s+127\.0\.0\.1/.exec(text);
     expect(
@@ -116,7 +120,7 @@ describe("CI release-state cleanup scope (limitation 6)", () => {
   it("finds the sweep it is pinning, so an emptied file is not a pass", () => {
     expect(existsSync(actionPath), `${actionPath} is missing — the release state action was deleted`).toBe(true);
     expect(sweeps.length, "no port sweep parsed from the release-state path — the scan pattern is wrong").toBeGreaterThan(1);
-    expect(suitePorts(), "the two suites must bind two distinct ports").toHaveLength(new Set(suitePorts()).size);
+    expect(suitePorts(), "the release suites must each bind a distinct port").toHaveLength(new Set(suitePorts()).size);
   });
 
   // `supabase stop` is project-keyed because the CLI reads this checkout's project id; a

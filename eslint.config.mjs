@@ -30,7 +30,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["client/src/**/*.{ts,tsx}", "tests/**/*.{ts,tsx}", "e2e/**/*.{ts,tsx}", "vite.config.ts"],
+    files: ["client/src/**/*.{ts,tsx}", "tests/**/*.{ts,tsx}", "e2e/**/*.{ts,tsx}", "e2e-paused/**/*.{ts,tsx}", "vite.config.ts"],
     plugins: { "react-hooks": reactHooks },
     rules: {
       "no-console": ["error", { allow: ["warn", "error"] }],

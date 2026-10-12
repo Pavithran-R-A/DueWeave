@@ -22,7 +22,7 @@ runs:
     - name: Stop preview servers started from this workspace
       shell: bash
       run: |
-        for port in 3000 3100; do
+        for port in 3000 3100 3200; do
           for pid in $(ss -Htlnp "sport = :$port" 2>/dev/null | grep -oE 'pid=[0-9]+' | cut -d= -f2 | sort -u); do
             cwd=$(readlink "/proc/$pid/cwd" 2>/dev/null || true)
             if [ -n "$cwd" ] && [ "$cwd" = "$GITHUB_WORKSPACE" ]; then

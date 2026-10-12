@@ -44,6 +44,26 @@ describe("signup and recovery boundaries on the auth and settings screens", () =
     expect(home).toContain("authEmailEnabled ? <button className=\"settings-row\" onClick={onRecovery}>");
     expect(home).toContain("Send link");
   });
+
+  // The paused confirmation screen said registrations were paused in one sentence and opened the
+  // registration form in the button two nodes away. Measured on the artifact production serves:
+  // that click reached `POST /auth/v1/signup`, and the hosted project answers signups (`disable_signup`
+  // is false), so a build whose flag says "closed" created a user. `e2e-paused/release-flags.spec.ts`
+  // proves the fix in a browser; the pins below keep a later edit from re-welding the two states
+  // together, which is the failure this file exists for.
+  it("gates every way the auth screen opens registration on the signup flag", () => {
+    const doors = auth.split(/\r?\n/).filter((line) => line.includes('changeMode("signUp")'));
+    expect(doors.length, "no line in Auth.tsx switches into registration mode — the scan found nothing to gate").toBeGreaterThan(0);
+    for (const line of doors) {
+      expect(line, `a registration door is not gated by the flag: ${line.trim().slice(0, 90)}`).toContain("publicSignUpEnabled ?");
+    }
+    expect(auth).toContain("Registration is paused, so a different address cannot be started here.");
+  });
+
+  it("refuses a registration submit while the flag is off, whoever opened the form", () => {
+    expect(auth).toContain('mode === "signUp" && !publicSignUpEnabled');
+    expect(auth).toContain("No account has been created.");
+  });
 });
 
 // The confirmation screen is the one place a launch cannot recover from on its own: an email

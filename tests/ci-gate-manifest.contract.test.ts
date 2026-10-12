@@ -40,10 +40,15 @@ function releaseGateCommands(): string[] {
 
 function browserGateCommands(): string[] {
   // `verify:e2e:local` is the canonical *laptop* battery and CI is documented to run the
-  // release-critical subset instead, so the browser half names the two scripts CI must
+  // release-critical subset instead, so the browser half names the scripts CI must
   // launch — not their spec lists, so adding a journey to the smoke list cannot quietly
   // change what this contract checks.
-  return ["pnpm test:e2e:smoke", "pnpm test:e2e:react-warnings"];
+  //
+  // The third one is the paused bundle: the two above it compile with both release flags ON,
+  // so nothing in the set above would notice a build that opened registration on a public
+  // flag CI means to keep off. `pnpm test:e2e:paused` builds its own flags-off artifact and
+  // clicks it, which is the half of the launch that only a closed build can prove.
+  return ["pnpm test:e2e:smoke", "pnpm test:e2e:react-warnings", "pnpm test:e2e:paused"];
 }
 
 // One entry per gate CI cannot run verbatim, with the reason. A gate listed here that CI
@@ -109,7 +114,7 @@ describe("CI gate manifest", () => {
     const browser = jobSource(source, "browser");
     expect(browser, "ci.yml has no `browser` job").not.toBe("");
     const browserCommands = runCommands(browser);
-    for (const gate of ["pnpm test:e2e:smoke", "pnpm test:e2e:react-warnings"]) {
+    for (const gate of ["pnpm test:e2e:smoke", "pnpm test:e2e:react-warnings", "pnpm test:e2e:paused"]) {
       expect(browserCommands, `the browser job never runs ${gate}`).toContain(gate);
     }
     // The order carries the proof: the warning suite drives `vite dev`, whose first paint
@@ -126,7 +131,11 @@ describe("CI gate manifest", () => {
     // PHASE 17: retries are the one way a correctness gate turns into a flake counter.
     const retryFlags = commands.filter((command) => /--retries\b|retry-failed/.test(command));
     expect(retryFlags, `CI retries browser runs, which hides the failure the gate exists to find: ${retryFlags.join(", ")}`).toEqual([]);
-    for (const config of ["playwright.config.ts", "playwright.react-warnings.config.ts"]) {
+    for (const config of [
+      "playwright.config.ts",
+      "playwright.react-warnings.config.ts",
+      "playwright.paused-bundle.config.ts",
+    ]) {
       const text = readFileSync(path.join(projectRoot, config), "utf8");
       expect(text, `${config} does not pin \`retries: 0\``).toMatch(/retries:\s*0/);
     }
@@ -148,7 +157,11 @@ describe("CI gate manifest", () => {
     );
     // `test-results` is Playwright's default output directory; a config that moved it would
     // leave the scan pointing at a folder nothing writes.
-    for (const config of ["playwright.config.ts", "playwright.react-warnings.config.ts"]) {
+    for (const config of [
+      "playwright.config.ts",
+      "playwright.react-warnings.config.ts",
+      "playwright.paused-bundle.config.ts",
+    ]) {
       const text = readFileSync(path.join(projectRoot, config), "utf8");
       expect(text, `${config} moves outputDir away from the directory CI scans`).not.toMatch(/outputDir:/);
       expect(text, `${config} never writes playwright-report, so CI's scan and upload name a phantom`).toMatch(

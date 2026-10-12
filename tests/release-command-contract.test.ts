@@ -55,6 +55,10 @@ describe("Stage 9 release command composition", () => {
     // and the class-C/class-D skips above are exactly what such a typo produces.
     const linted = scripts.lint.split(/\s+/).filter((token) => !token.startsWith("-"));
     expect(linted, `pnpm lint covers ${linted.join(", ")}`).toContain("scripts");
+    // The paused-bundle gate is a second browser directory, and a directory ESLint never
+    // opens is a suite whose mistakes only a Playwright run would find — one run per 14 s
+    // instead of one lint per edit.
+    expect(linted, "pnpm lint never opens e2e-paused/, so the paused gate is unlinted").toContain("e2e-paused");
   });
 });
 

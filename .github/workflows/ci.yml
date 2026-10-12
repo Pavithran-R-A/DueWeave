@@ -163,7 +163,8 @@ jobs:
       # A persistent host has no fresh filesystem between runs, so the state a cancelled
       # or failed job leaves behind has to be cleared explicitly. Scoped to DueWeave and
       # to this checkout: only processes whose working directory is inside this workspace
-      # are touched, and only this checkout's two preview ports. Never a global `docker
+      # are touched, and only this checkout's three preview ports (the release journeys,
+      # the React-warning dev server, the paused bundle). Never a global `docker
       # system prune` — this machine runs other projects' containers too.
       - name: Serve the delete-account Edge Function for real browser erasure QA
         run: node scripts/local-functions-serve.mjs start
@@ -171,7 +172,7 @@ jobs:
       - name: Clear servers and reports a previous DueWeave job left behind
         shell: bash
         run: |
-          for port in 3000 3100; do
+          for port in 3000 3100 3200; do
             for pid in $(ss -Htlnp "sport = :$port" 2>/dev/null | grep -oE 'pid=[0-9]+' | cut -d= -f2 | sort -u); do
               cwd=$(readlink "/proc/$pid/cwd" 2>/dev/null || true)
               if [ -n "$cwd" ] && [ "$cwd" = "$GITHUB_WORKSPACE" ]; then
@@ -205,6 +206,20 @@ jobs:
       # cannot drift into claiming different coverage.
       - name: Release journeys
         run: pnpm test:e2e:smoke
+
+      # Everything above this line compiles with both release flags ON, so nothing in the
+      # battery above can notice a build that opened registration on a flag production keeps
+      # off. This step builds its own flags-off artifact into `dist-paused/` and clicks it in a
+      # real browser: the confirmation screen must state that registration is paused and offer
+      # no control that opens the form. A bundle-string census could not prove that — the
+      # registration markup is present in the paused artifact behind a runtime conditional, which
+      # is exactly how the shipped bundle came to reach `POST /auth/v1/signup` from a screen whose
+      # own copy said "New registrations are temporarily paused". The gate needs no local stack
+      # (every auth request is intercepted and any request that leaves loopback fails the run), so
+      # it runs between the two stack-driven gates without borrowing their state.
+      # Measured locally: 2 passed (14.3s).
+      - name: Paused bundle release flag gate
+        run: pnpm test:e2e:paused
 
       # PHASE 16's rule — a release journey that logs a console error, an uncaught error,
       # an unanswered request or a React warning is a failed journey — is enforced by the
