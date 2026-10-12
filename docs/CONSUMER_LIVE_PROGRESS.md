@@ -1123,8 +1123,14 @@ control in every section. At each of the six widths, for each of the four sectio
 heading's box is inside the viewport and that neither `documentElement` nor `body` scrolls past it
 (naming up to four offending elements when it does); on Today it additionally measures the empty-state
 card, its primary action (inside the width, at least the same 24 px target floor the seeded walk uses,
-and not below the fold), the client-first secondary action, and whichever navigation is drawn at that
-shape. `settle()` waits for running animations before every measurement, as it must, and the problem
+and vertically inside the card that draws it), the client-first secondary action (inside the width, with
+the same 24 px floor), and whichever navigation is drawn at that shape. The first draft of that test
+pinned the primary action's `bottom` to `viewportHeight` instead — a "not below the fold" claim — and
+that assertion was replaced before the test ever executed, because a page-level empty state on an
+800 px phone is allowed to be scrolled to and an action that needs one scroll is not a defect, whereas
+an action that has escaped its own card's box is. The fold claim belongs to the seeded walk above, where
+the sheet is `aria-modal` and its footer genuinely has to be on screen
+(`e2e/stage6-local-responsive.spec.ts:237-242`). `settle()` waits for running animations before every measurement, as it must, and the problem
 watch runs on the same page so a console error, an unanswered request or a React warning makes the
 journey red rather than merely noisy.
 
