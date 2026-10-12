@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { friendlyAuthError, interpretResendResponse, interpretSignInResponse, interpretSignUpResponse } from "@/lib/auth-outcome";
 import type { AuthFlowOutcome, AuthResult, ResendOutcome } from "@/lib/auth-outcome";
 import { supabase } from "@/lib/supabase";
+import { confirmationRedirectUrl } from "@/lib/auth-redirect";
 
 export function useSupabaseAuth() {
   const [session, setSession] = useState<Session | null>(null);
@@ -54,15 +55,22 @@ export function useSupabaseAuth() {
     const response = await supabase.auth.signUp({
       email: email.trim(),
       password,
-      options: { data: { display_name: displayName.trim() } },
+      options: {
+        data: { display_name: displayName.trim() },
+        emailRedirectTo: confirmationRedirectUrl(window.location.origin),
+      },
     });
     return interpretSignUpResponse(response);
   }, []);
 
-  // No redirect option: the resent link has to be built the same way the original sign-up
-  // link is, which is the hosted Site URL's job, not this screen's.
+  // A resent link is the same promise as the first one, so it has to carry the same
+  // destination; leaving it out would send the second message to the hosted Site URL.
   const resendConfirmation = useCallback(async (email: string): Promise<ResendOutcome> => {
-    return interpretResendResponse(await supabase.auth.resend({ type: "signup", email: email.trim() }));
+    return interpretResendResponse(await supabase.auth.resend({
+      type: "signup",
+      email: email.trim(),
+      options: { emailRedirectTo: confirmationRedirectUrl(window.location.origin) },
+    }));
   }, []);
 
   const signOut = useCallback(async (): Promise<AuthResult> => {

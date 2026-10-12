@@ -20,6 +20,13 @@ additional_redirect_urls = [
   "http://localhost:3000",
   "http://127.0.0.1:3000/auth/update-password",
   "http://localhost:3000/auth/update-password",
+  # The confirmation link names its own destination (client/src/lib/auth-redirect.ts) rather
+  # than trusting `site_url`, so the local stack has to accept that destination or it would
+  # silently substitute the Site URL — the exact failure a delivered production message
+  # showed on 2026-10-12. Both host spellings are listed because the browser is served on
+  # 127.0.0.1 while a person may open the link as localhost.
+  "http://127.0.0.1:3000/auth",
+  "http://localhost:3000/auth",
 ]
 enable_signup = true
 

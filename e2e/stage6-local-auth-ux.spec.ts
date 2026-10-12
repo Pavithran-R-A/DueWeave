@@ -5,8 +5,10 @@ import { completeWorkspaceSetup } from "./workspace-setup";
 // Everything here runs against the repository's own local Supabase stack. Two
 // boundaries are stated rather than tested: local email confirmation is switched
 // off in supabase/config.toml (so the confirmation-required branch below is proven
-// against a captured provider response, not a hosted SMTP run), and the hosted Site
-// URL / allowed redirect URLs are Stage 10 work.
+// against a captured provider response, while the destination the app asks for is
+// asserted on the real outbound request), and whether the hosted Auth configuration
+// *accepts* that destination is only visible in a delivered message, which no
+// browser run on this repository can read.
 const localStackEnabled = process.env.STAGE6_LOCAL_E2E === "1";
 const inboxUrl = process.env.STAGE6_INBOX_URL ?? "http://127.0.0.1:54324";
 
@@ -70,7 +72,7 @@ test.describe("Stage 6 sign-up and sign-in honesty", () => {
     // Local Auth hands out a session immediately, so the hosted answer — a user with
     // no session — is supplied from a captured provider response. Nothing here fakes
     // a session: the point is that the screen must not act like one exists.
-    await page.route("**/auth/v1/signup", async (route) => {
+    await page.route("**/auth/v1/signup*", async (route) => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -128,7 +130,8 @@ test.describe("Stage 6 sign-up and sign-in honesty", () => {
     // an accepted request must be reported as accepted — never as delivered, because from
     // the browser there is no way to know which mailbox it landed in.
     let resendRequests = 0;
-    await page.route("**/auth/v1/signup", (route) => route.fulfill({
+    const resendTargets: (string | null)[] = [];
+    await page.route("**/auth/v1/signup*", (route) => route.fulfill({
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
@@ -149,6 +152,7 @@ test.describe("Stage 6 sign-up and sign-in honesty", () => {
     }));
     await page.route("**/auth/v1/resend*", (route) => {
       resendRequests += 1;
+      resendTargets.push(new URL(route.request().url()).searchParams.get("redirect_to"));
       return route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
     });
 
@@ -163,9 +167,32 @@ test.describe("Stage 6 sign-up and sign-in honesty", () => {
     await page.getByRole("button", { name: /Send the confirmation email again/ }).click();
     await expect(page.getByText(/cannot tell/i)).toBeVisible();
     expect(resendRequests).toBe(1);
+    // A resent link has to arrive no worse than the first one: it must name this site,
+    // because a request that names nothing gets the hosted Site URL substituted for it.
+    expect(resendTargets).toEqual([`${new URL(page.url()).origin}/auth`]);
     await expect(page.locator("body")).not.toContainText(/we have sent|email sent|successfully sent/i);
     await expect(page).toHaveURL(/\/auth$/);
     expect((await storageKeys(page)).filter((key) => key.startsWith("sb-"))).toEqual([]);
+  });
+
+  test("asks for a confirmation link that returns to the site the visitor is standing on", async ({ page }) => {
+    // The customer never sees this field, and it is the whole of the difference between a
+    // link that opens DueWeave and a link that opens a dead localhost port — measured in a
+    // confirmation message actually delivered from the deployed site on 2026-10-12, which
+    // named neither and so carried Auth's own Site URL.
+    const account = newAccount("link-target");
+    const signupRequest = page.waitForRequest((request) => new URL(request.url()).pathname.endsWith("/auth/v1/signup"));
+
+    await page.goto("/auth");
+    const origin = new URL(page.url()).origin;
+    await page.getByRole("button", { name: "Create an account" }).click();
+    await page.getByLabel("Your name").fill(account.displayName);
+    await page.getByLabel("Email address").fill(account.email);
+    await page.getByLabel("Password").fill(account.password);
+    await page.getByRole("button", { name: "Create my workspace" }).click();
+
+    const requested = new URL((await signupRequest).url());
+    expect(requested.searchParams.get("redirect_to")).toBe(`${origin}/auth`);
   });
 
   test("brings a sign-in attempt against an unconfirmed address to the same screen", async ({ page }) => {
@@ -199,7 +226,7 @@ test.describe("Stage 6 sign-up and sign-in honesty", () => {
     // could reach a customer. The local stack never refuses a well-formed address, so the
     // refusal is carried in from a captured provider reply; the screen's job is to translate
     // it, keep the form usable and invent no session.
-    await page.route("**/auth/v1/signup", async (route) => {
+    await page.route("**/auth/v1/signup*", async (route) => {
       await route.fulfill({
         status: 422,
         contentType: "application/json",

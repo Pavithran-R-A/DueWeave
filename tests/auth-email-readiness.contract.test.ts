@@ -53,7 +53,8 @@ describe("signup and recovery boundaries on the auth and settings screens", () =
 // screen — a fresh sign-up and a sign-in attempt against an address that is still unconfirmed.
 describe("the confirmation screen can be reached again and asked again", () => {
   it("asks the server to send the confirmation link again, from the same screen that reports the wait", () => {
-    expect(authHook).toContain('supabase.auth.resend({ type: "signup"');
+    expect(authHook).toContain("supabase.auth.resend({");
+    expect(authHook).toContain('type: "signup"');
     expect(authHook).toContain("interpretResendResponse");
     expect(auth).toContain("resendConfirmation");
     expect(auth).toContain("Send the confirmation email again");
@@ -76,5 +77,29 @@ describe("the confirmation screen can be reached again and asked again", () => {
   it("routes a sign-in against an unconfirmed address into the confirmation screen instead of a generic failure", () => {
     expect(authHook).toContain("interpretSignInResponse");
     expect(auth).toContain('signInOutcome.status === "confirmation-required"');
+  });
+});
+
+// A request that names no destination gets the hosted Site URL substituted for it, and a
+// delivered confirmation message measured on 2026-10-12 proved that the site had been
+// naming none. Both emails a customer can wait on are covered here: the first link and
+// the resent one, because a visitor who asks again must come back to the same place.
+describe("every email DueWeave asks for states where its link lands", () => {
+  it("builds that address from the origin the browser is on, not from a value written into this file", () => {
+    expect(authHook).toContain('import { confirmationRedirectUrl } from "@/lib/auth-redirect";');
+    expect(authHook).toContain("confirmationRedirectUrl(window.location.origin)");
+    expect(authHook).not.toMatch(/emailRedirectTo:\s*["'`]/);
+  });
+
+  it("states the destination on the sign-up request that produces the confirmation email", () => {
+    expect(authHook).toMatch(/options:\s*\{[^}]*emailRedirectTo:\s*confirmationRedirectUrl\(window\.location\.origin\)/s);
+  });
+
+  it("states the same destination on the resend, so a second link is no worse than the first", () => {
+    expect(authHook).toMatch(/auth\.resend\(\{[^}]*options:\s*\{[^}]*emailRedirectTo:\s*confirmationRedirectUrl\(window\.location\.origin\)/s);
+  });
+
+  it("keeps the recovery link on the recovery route it has always named", () => {
+    expect(authHook).toContain("redirectTo: `${window.location.origin}/auth/update-password`");
   });
 });
