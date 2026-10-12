@@ -231,9 +231,25 @@ stack shares this daemon) and free space rose on its own to `6,986,805,248` byte
 | F.8's measured ceiling | 4413 ms inside a full-suite run, 4.28 s with the file alone, and over Vitest's 5 s default once the other nine suites had just used the same Postgres. The file carries `{ timeout: 30_000, hookTimeout: 60_000 }` for that reason — a ceiling, not a retry: a wedged request still fails |
 | Browser smoke, React-warning gate, full E2E | **PARTLY EXECUTED.** `node scripts/run-e2e.mjs` over 5 of the 7 smoke specs (14:24:36Z→14:32:40Z): `47 passed / 1 failed / 10 did not run (8.0 m)`, `--workers=1`, `retries: 0`; the single red was the describe's shared console guard (`e2e/stage7-local-export.spec.ts:157`) receiving `net::ERR_NAME_NOT_RESOLVED` for the Google Fonts stylesheet `client/index.html:16-18` loads — the test body itself passed, including `:256`'s assertion that no Import/Restore/Delete-my-account affordance was invented beside the export files. Classified against the network rather than inherited: `getent hosts fonts.googleapis.com` and `curl` of the same URL answered (200) minutes later, and the file alone re-ran **13 passed (3.4 m)** — the failed test plus all 10 that had not run. **58 slots green across the two executions, 0 failed, 0 skipped.** `pnpm test:e2e:react-warnings` → **3 passed (43.8 s)**, exit 0. Still NOT executed: the two Stage 8 Founder specs (they shell to `docker exec`, which this host cannot give) and therefore the **complete** smoke gate — and **the erasure sheet has never been rendered in a browser**, so STEP 5's UX claims rest on source plus DOM-level tests |
 | CI at a Phase 3C head | **NOT RUN.** The commits are local. The runner is self-hosted on this same machine, and the Docker **CLI** stopped answering during the phase — `docker version` exit 124 at 25 s and again at 100 s, `docker ps` exit 124 at 40 s and 130 s, `docker version` inside WSL exit 124 at 20 s — while the already-running containers kept answering HTTP (a tokenless `POST /functions/v1/delete-account` still returned 401, and `node scripts/local-stack-check.mjs` was **exit 0** at 15:18Z). The retained proof that the CLI is the blocker is the battery's own fail-fast at **14:18:36Z: exit 1, 22 tests skipped**, ``docker exec` against supabase_db_dueweave did not answer within 30000 ms (ETIMEDOUT)`. Pushing now would buy a run whose container steps fail for that reason, so nothing was pushed and no CI pass is claimed. Nothing was restarted, killed or pruned to chase the daemon |
-| Production migration apply, Edge Function deploy, hosted Auth change | **NOT PERFORMED, by instruction.** This phase made no hosted write of any kind |
+| Production migration apply, Edge Function deploy, hosted Auth change | **NOT PERFORMED, by instruction.** This phase made no hosted write of any kind **(superseded 2026-10-11/12 by the owner's own promotion: migration 25 is applied to production and `delete-account` is deployed, version 2, with JWT verification enabled — a public probe answers Kong's `401 UNAUTHORIZED_NO_AUTH_HEADER` where a never-deployed function answers `404`. Read `docs/CONSUMER_LIVE_PROGRESS.md`, "Production re-verification at the released head `ea70052`", for the corrected status and for what B17 still lacks: one authenticated hosted deletion with its before/after census. Nothing in this design record changed: the mechanism, the four arming conditions and the B19 refusal are exactly what shipped)** |
 
 B17's verdict moves from "written, blocked" to **replayed and executed against a real Postgres and a
 real function runtime, not yet proven in CI and not deployed**. What still separates the row from
 closed: the browser half, the battery re-executed under the script-managed serve, the delivered SHA's
 own three-job green, and the owner's `db push` plus `functions deploy`.
+
+**Update 2026-10-12, at the released head `ea70052`.** Three of those four have since happened, and
+the record says so without rewriting the paragraph above: the erasure path now runs in CI on
+GitHub-hosted runners (`Complete customer-browser regression` `38045490861`, **174 passed / 8
+skipped**, whose `stage9-release-journey` case signs up, uses the ledger and then deletes its own
+account through the served `delete-account` function), the migration **is** pushed to production, and
+the function **is** deployed (version 2, `verify_jwt` on). B17 is nevertheless **not closed**, and the
+remaining distance is narrower than the list above suggested: no *authenticated, confirmed* account
+has yet completed the hosted erasure journey on the production project with a before/after row
+census, and this run could not create one — the Management API answers `401 Invalid access token`, no
+dashboard session is reachable, `mailer_autoconfirm = false` means a public signup cannot be
+confirmed without a mailbox, and an account that can neither be confirmed nor deleted is exactly the
+production residue this repository's cleanup discipline forbids. B19's hosted refusal is unverified
+for the same credential reason, not because nothing was deployed. Full measurements and the corrected
+blocker rows are in `docs/CONSUMER_LIVE_PROGRESS.md`, "Production re-verification at the released
+head `ea70052` (2026-10-12)".
