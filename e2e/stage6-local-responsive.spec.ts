@@ -278,3 +278,75 @@ test.describe("Stage 6 responsive measurement matrix", () => {
     expect(await context.pages().length).toBeGreaterThan(0);
   });
 });
+
+// The skip audit recorded that the six-width walk measured only a *seeded* account, so the screen a
+// brand-new customer is actually handed — the empty Today card, before any client or amount exists —
+// had never been measured at any width. This is that walk, on an account created here and left empty.
+test.describe("Stage 6 first-run empty ledger", () => {
+  test.skip(!localStackEnabled, "Set STAGE6_LOCAL_E2E=1 to run against the local Supabase stack.");
+  test.describe.configure({ timeout: 180_000 });
+
+  const fresh = {
+    email: `stage6empty-${suffix}e@dueweave.local`,
+    password: `Stage6empty!${suffix}aA`,
+    displayName: `Stage6 First-Run Owner ${suffix}`,
+    businessName: `Stage6 First-Run Studio ${suffix}`,
+  };
+
+  let watch: ProblemWatch;
+  test.beforeEach(async ({ page }) => {
+    watch = startProblemWatch(page);
+  });
+  test.afterEach(() => {
+    expect(problemsFound(watch)).toEqual([]);
+  });
+
+  test("keeps the screen a new customer first sees inside every width", async ({ page }) => {
+    await page.goto("/auth");
+    await page.getByRole("button", { name: "Create an account" }).click();
+    await page.getByLabel("Your name").fill(fresh.displayName);
+    await page.getByLabel("Email address").fill(fresh.email);
+    await page.getByLabel("Password").fill(fresh.password);
+    await page.getByRole("button", { name: "Create my workspace" }).click();
+    await completeWorkspaceSetup(page, fresh);
+    await awaitLedger(page);
+
+    for (const viewport of viewports) {
+      await page.setViewportSize({ width: viewport.width, height: viewport.height });
+      const label = `first run at ${viewport.name}px`;
+
+      for (const section of sections) {
+        await goTo(page, section.tab);
+        const heading = await measureBox(page, ".page-header h1");
+        expect(heading, `${label} / ${section.name}: the page lost its own heading`).not.toBeNull();
+        await expectWithinWidth(heading!, `${label} / ${section.name} heading`);
+        const overflow = await measureOverflow(page);
+        expect(overflow.scrollWidth, `${label} / ${section.name} overflows horizontally: ${overflow.offenders.join(", ")}`).toBeLessThanOrEqual(overflow.width + 1);
+      }
+
+      // The empty state carries the only two calls to action a new account has, so each is
+      // measured where it is drawn rather than assumed reachable because it exists.
+      await goTo(page, /^Today/);
+      await expect(page.getByRole("heading", { name: "Make the next conversation easier." })).toBeVisible();
+      const card = await measureBox(page, ".empty-state-card");
+      expect(card, `${label}: the first-run card is not drawn`).not.toBeNull();
+      await expectWithinWidth(card!, `${label} first-run card`);
+
+      const primary = await measureBox(page, ".empty-state-card button.button-primary");
+      expect(primary, `${label}: the card lost its primary action`).not.toBeNull();
+      await expectWithinWidth(primary!, `${label} primary action`);
+      expect(primary!.height, `${label}: the primary action is a ${(Math.min(primary!.width, primary!.height)).toFixed(0)}px touch target`).toBeGreaterThanOrEqual(24);
+      expect(primary!.bottom, `${label}: the primary action is below the screen`).toBeLessThanOrEqual(primary!.viewportHeight + 1);
+
+      const secondary = await measureBox(page, ".empty-state-actions button.button-secondary");
+      expect(secondary, `${label}: the card lost its client-first action`).not.toBeNull();
+      await expectWithinWidth(secondary!, `${label} client-first action`);
+      expect(secondary!.top, `${label}: the client-first action sits above the viewport`).toBeGreaterThanOrEqual(-1);
+
+      const nav = await measureBox(page, viewport.width <= 820 ? ".bottom-nav" : ".app-rail");
+      expect(nav, `${label}: no navigation is drawn`).not.toBeNull();
+      expect(nav!.height, `${label}: the navigation has no height`).toBeGreaterThan(0);
+      await expectWithinWidth(nav!, `${label} navigation`);
+    }
+  });
+});
