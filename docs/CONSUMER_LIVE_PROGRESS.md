@@ -1151,6 +1151,14 @@ closes was still open.
 asserts contradicts the current build, and if a future head ever breaks it, that head has a first-run
 layout defect at a phone width with a named offender.
 
+**Row 6's head is green.** `be6774c` = `be6774ccf15926932f96c6ede08a1e961599b0c8` was pushed first and
+its four `push`-triggered workflows were read back from the API at the head after it, all
+`completed / success`: `CI` `38195832649`, `Complete customer-browser regression` `38195832625`,
+`Live production public smoke` `38195832579`, `CodeQL security review` `38195832611`. So the Tab-order
+assertion `9a4214b` added is executed and green on CI, and this addendum's own test is being pushed with
+that evidence in hand rather than on top of an unfinished run — the branch was never pushed while a
+`cancel-in-progress` could have destroyed one.
+
 ## Remaining production blockers
 
 Ordered by what has to happen first. Each names the gate that proves it closed, so none of them can
