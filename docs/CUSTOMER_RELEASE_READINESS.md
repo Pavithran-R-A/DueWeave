@@ -43,6 +43,14 @@ Any later SHA must earn its own CI and deployment verification.
 4. **Account-deletion runtime:** Redeploy the updated `delete-account` source after exact-head
    gates. Test browser CORS preflight (including `apikey` and `x-client-info`) and the complete
    Auth-account removal, not just a transaction-scoped SQL simulation.
+   *Measured 2026-10-12, no credential used:* the function is deployed and answers from
+   `ap-south-1`; preflight from `https://dueweave.pages.dev` returns `204` with that exact origin and
+   `authorization, apikey, x-client-info, content-type, x-retry-count, traceparent, tracestate,
+   baggage` allowed, a foreign origin returns `403` with no allow-origin, a non-JWT bearer returns
+   `401 UNAUTHORIZED_INVALID_JWT_FORMAT` and a missing bearer returns the function's own
+   `401 Sign in before deleting your account.` The preflight half of this gate is therefore closed;
+   the complete Auth-account removal for one real signed-in customer, with its before/after row
+   census, is still open. See `docs/CONSUMER_LIVE_PROGRESS.md` row 8.
 5. **Founder monetization:** Production readiness deliberately reports `false`; no actual live
    UPI destination, approved support/refund/disclosures or reviewer allowlist. Do not collect or
    represent real Founder payments as enabled. Finish operator decisions and perform refund/manual
