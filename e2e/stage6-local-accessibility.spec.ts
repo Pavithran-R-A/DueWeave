@@ -341,6 +341,10 @@ test.describe("Stage 6 targeted accessibility qualification", () => {
     await emailInput.focus();
     await expect(emailInput).toBeFocused();
     await expect.poll(() => emailInput.evaluate((element) => getComputedStyle(element).boxShadow)).not.toBe("none");
+    // The field a person has to leave next, measured rather than assumed: the sign-in
+    // form's own order, so assistive technology reaches the secret before the button.
+    await page.keyboard.press("Tab");
+    await expect(page.getByLabel("Password")).toBeFocused();
     await expect
       .poll(() => page.evaluate(() => Number.parseFloat(getComputedStyle(document.body).transitionDuration) * 1000))
       .toBeLessThanOrEqual(0.001);
