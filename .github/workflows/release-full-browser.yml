@@ -29,7 +29,13 @@ jobs:
       - name: Install Chromium and system dependencies
         run: pnpm exec playwright install --with-deps chromium
 
+      # The whole battery clicks registration and password recovery, and the runner is
+      # persistent, so the two flags are stated on the step instead of inherited from a
+      # `.env.local` an earlier job happened to leave behind.
       - name: Build against disposable local Supabase
+        env:
+          VITE_PUBLIC_SIGNUP_ENABLED: "true"
+          VITE_AUTH_EMAIL_ENABLED: "true"
         run: pnpm build
 
       - name: Run ALL configured customer journeys (record legitimate skips explicitly)

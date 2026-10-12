@@ -43,10 +43,18 @@ jobs:
 
       # Before the tests: three contracts inspect the built bundle, and without a build
       # they report "skipped" while the job still goes green.
+      #
+      # The two release flags are stated because this bundle is the deployable artifact: a
+      # value left out of a build that inlines them is not a default, it is a product
+      # decision nobody made. `false` here mirrors what production currently serves, so the
+      # artifact this job preserves behaves like the deployment it describes. Flipping the
+      # hosted flags means flipping these two in the same commit.
       - name: Build the production bundle
         env:
           VITE_SUPABASE_URL: https://ugzdqcytouwfdlcjujqv.supabase.co
           VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_K4Vj0A_c_t_OhKjBTt7EwA_g4OuQ-h4
+          VITE_PUBLIC_SIGNUP_ENABLED: "false"
+          VITE_AUTH_EMAIL_ENABLED: "false"
         run: pnpm build
 
       - name: Preserve deployable production bundle
@@ -180,7 +188,13 @@ jobs:
       - name: Install the Chromium build the suite launches
         run: pnpm exec playwright install --with-deps chromium
 
+      # Stated here rather than inherited from `.env.local`: this runner is persistent, so a
+      # file left by an earlier job would otherwise decide what the journeys can reach. The
+      # local stack confirms email through a mail catcher, so the journeys need both flows.
       - name: Build the bundle the suite drives
+        env:
+          VITE_PUBLIC_SIGNUP_ENABLED: "true"
+          VITE_AUTH_EMAIL_ENABLED: "true"
         run: pnpm build
 
       # PHASE 17: CI runs the release-critical journeys — the Stage 9 fresh-account and

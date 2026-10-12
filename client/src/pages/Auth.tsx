@@ -4,6 +4,7 @@ import { useLocation } from "wouter";
 import { BRAND } from "@/config/brand";
 import { useSupabaseAuth } from "@/hooks/useSupabaseAuth";
 import { PASSWORD_MIN_LENGTH, noFieldErrors, validateAuthFields, type AuthFieldErrors, type AuthMode } from "@/lib/auth-validation";
+import { releaseFlagEnabled } from "@/lib/release-flags";
 
 function copyFor(mode: AuthMode) {
   if (mode === "signUp") return { eyebrow: "A calmer ledger starts here", title: "Keep the promise, not the pressure.", body: "Create your private workspace for the money you are waiting on.", submit: "Create my workspace" };
@@ -42,10 +43,10 @@ export default function Auth() {
   const [fieldErrors, setFieldErrors] = useState<AuthFieldErrors>(noFieldErrors);
   const [submitting, setSubmitting] = useState(false);
   const [unconfirmedEmail, setUnconfirmedEmail] = useState("");
-  // Keep the existing-user sign-in operational while the public email-confirmation sender is
-  // not production-qualified. Local/dev builds retain signup to exercise the complete journey.
-  const publicSignUpEnabled = import.meta.env.VITE_PUBLIC_SIGNUP_ENABLED !== "false";
-  const authEmailEnabled = import.meta.env.VITE_AUTH_EMAIL_ENABLED !== "false";
+  // A flow is offered only when a build states its flag as exactly "true"; an unstated flag
+  // is refused by `vite build` rather than compiled in as enabled. See `@/lib/release-flags`.
+  const publicSignUpEnabled = releaseFlagEnabled(import.meta.env.VITE_PUBLIC_SIGNUP_ENABLED);
+  const authEmailEnabled = releaseFlagEnabled(import.meta.env.VITE_AUTH_EMAIL_ENABLED);
   const content = useMemo(() => copyFor(mode), [mode]);
   // Three of these four screens collect nothing. Which one a visitor gets is decided
   // by what the server actually returned, never by which button they last pressed.
