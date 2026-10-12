@@ -122,6 +122,39 @@ test.describe("Stage 6 sign-up and sign-in honesty", () => {
     await expect(page.getByLabel("Email address")).toHaveValue("");
   });
 
+  test("answers a sign-up the provider itself rejects with one generic sentence", async ({ page }) => {
+    // The journey above covers the two no-error endings — a session and a wait. This is
+    // the third place a sign-up can end, and the only one where the server's own sentence
+    // could reach a customer. The local stack never refuses a well-formed address, so the
+    // refusal is carried in from a captured provider reply; the screen's job is to translate
+    // it, keep the form usable and invent no session.
+    await page.route("**/auth/v1/signup", async (route) => {
+      await route.fulfill({
+        status: 422,
+        contentType: "application/json",
+        body: JSON.stringify({
+          code: 422,
+          error_code: "over_signup_limit",
+          msg: "Signups not allowed for this instance",
+          error_msg: "Signups not allowed for this instance",
+        }),
+      });
+    });
+
+    await page.goto("/auth");
+    await page.getByRole("button", { name: "Create an account" }).click();
+    await page.getByLabel("Your name").fill("Rejected User");
+    await page.getByLabel("Email address").fill("rejected@dueweave.local");
+    await page.getByLabel("Password").fill("Provider-rejected!1");
+    await page.getByRole("button", { name: "Create my workspace" }).click();
+
+    await expect(page.getByRole("alert")).toHaveText("We could not complete that request. Please try again.");
+    await expect(page.locator("body")).not.toContainText(/Signups not allowed|error_code|over_signup_limit|PGRST|SQLSTATE/i);
+    await expect(page).toHaveURL(/\/auth$/);
+    expect((await storageKeys(page)).filter((key) => key.startsWith("sb-"))).toEqual([]);
+    await expect(page.getByRole("button", { name: "Create my workspace" })).toBeEnabled();
+  });
+
   test("refuses unusable sign-in input before bothering the server, and stays usable after", async ({ page }) => {
     const tokenRequests: string[] = [];
     page.on("request", (request) => {

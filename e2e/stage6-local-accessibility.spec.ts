@@ -214,6 +214,10 @@ test.describe("Stage 6 targeted accessibility qualification", () => {
     await opener.click();
     const sheet = page.getByRole("dialog", { name: "Add client" });
     await expect(sheet).toBeVisible();
+    // The walk below assumes a screen reader is confined to this sheet, and that only
+    // holds if the dialog actually announces itself as modal. Nothing else in the
+    // repository reads the attribute, so the claim is checked here where it matters.
+    await expect(sheet).toHaveAttribute("aria-modal", "true");
     await expect(sheet.getByLabel("Client name")).toBeFocused();
     const stop = await focusStop(page);
     expect(stop.name).toContain("Client name");
