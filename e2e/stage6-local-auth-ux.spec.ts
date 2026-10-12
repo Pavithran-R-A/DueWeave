@@ -122,6 +122,77 @@ test.describe("Stage 6 sign-up and sign-in honesty", () => {
     await expect(page.getByLabel("Email address")).toHaveValue("");
   });
 
+  test("gives a visitor whose confirmation email never arrived a way to ask again", async ({ page }) => {
+    // A lost confirmation email used to be a dead end: the screen said "check your spam",
+    // and signing up again met "already registered". GoTrue's /resend is the way out, and
+    // an accepted request must be reported as accepted — never as delivered, because from
+    // the browser there is no way to know which mailbox it landed in.
+    let resendRequests = 0;
+    await page.route("**/auth/v1/signup", (route) => route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: crypto.randomUUID(),
+        aud: "authenticated",
+        role: "authenticated",
+        email: "lost-email@dueweave.local",
+        phone: "",
+        confirmed_at: null,
+        confirmation_sent_at: new Date().toISOString(),
+        app_metadata: { provider: "email", providers: ["email"] },
+        user_metadata: { display_name: "Lost Email" },
+        identities: [],
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        is_anonymous: false,
+      }),
+    }));
+    await page.route("**/auth/v1/resend*", (route) => {
+      resendRequests += 1;
+      return route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+    });
+
+    await page.goto("/auth");
+    await page.getByRole("button", { name: "Create an account" }).click();
+    await page.getByLabel("Your name").fill("Lost Email");
+    await page.getByLabel("Email address").fill("lost-email@dueweave.local");
+    await page.getByLabel("Password").fill("Confirmation-required!1");
+    await page.getByRole("button", { name: "Create my workspace" }).click();
+    await expect(page.getByRole("heading", { name: "Confirm your email to open your ledger." })).toBeVisible();
+
+    await page.getByRole("button", { name: /Send the confirmation email again/ }).click();
+    await expect(page.getByText(/cannot tell/i)).toBeVisible();
+    expect(resendRequests).toBe(1);
+    await expect(page.locator("body")).not.toContainText(/we have sent|email sent|successfully sent/i);
+    await expect(page).toHaveURL(/\/auth$/);
+    expect((await storageKeys(page)).filter((key) => key.startsWith("sb-"))).toEqual([]);
+  });
+
+  test("brings a sign-in attempt against an unconfirmed address to the same screen", async ({ page }) => {
+    // Measured against production Auth on 2026-10-12: the password grant answers
+    // 400 `{"error_code":"email_not_confirmed","msg":"Email not confirmed"}`. The local
+    // stack autoconfirms, so the hosted answer is carried in as a captured reply. The
+    // screen's job is to turn that into the confirmation panel with the address filled in,
+    // rather than the generic sentence that used to swallow it.
+    await page.route("**/auth/v1/token?grant_type=password*", (route) => route.fulfill({
+      status: 400,
+      contentType: "application/json",
+      body: JSON.stringify({ code: 400, error_code: "email_not_confirmed", msg: "Email not confirmed" }),
+    }));
+
+    await page.goto("/auth");
+    await page.getByLabel("Email address").fill("still-unconfirmed@dueweave.local");
+    await page.getByLabel("Password").fill("Confirmation-required!1");
+    await page.getByRole("button", { name: "Sign in" }).click();
+
+    await expect(page.getByRole("heading", { name: "Confirm your email to open your ledger." })).toBeVisible();
+    await expect(page.getByText("still-unconfirmed@dueweave.local", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Send the confirmation email again/ })).toBeVisible();
+    await expect(page.locator('input[type="password"]')).toHaveCount(0);
+    await page.goto("/");
+    await expect(page).toHaveURL(/\/auth$/);
+  });
+
   test("answers a sign-up the provider itself rejects with one generic sentence", async ({ page }) => {
     // The journey above covers the two no-error endings — a session and a wait. This is
     // the third place a sign-up can end, and the only one where the server's own sentence

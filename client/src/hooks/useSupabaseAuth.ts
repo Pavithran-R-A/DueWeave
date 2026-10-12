@@ -1,7 +1,7 @@
 import type { Session, User } from "@supabase/supabase-js";
 import { useCallback, useEffect, useState } from "react";
-import { friendlyAuthError, interpretSignUpResponse } from "@/lib/auth-outcome";
-import type { AuthResult, SignUpOutcome } from "@/lib/auth-outcome";
+import { friendlyAuthError, interpretResendResponse, interpretSignInResponse, interpretSignUpResponse } from "@/lib/auth-outcome";
+import type { AuthFlowOutcome, AuthResult, ResendOutcome } from "@/lib/auth-outcome";
 import { supabase } from "@/lib/supabase";
 
 export function useSupabaseAuth() {
@@ -45,18 +45,24 @@ export function useSupabaseAuth() {
     };
   }, []);
 
-  const signIn = useCallback(async (email: string, password: string): Promise<AuthResult> => {
-    const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-    return error ? { error: friendlyAuthError(error.message) } : {};
+  const signIn = useCallback(async (email: string, password: string): Promise<AuthFlowOutcome> => {
+    const response = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+    return interpretSignInResponse(response);
   }, []);
 
-  const signUp = useCallback(async (displayName: string, email: string, password: string): Promise<SignUpOutcome> => {
+  const signUp = useCallback(async (displayName: string, email: string, password: string): Promise<AuthFlowOutcome> => {
     const response = await supabase.auth.signUp({
       email: email.trim(),
       password,
       options: { data: { display_name: displayName.trim() } },
     });
     return interpretSignUpResponse(response);
+  }, []);
+
+  // No redirect option: the resent link has to be built the same way the original sign-up
+  // link is, which is the hosted Site URL's job, not this screen's.
+  const resendConfirmation = useCallback(async (email: string): Promise<ResendOutcome> => {
+    return interpretResendResponse(await supabase.auth.resend({ type: "signup", email: email.trim() }));
   }, []);
 
   const signOut = useCallback(async (): Promise<AuthResult> => {
@@ -76,5 +82,5 @@ export function useSupabaseAuth() {
     return error ? { error: friendlyAuthError(error.message) } : {};
   }, []);
 
-  return { user, session, loading, isAuthenticated: Boolean(user), signIn, signUp, signOut, resetPassword, updatePassword };
+  return { user, session, loading, isAuthenticated: Boolean(user), signIn, signUp, signOut, resetPassword, updatePassword, resendConfirmation };
 }

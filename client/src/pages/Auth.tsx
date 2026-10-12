@@ -1,8 +1,9 @@
 import { FormEvent, useEffect, useMemo, useState, type ReactNode } from "react";
-import { ArrowLeft, ArrowRight, CheckCircle2, Loader2, LockKeyhole, Mail, ShieldCheck } from "lucide-react";
+import { ArrowLeft, ArrowRight, CheckCircle2, Loader2, LockKeyhole, Mail, RefreshCw, ShieldCheck } from "lucide-react";
 import { useLocation } from "wouter";
 import { BRAND } from "@/config/brand";
 import { useSupabaseAuth } from "@/hooks/useSupabaseAuth";
+import { RESEND_REQUESTED_COPY } from "@/lib/auth-outcome";
 import { PASSWORD_MIN_LENGTH, noFieldErrors, validateAuthFields, type AuthFieldErrors, type AuthMode } from "@/lib/auth-validation";
 import { releaseFlagEnabled } from "@/lib/release-flags";
 
@@ -32,7 +33,7 @@ function OutcomePanel({ eyebrow, title, body, children }: { eyebrow: string; tit
 
 export default function Auth() {
   const [location, navigate] = useLocation();
-  const { user, loading, signIn, signUp, resetPassword, updatePassword } = useSupabaseAuth();
+  const { user, loading, signIn, signUp, resetPassword, updatePassword, resendConfirmation } = useSupabaseAuth();
   const initialMode = location.includes("update-password") ? "update" : "signIn";
   const [mode, setMode] = useState<AuthMode>(initialMode);
   const [name, setName] = useState("");
@@ -43,6 +44,8 @@ export default function Auth() {
   const [fieldErrors, setFieldErrors] = useState<AuthFieldErrors>(noFieldErrors);
   const [submitting, setSubmitting] = useState(false);
   const [unconfirmedEmail, setUnconfirmedEmail] = useState("");
+  const [resending, setResending] = useState(false);
+  const [resendNews, setResendNews] = useState("");
   // A flow is offered only when a build states its flag as exactly "true"; an unstated flag
   // is refused by `vite build` rather than compiled in as enabled. See `@/lib/release-flags`.
   const publicSignUpEnabled = releaseFlagEnabled(import.meta.env.VITE_PUBLIC_SIGNUP_ENABLED);
@@ -75,6 +78,7 @@ export default function Auth() {
     setPassword("");
     setFieldErrors(noFieldErrors);
     setUnconfirmedEmail("");
+    setResendNews("");
   }
 
   function goToSignIn() {
@@ -84,6 +88,24 @@ export default function Auth() {
 
   function clearFieldError(field: keyof AuthFieldErrors) {
     setFieldErrors((current) => ({ ...current, [field]: "" }));
+  }
+
+  // The only thing this can honestly report is that the sender accepted the request. Whether
+  // the link reached an inbox is not something a browser can know, and saying otherwise is
+  // how a visitor ends up refreshing a screen forever.
+  async function sendConfirmationAgain() {
+    setResending(true);
+    setError("");
+    setResendNews("");
+    try {
+      const outcome = await resendConfirmation(unconfirmedEmail);
+      if (outcome.status === "requested") setResendNews(RESEND_REQUESTED_COPY);
+      else setError(outcome.error);
+    } catch {
+      setError("DueWeave could not reach the sign-in service. Check your connection and try again.");
+    } finally {
+      setResending(false);
+    }
   }
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -109,11 +131,18 @@ export default function Auth() {
         return;
       }
 
+      if (mode === "signIn") {
+        const signInOutcome = await signIn(email, password);
+        if (signInOutcome.status === "error") setError(signInOutcome.error);
+        // An address that exists but has not been confirmed is the same waiting as a fresh
+        // sign-up, so it gets the same screen — and the same way to ask for the link again.
+        if (signInOutcome.status === "confirmation-required") setUnconfirmedEmail(email.trim());
+        return;
+      }
+
       const result = mode === "forgot"
         ? await resetPassword(email)
-        : mode === "update"
-          ? await updatePassword(password)
-          : await signIn(email, password);
+        : await updatePassword(password);
       if (result.error) {
         setError(result.error);
         return;
@@ -156,6 +185,8 @@ export default function Auth() {
           {outcome === "confirm-email" && <OutcomePanel eyebrow="Almost there" title="Confirm your email to open your ledger." body="The account exists, but DueWeave has not opened your private ledger for it yet. Open the confirmation link we emailed you, then come back here to sign in.">
             <p className="auth-outcome__address"><Mail size={15} /><span>{unconfirmedEmail}</span></p>
             <p className="auth-outcome__note">If the email does not arrive within a few minutes, check your spam folder.</p>
+            {authEmailEnabled ? <button type="button" className="button-secondary auth-resend" onClick={() => { void sendConfirmationAgain(); }} disabled={resending}>{resending ? <><Loader2 className="spin" size={16} />Please wait</> : <><RefreshCw size={16} />Send the confirmation email again</>}</button> : <p role="status" className="auth-outcome__note">Confirmation emails are temporarily unavailable.</p>}
+            {resendNews && <p className="auth-message auth-message--notice" role="status"><CheckCircle2 size={16} />{resendNews}</p>}
             <button type="button" className="button-primary auth-submit" onClick={goToSignIn}>I have confirmed — sign in<ArrowRight size={16} /></button>
             <p className="auth-actions auth-actions--single">Wrong address? <button type="button" className="text-button" onClick={() => { changeMode("signUp"); setEmail(""); }}>Start again with a different email</button></p>
           </OutcomePanel>}
