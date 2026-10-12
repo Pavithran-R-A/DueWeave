@@ -18,7 +18,7 @@ Any later SHA must earn its own CI and deployment verification.
 | Mobile login form, signup form validation, forgot-password navigation, route guards, favicon and manifest | `e2e-live/public-release.spec.ts` on `https://dueweave.pages.dev`, no data created | Verified for tested paths, not signup delivery |
 | Database authorization, tenant separation and anonymous isolation | Hosted Phase 3B two-account isolation matrix; 13/13 public tables RLS-enabled; anon/PUBLIC routine EXECUTE zero | Verified for measured hosted matrix |
 | Monetary dates, receivable/promise/payment history, exports, Founder refusal behavior and customer journeys | Vitest, pgTAP, DB/live, and Playwright local-stack CI gates; consult exact-head run, not earlier counts | Locally gated; real hosted-browser acceptance outstanding |
-| User-owned account erasure with history | Production migration 25 and transaction-rollback database acceptance | Database side verified; live cross-origin browser erasure not yet proved |
+| User-owned account erasure with history | Production migration 25 and transaction-rollback database acceptance. **Amended 2026-10-12:** CI's `Browser release smoke` executes the destructive path end to end at every head — `e2e/stage9-release-journey.spec.ts:505` opens the sheet, requires the exact phrase, clicks delete through the served `delete-account` function (`.github/workflows/ci.yml:160`), lands on `/auth` and is then refused sign-in with the old credentials (`✓ 80 … (1.6s)` in run `38253358122`) — which is a real cross-origin browser erasure with real Auth removal, against the **local** stack rather than production | Browser side executed on the local stack; the same run against `ugzdqcytouwfdlcjujqv` with a before/after row census is still open |
 | Real hosted frontend source and Supabase config | Pages project production branch `release/consumer-live`, build `pnpm build`, output `dist`, active Supabase URL/publishable-key envs | Deployment state verified; exact-head certification required |
 | Full ledger and downloadable archive past PostgREST 1,000-row default limit | Page-by-page queries with stable order, unit tests for 1,201 rows and errors | Code+unit gated; full live large-data export outstanding |
 | Password and Auth network errors do not strand the form | Guarded `try/catch/finally` and friendly error responses | Code+static gate; adverse browser-network simulation outstanding |
@@ -48,9 +48,20 @@ Any later SHA must earn its own CI and deployment verification.
    `authorization, apikey, x-client-info, content-type, x-retry-count, traceparent, tracestate,
    baggage` allowed, a foreign origin returns `403` with no allow-origin, a non-JWT bearer returns
    `401 UNAUTHORIZED_INVALID_JWT_FORMAT` and a missing bearer returns the function's own
-   `401 Sign in before deleting your account.` The preflight half of this gate is therefore closed;
+   `401 Sign in before deleting your account.` The preflight half of this gate is therefore measured;
    the complete Auth-account removal for one real signed-in customer, with its before/after row
-   census, is still open. See `docs/CONSUMER_LIVE_PROGRESS.md` row 8.
+   census, is still open. That removal is **not** missing a mechanism: CI already runs it on the local
+   stack — `e2e/stage9-release-journey.spec.ts:505` deletes through the served function and proves the
+   old credentials are then refused (slot 80 of `Running 80 tests`, run `38253358122`) — so what this
+   gate lacks is the identical run against `ugzdqcytouwfdlcjujqv`, which needs a confirmed hosted
+   session. **Attribution:** the preflight pair was not discovered by that pass — it has
+   been asserted on production by `e2e-live/public-release.spec.ts:50` in the
+   `Live production public smoke` workflow on every push since the release line began; what that pass
+   added is the `POST`-level refusal ladder (`401` malformed bearer, `401` missing bearer, `400` wrong
+   body) **measured on the production host** — the same shapes are already asserted against the locally
+   served function by `tests/arc3c-local-account-erasure.test.ts:351-410` in CI, and no spec ever
+   `POST`s to `ugzdqcytouwfdlcjujqv`. See `docs/CONSUMER_LIVE_PROGRESS.md` row 8, including its own
+   correction paragraph.
 5. **Founder monetization:** Production readiness deliberately reports `false`; no actual live
    UPI destination, approved support/refund/disclosures or reviewer allowlist. Do not collect or
    represent real Founder payments as enabled. Finish operator decisions and perform refund/manual
