@@ -13,7 +13,12 @@ permissions:
 jobs:
   live-public:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    # The suite spends most of this waiting, on purpose: `playwright.live-public.config.ts` gives
+    # the site up to 15 minutes to stop being rebuilt before the first assertion runs, because
+    # measuring production on 2026-10-13 found a push taking 17 minutes to serve a byte-identical
+    # stylesheet. A rebuild that outlasts the wait fails with both builds' fingerprints rather
+    # than testing whichever artifact happened to be answering.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: ./.github/actions/setup-toolchain
