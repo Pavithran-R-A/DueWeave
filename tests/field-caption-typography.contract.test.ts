@@ -38,3 +38,27 @@ describe("a field's caption type belongs to its label, not to whatever span hold
     ).toContain('<label className="field"><span>');
   });
 });
+
+// The same measurement found the second half of the defect: with `button,input,textarea,select` set
+// to `font: inherit` off a 14px body, every text control types at 14px — under the 16px below which
+// iOS Safari zooms the page on focus. So the first thing a new customer does on a phone, signing in,
+// pushes the screen in and off again and can drop the field they were typing in. Two rules size the
+// app's text-entry controls (the shared `.form-input`, and the Founder payment form's bare inputs);
+// both have to state the threshold, or the one that does not is a leak.
+describe("a text control types large enough for iOS to leave the page alone", () => {
+  /** The declaration block of a rule, so a selector appearing inside another rule's list cannot pass. */
+  function ruleBody(css: string, selector: string) {
+    const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const match = css.match(new RegExp(`(?:^|[};])\\s*${escaped}\\s*\\{([^}]*)\\}`));
+    expect(match, `index.css no longer declares the ${selector} rule this gate reads`).not.toBeNull();
+    return match![1];
+  }
+
+  it.each([
+    { selector: ".form-input", because: "the shared input, textarea and select every sheet and form uses" },
+    { selector: ".founder-claim-form input,.admin-reason input", because: "the UTR and payer-name fields, typed on a phone after a UPI payment" },
+  ])("$selector carries $because and states 16px", ({ selector }) => {
+    const declarations = ruleBody(source("client", "src", "index.css"), selector);
+    expect(declarations, `${selector} must type at the iOS no-zoom threshold instead of inheriting the 14px body`).toContain("font-size:16px");
+  });
+});
