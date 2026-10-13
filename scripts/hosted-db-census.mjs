@@ -50,6 +50,32 @@ const OWNER_COLUMN = {
   receivables: "owner_id",
 };
 
+/** Every auth table that holds a `user_id`, read off the production catalog on 2026-10-13. Only
+ *  `identities` and `sessions` carry a foreign key to `auth.users`; `refresh_tokens` and `flow_state`
+ *  name an account with no foreign key behind it at all. Production then held 2 identities, 11
+ *  sessions and 11 refresh tokens whose account is gone, so the erasure proof has to count this
+ *  schema rather than assume the public-table purge is the whole of it. */
+const AUTH_ACCOUNT_TABLES = [
+  "flow_state", "identities", "mfa_factors", "mfa_recovery_code_sets", "oauth_authorizations",
+  "oauth_consents", "one_time_tokens", "refresh_tokens", "scim_users", "sessions",
+  "webauthn_challenges", "webauthn_credentials",
+];
+
+/** One row per auth table: how many rows it holds, how many name an account that no longer exists,
+ *  what the database itself would have done to those rows on a delete, and — when an account was
+ *  named — how many rows still name that account. */
+function authResidueSql(owner) {
+  return AUTH_ACCOUNT_TABLES.map((table) => {
+    const columns = [
+      `select '${table}' as auth_table, coalesce((select string_agg(c.confdeltype::text, ',' order by c.conname) from pg_constraint c where c.contype = 'f' and c.conrelid = 'auth.${table}'::regclass and c.confrelid = 'auth.users'::regclass), 'no foreign key') as fk_to_users`,
+      `(select count(*) from auth.${table}) as rows_total`,
+      `(select count(*) from auth.${table} a where a.user_id is not null and not exists (select 1 from auth.users u where u.id::text = a.user_id::text)) as rows_without_user`,
+    ];
+    if (owner) columns.push(`(select count(*) from auth.${table} a where a.user_id::text = '${owner}') as rows_for_owner`);
+    return columns.join(", ");
+  }).join(" union all ") + " order by 1";
+}
+
 const POSTURE = "with f as (select p.oid, p.prosecdef, coalesce(nullif(array_to_string(p.proconfig, ','), ''), '(none)') as config, pg_get_userbyid(p.proowner) as owner, has_function_privilege('anon', p.oid, 'execute') as anon_exec, has_function_privilege('authenticated', p.oid, 'execute') as auth_exec, has_function_privilege('service_role', p.oid, 'execute') as svc_exec from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public') select count(*) as routines, count(*) filter (where prosecdef) as security_definer, count(*) filter (where config like '%search_path%') as search_path_pinned, count(*) filter (where anon_exec) as anon_execute, count(*) filter (where svc_exec) as service_execute, count(*) filter (where owner <> 'postgres') as non_postgres_owner, count(*) filter (where prosecdef and config not like '%search_path%') as definer_unpinned from f";
 
 const ADVISOR = "select class.relname as table_name, attr.attname as column_name, con.conname as constraint_name from pg_class class join pg_constraint con on con.conrelid = class.oid join pg_namespace nsp on nsp.oid = class.relnamespace join pg_attribute attr on attr.attrelid = class.oid and attr.attnum = con.conkey[1] left join pg_index idx on idx.indrelid = class.oid and idx.indkey[0] = attr.attnum where con.contype = 'f' and idx.indkey is null and nsp.nspname = 'public' order by 1, 2";
@@ -61,6 +87,7 @@ function census(owner) {
       label: "auth-users",
       sql: "select (select count(*) from auth.users) as users_total, (select count(*) from auth.users where email_confirmed_at is not null) as confirmed, (select count(*) from auth.users where email_confirmed_at is null) as unconfirmed, (select count(*) from auth.users where is_sso_user) as sso_users, (select count(*) from auth.identities) as identities, (select count(*) from auth.sessions) as sessions, (select min(created_at) from auth.users) as oldest_user, (select max(created_at) from auth.users) as newest_user",
     },
+    { label: "auth-residue", sql: authResidueSql(owner) },
     {
       label: "ledger-census",
       sql: TABLES.map((table) => `select '${table}' as tbl, count(*) as rows from public.${table}`).join(" union all ") + " order by 2 desc, 1",

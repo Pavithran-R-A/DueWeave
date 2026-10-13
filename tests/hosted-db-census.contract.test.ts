@@ -73,6 +73,22 @@ function run(args: string[], env: Record<string, string>): Promise<{ code: numbe
 
 const WRITE_VERB = /\b(insert|update|delete|drop|alter|truncate|create|grant|revoke|vacuum|copy|call|do|listen|notify|refresh|reindex|set|reset)\b/i;
 
+/** Every auth table that holds a `user_id`, read off the production catalog on 2026-10-13. Only
+ *  `identities` and `sessions` carry a cascading foreign key to `auth.users`; `refresh_tokens` and
+ *  `flow_state` hold a `user_id` with no foreign key at all, so nothing removes their rows when an
+ *  account goes. */
+const AUTH_ACCOUNT_TABLES = [
+  "flow_state", "identities", "mfa_factors", "mfa_recovery_code_sets", "oauth_authorizations",
+  "oauth_consents", "one_time_tokens", "refresh_tokens", "scim_users", "sessions",
+  "webauthn_challenges", "webauthn_credentials",
+];
+
+/** The SQL the instrument would send for one labelled read, or the empty string if it offers none. */
+function statementFor(out: string, label: string): string {
+  const line = out.split("\n").find((entry) => entry.startsWith(`SQL ${label} `));
+  return line ? line.replace(`SQL ${label} `, "") : "";
+}
+
 /** The SQL the instrument would send, taken from its own `--dry-run` answer. */
 function statements(out: string): string[] {
   return out.split("\n").filter((line) => /^SQL\s/.test(line)).map((line) => line.replace(/^SQL\s+\S+\s+/, ""));
@@ -127,7 +143,7 @@ describe("hosted database census instrument", () => {
     expect(code).toBe(0);
     const labels = out.split("\n").filter((line) => /^READ\s/.test(line)).map((line) => line.split(/\s+/)[1]);
     expect(new Set(labels).size).toBe(labels.length);
-    for (const expected of ["auth-users", "ledger-census", "rls-coverage", "routine-posture", "unindexed-foreign-keys", "migration-ledger", "owner-census"]) {
+    for (const expected of ["auth-users", "auth-residue", "ledger-census", "rls-coverage", "routine-posture", "unindexed-foreign-keys", "migration-ledger", "owner-census"]) {
       expect(labels).toContain(expected);
     }
     expect(calls.length).toBe(labels.length);
@@ -139,9 +155,9 @@ describe("hosted database census instrument", () => {
 
   it("maps the per-account census onto exactly the tables the committed erasure deletes from", async () => {
     const { out } = await run(["--dry-run", "--owner", QA_OWNER], {});
-    const census = statements(out).find((statement) => /owner-census/.test(out) && statement.includes(QA_OWNER));
+    const census = statementFor(out, "owner-census");
     expect(census, "no per-account census statement was offered").toBeTruthy();
-    const instrumentPairs = [...census!.matchAll(/select '(\w+)' as tbl, count\(\*\)(?: as \w+)? from public\.\1 where (\w+) = '/g)]
+    const instrumentPairs = [...census.matchAll(/select '(\w+)' as tbl, count\(\*\)(?: as \w+)? from public\.\1 where (\w+) = '/g)]
       .map((match) => `${match[1]}.${match[2]}`)
       .sort();
     // The authoritative purge set is migration 25's own DELETE statements.
@@ -177,7 +193,7 @@ describe("hosted database census instrument", () => {
 
   it("re-runs the advisor query that produced the five unindexed foreign keys in its measured shape", async () => {
     const { out } = await run(["--dry-run"], {});
-    const advisor = statements(out).find((statement) => /contype = 'f'/i.test(statement));
+    const advisor = statementFor(out, "unindexed-foreign-keys");
     expect(advisor, "no foreign-key advisor statement was offered").toBeTruthy();
     expect(advisor).toMatch(/left join pg_index/i);
     expect(advisor).toMatch(/idx\.indkey is null/i);
@@ -204,5 +220,49 @@ describe("hosted database census instrument", () => {
       "founder_audit_events", "founder_offer_config", "payments", "profiles",
       "promise_events", "promises", "purchase_claims", "receivables",
     ]));
+  });
+
+  // Measured on production 2026-10-13: one live account, but `auth.identities` holds 2 rows and
+  // `auth.sessions` 11 whose `user_id` matches no user, plus 11 `auth.refresh_tokens` rows. Some
+  // earlier account removal left referential residue behind in the auth schema. A census that only
+  // counts the public tables would therefore report a clean erasure while rows naming the erased
+  // account were still sitting in `auth` — which is the after-proof B17 is waiting on.
+  it("counts the auth-schema rows that outlived the account they name", async () => {
+    const { code, out } = await run(["--dry-run"], {});
+    expect(code).toBe(0);
+    const residue = statementFor(out, "auth-residue");
+    for (const table of AUTH_ACCOUNT_TABLES) {
+      expect(residue, `the residue read skips auth.${table}`).toContain(`auth.${table}`);
+    }
+    // Every table is counted twice: what it holds, and how much of it has no account behind it.
+    expect(residue).toMatch(/rows_total/i);
+    expect(residue, "a row is counted without an account only by the absence of a matching user").toMatch(/not exists \(select 1 from auth\.users/i);
+    expect(residue).not.toContain(QA_OWNER);
+  });
+
+  it("reports each auth table's own referential action so a residue count can be attributed", async () => {
+    const { out } = await run(["--dry-run"], {});
+    const residue = statementFor(out, "auth-residue");
+    expect(residue, "the residue read does not ask the catalog what the database would do").toMatch(/pg_constraint/i);
+    expect(residue).toMatch(/auth\.users'::regclass/i);
+    expect(residue, "a missing foreign key must read as missing rather than as a blank cell").toMatch(/coalesce/i);
+  });
+
+  it("counts the rows still tied to one account in the auth schema as well as the product tables", async () => {
+    const { out } = await run(["--dry-run", "--owner", QA_OWNER], {});
+    const residue = statementFor(out, "auth-residue");
+    expect(residue, "the scoped census offers no per-account auth count").toMatch(/rows_for_owner/i);
+    expect(residue).toContain(QA_OWNER);
+    const tables = [...new Set([...residue.matchAll(/from auth\.(\w+)/g)].map((match) => match[1]))].sort();
+    // `auth.users` itself appears once, as the anti-join every other count is measured against.
+    expect(tables).toEqual([...AUTH_ACCOUNT_TABLES, "users"].sort());
+  });
+
+  it("carries the same auth table list whether or not an account was named", async () => {
+    const unscoped = await run(["--dry-run"], {});
+    const scoped = await run(["--dry-run", "--owner", QA_OWNER], {});
+    const listed = (out: string) => [...new Set([...statementFor(out, "auth-residue").matchAll(/from auth\.(\w+)/g)].map((match) => match[1]))].sort();
+    expect(listed(scoped.out)).toEqual(listed(unscoped.out));
+    expect(listed(unscoped.out).length).toBe(AUTH_ACCOUNT_TABLES.length + 1);
   });
 });
