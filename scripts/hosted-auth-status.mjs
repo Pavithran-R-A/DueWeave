@@ -1,0 +1,263 @@
+// The hosted launch questions that this release line has been answering with hand-typed curl
+// commands, as one repeatable operator instrument:
+//
+//   node scripts/hosted-auth-status.mjs --site https://dueweave.pages.dev
+//   node scripts/hosted-auth-status.mjs --identity p3c-red-baseline/qa-identity.json --request-confirmation
+//
+// Everything it reads is reachable with the key a customer's browser already holds, so it runs on a
+// laptop with no Supabase management token — which is the state this project has been in since the
+// machine-global token was replaced by another product's on 2026-10-07. Two limits of that surface
+// are measured facts, not guesses, and the report states them rather than leaving a silent field to
+// look like a green light:
+//   - `GET /auth/v1/settings` answers provider switches, `disable_signup`, `mailer_autoconfirm` and
+//     the SAML/passkeys flags. It does not expose `site_url`, `additional_redirect_urls` or
+//     `password_min_length`, so no credential-free read can prove where an emailed link will land.
+//   - Whether a delivered message actually arrived, and to which address, is readable only in the
+//     mailbox. A 200 from `/resend` proves the sender accepted the request, nothing more.
+//
+// The project URL and the publishable key are read out of the bundle the deployed site is serving
+// right now, so "the live site points at this project" is measured on every run. In the served entry
+// chunk the two literals are adjacent — the client factory is called with the project URL and then
+// the key — and the key appears more than once, the first match being a truncated fragment, so the
+// key is taken as the longest match and the URL as the last literal preceding it.
+//
+// No credential value is ever printed: the key and the QA password are read into requests and
+// reported as lengths and outcomes. It is a laptop and operator command, never a CI step, because it
+// reads whatever production happens to be serving and can send real mail.
+// `tests/hosted-auth-status.contract.test.ts` holds those lines.
+import { readFileSync } from "node:fs";
+
+const DEFAULT_SITE = "https://dueweave.pages.dev";
+
+function parseArgs(argv) {
+  const options = { site: DEFAULT_SITE, identity: "", requestConfirmation: false };
+  for (let index = 0; index < argv.length; index += 1) {
+    const token = argv[index];
+    if (token === "--request-confirmation") {
+      options.requestConfirmation = true;
+      continue;
+    }
+    if (token !== "--site" && token !== "--identity") {
+      console.error(`Unrecognised argument "${token}". Expected --site <origin>, --identity <file> or --request-confirmation.`);
+      process.exit(2);
+    }
+    const value = argv[index + 1];
+    if (!value) {
+      console.error(`${token} needs a value.`);
+      process.exit(2);
+    }
+    if (token === "--site") options.site = value;
+    else options.identity = value;
+    index += 1;
+  }
+  return options;
+}
+
+const problems = [];
+
+function report(line) {
+  console.log(line);
+}
+
+/** A finding is not a failure: an unconfirmed account is reported as a GRANT line, not a problem. */
+function problem(line) {
+  problems.push(line);
+  console.log(`PROBLEM ${line}`);
+}
+
+function request(url, init) {
+  return fetch(url, { cache: "no-store", ...init, signal: AbortSignal.timeout(30_000) });
+}
+
+async function readJson(response) {
+  const text = await response.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+function longestKey(chunk) {
+  const matches = chunk.match(/sb_publishable_[A-Za-z0-9_-]+/g) ?? [];
+  return matches.reduce((longest, match) => (longest === null || match.length > longest.length ? match : longest), null);
+}
+
+/** The last absolute URL literal before the key: the argument the client factory pairs with it. */
+function projectUrl(chunk, key) {
+  const before = chunk.slice(0, chunk.indexOf(key));
+  const matches = before.match(/https?:\/\/[^\s"'`)\\]+/g) ?? [];
+  return matches.length > 0 ? matches[matches.length - 1] : null;
+}
+
+function flattenSettings(settings) {
+  const scalars = [];
+  const providers = [];
+  for (const [name, value] of Object.entries(settings)) {
+    if (typeof value === "boolean") scalars.push(`${name}=${value}`);
+    if (name === "external" && value && typeof value === "object") {
+      for (const [provider, enabled] of Object.entries(value)) if (typeof enabled === "boolean") providers.push(`external.${provider}=${enabled}`);
+    }
+  }
+  return [...scalars, ...providers];
+}
+
+const options = parseArgs(process.argv.slice(2));
+
+let site;
+try {
+  site = new URL(options.site).origin;
+} catch {
+  console.error(`--site must be a full http(s) origin, and "${options.site}" is not one.`);
+  process.exit(2);
+}
+
+let entry = "";
+let chunk = "";
+try {
+  const html = await (await request(`${site}/`, { headers: { accept: "text/html" } })).text();
+  entry = html.match(/\/?assets\/index-[A-Za-z0-9_-]+\.js/)?.[0] ?? "";
+  if (!entry) throw new Error("the served HTML links no entry chunk");
+  chunk = await (await request(`${site}/${entry.replace(/^\/+/, "")}`, { headers: { accept: "application/javascript" } })).text();
+} catch (error) {
+  problem(`the deployed site at ${site} could not be read (${error.message}), so no hosted state was measured`);
+  process.exit(1);
+}
+report(`SITE   ${site} entry ${entry.replace(/^\/+/, "")}`);
+
+const key = longestKey(chunk);
+if (!key) {
+  problem(`${entry} carries no publishable key, so nothing could be probed — the deployed bundle is not the one expected`);
+  process.exit(1);
+}
+const api = projectUrl(chunk, key);
+if (!api) {
+  problem(`${entry} carries no project URL beside its publishable key, so nothing could be probed`);
+  process.exit(1);
+}
+report(`API    ${api}`);
+report(`KEY    publishable key read from the served bundle (${key.length} characters, never printed)`);
+
+const publicHeaders = { apikey: key, authorization: `Bearer ${key}` };
+
+// What the hosted Auth service admits about itself, and what it withholds from an anonymous read.
+let settingsResponse;
+try {
+  settingsResponse = await request(`${api}/auth/v1/settings`, { headers: publicHeaders });
+} catch (error) {
+  problem(`AUTH ${api}/auth/v1/settings could not be reached (${error.message})`);
+  settingsResponse = null;
+}
+if (settingsResponse) {
+  const settings = await readJson(settingsResponse);
+  if (settingsResponse.status !== 200 || !settings) {
+    problem(`AUTH /auth/v1/settings answered HTTP ${settingsResponse.status} instead of the public configuration`);
+  } else {
+    report(`AUTH   ${flattenSettings(settings).join(" ")}`);
+    report("AUTH   not exposed by /auth/v1/settings: site_url, additional_redirect_urls, password_min_length — so no credential-free read can prove where an emailed link lands");
+  }
+}
+
+// The disposable QA identity's confirmation state, read the way a customer's sign-in is read.
+let qaEmail = "";
+if (options.identity) {
+  let identity = null;
+  try {
+    identity = JSON.parse(readFileSync(options.identity, "utf8"));
+  } catch {
+    identity = null;
+  }
+  if (!identity || !identity.email || !identity.password) {
+    report(`GRANT  skipped: no readable identity at ${options.identity}`);
+  } else {
+    qaEmail = identity.email;
+    const grant = await request(`${api}/auth/v1/token?grant_type=password`, {
+      method: "POST",
+      headers: { ...publicHeaders, "content-type": "application/json" },
+      body: JSON.stringify({ email: identity.email, password: identity.password }),
+    }).catch((error) => {
+      problem(`GRANT ${identity.email} could not be probed (${error.message})`);
+      return null;
+    });
+    if (grant) {
+      const body = await readJson(grant);
+      const refused = body?.msg ?? body?.error_description ?? body?.error ?? "";
+      if (grant.status === 200) report(`GRANT  ${identity.email} HTTP 200 — a session was issued, so the emailed confirmation has been used`);
+      else report(`GRANT  ${identity.email} HTTP ${grant.status} — sign-in refused${refused ? ` ("${refused}")` : ""}, so confirmation is still required`);
+    }
+  }
+} else {
+  report("GRANT  skipped: pass --identity <file> to read the disposable QA identity's confirmation state");
+}
+
+// The erasure function's unauthenticated boundary: the CORS repair and its own session check, which
+// is the half of B17 that can be proved without anybody signing in.
+const edge = `${api}/functions/v1/delete-account`;
+let preflight;
+try {
+  preflight = await request(edge, {
+    method: "OPTIONS",
+    headers: { origin: site, "access-control-request-method": "POST", "access-control-request-headers": "authorization,apikey,content-type" },
+    redirect: "manual",
+  });
+} catch (error) {
+  problem(`EDGE OPTIONS delete-account could not be probed (${error.message})`);
+  preflight = null;
+}
+if (preflight) {
+  const allowed = preflight.headers.get("access-control-allow-origin");
+  if (preflight.status === 204) report(`EDGE   OPTIONS delete-account HTTP 204 access-control-allow-origin=${allowed ?? "none"}`);
+  else problem(`EDGE OPTIONS delete-account expected HTTP 204 with the site's own origin allowed and got HTTP ${preflight.status}`);
+}
+let bearerless;
+try {
+  bearerless = await request(edge, {
+    method: "POST",
+    headers: { apikey: key, "content-type": "application/json", origin: site },
+    body: JSON.stringify({ confirm: "delete my account" }),
+  });
+} catch (error) {
+  problem(`EDGE POST delete-account could not be probed (${error.message})`);
+  bearerless = null;
+}
+if (bearerless) {
+  const body = await readJson(bearerless);
+  const message = body?.message ?? body?.error ?? "";
+  if (bearerless.status === 401) report(`EDGE   POST delete-account without a bearer HTTP 401${message ? ` — "${message}"` : ""}`);
+  else problem(`EDGE POST delete-account without a bearer expected HTTP 401 from the function's own session check and got HTTP ${bearerless.status}`);
+}
+
+// Requesting the mail is the only action here that reaches a person, so it never happens by default.
+if (options.requestConfirmation) {
+  if (!qaEmail) {
+    report("RESEND skipped: --request-confirmation needs --identity <file> so it knows which address to ask for");
+  } else {
+    const redirectTo = `${site}/auth`;
+    const resend = await request(`${api}/auth/v1/resend?redirect_to=${encodeURIComponent(redirectTo)}`, {
+      method: "POST",
+      headers: { ...publicHeaders, "content-type": "application/json" },
+      body: JSON.stringify({ email: qaEmail, type: "signup" }),
+    }).catch((error) => {
+      problem(`RESEND could not be requested (${error.message})`);
+      return null;
+    });
+    if (resend) {
+      const body = await readJson(resend);
+      if (resend.status === 200) {
+        report(`RESEND redirect_to=${redirectTo} HTTP 200`);
+        report("RESEND the request was accepted; where the link actually lands is readable only in the mailbox, never from this command");
+      } else {
+        const message = body?.error_description ?? body?.msg ?? body?.error ?? "";
+        problem(`RESEND redirect_to=${redirectTo} answered HTTP ${resend.status}${message ? ` ("${message}")` : ""} — no confirmation mail was requested`);
+      }
+    }
+  }
+} else {
+  report("RESEND skipped: this run sends no mail; pass --request-confirmation to request one confirmation message");
+}
+
+if (problems.length > 0) {
+  console.error(`Hosted auth status: ${problems.length} problem(s).`);
+  process.exit(1);
+}
+report(`Hosted auth status: no problem found. Read-only probes only${options.requestConfirmation ? ", one confirmation request sent" : ""}.`);
