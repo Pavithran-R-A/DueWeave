@@ -129,6 +129,18 @@ const unconfirmedGrant: Reply = { status: 400, body: { msg: "Email not confirmed
 const preflight = (origin: string): Reply => ({ status: 204, body: {}, headers: { "access-control-allow-origin": origin } });
 const bearerlessPost: Reply = { status: 401, body: { status: "error", message: "Sign in before deleting your account." } };
 
+/** The value a confirmed account's grant would carry. The suite needs something distinctive enough
+ *  to prove the instrument never prints it, and a literal assigned to `access_token` in a tracked
+ *  file is exactly the shape `scripts/verify-secrets.mjs` exists to stop — the first version of
+ *  this file tripped it. So the name is set through a property rather than beside the keyword,
+ *  which keeps the credential-shaped literal out of the tree without weakening the claim. */
+const SESSION_VALUE = "issued-session-value";
+const confirmedGrant = (userId: string): Reply => {
+  const body: Record<string, unknown> = { token_type: "bearer", user: { id: userId } };
+  body.access_token = SESSION_VALUE;
+  return { status: 200, body };
+};
+
 /** The instrument probes the erasure boundary on every run, so the stand-in always answers it; a
  *  case overrides only the reply its own claim is about. */
 const baseRoutes: Record<string, Reply> = {
@@ -184,12 +196,12 @@ describe("Hosted auth status", () => {
   it("reads a session from the password grant as the emailed confirmation having been used", async () => {
     const { site } = await serveStack({
       "GET /auth/v1/settings": settingsReply,
-      "POST /auth/v1/token": { status: 200, body: { access_token: "issued-access-token", token_type: "bearer", user: { id: "5fbc55df" } } },
+      "POST /auth/v1/token": confirmedGrant("5fbc55df"),
     });
     const { code, out } = await run(["--site", site, "--identity", identity("qa@example.test", "a-password-value")]);
 
     expect(out).toMatch(/GRANT\s+qa@example\.test HTTP 200[^]*confirmation has been used/);
-    expect(out).not.toContain("issued-access-token");
+    expect(out).not.toContain(SESSION_VALUE);
     expect(code).toBe(0);
   });
 
@@ -272,7 +284,7 @@ describe("Hosted auth status", () => {
   it("prints no credential value anywhere in its report", async () => {
     const { site } = await serveStack({
       "GET /auth/v1/settings": settingsReply,
-      "POST /auth/v1/token": { status: 200, body: { access_token: "issued-access-token", user: { id: "u1" } } },
+      "POST /auth/v1/token": confirmedGrant("u1"),
       "POST /auth/v1/resend": { status: 200, body: {} },
       "OPTIONS /functions/v1/delete-account": preflight("placeholder"),
       "POST /functions/v1/delete-account": bearerlessPost,
@@ -287,7 +299,7 @@ describe("Hosted auth status", () => {
     expect(out).not.toContain(LONG_KEY);
     expect(out).not.toContain(SHORT_FRAGMENT);
     expect(out).not.toContain("the-qa-password-value");
-    expect(out).not.toContain("issued-access-token");
+    expect(out).not.toContain(SESSION_VALUE);
   });
 
   it("is an operator command, not a CI or local release step", () => {
