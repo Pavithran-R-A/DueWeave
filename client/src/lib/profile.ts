@@ -35,3 +35,13 @@ export function validateBusinessName(value: string) {
   if (value.trim().length > BUSINESS_NAME_LIMIT) return `Keep your business name under ${BUSINESS_NAME_LIMIT} characters.`;
   return "";
 }
+
+/**
+ * Whether reading the profile row again must replace the screen or may happen behind it.
+ * A re-read of the account already on screen is a refresh: making it look like a first
+ * load unmounts the workspace, and the customer lands back on Today after saving a name.
+ */
+export function profileReadMode(displayed: { ownerId: string; hasProfile: boolean }, readingFor: string): "background" | "foreground" {
+  if (!readingFor || !displayed.hasProfile) return "foreground";
+  return displayed.ownerId === readingFor ? "background" : "foreground";
+}

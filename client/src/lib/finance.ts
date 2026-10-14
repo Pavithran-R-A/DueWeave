@@ -174,6 +174,17 @@ export function getQueue(state: LedgerState, clock: BusinessClock = systemClock)
 }
 
 /**
+ * The open-money brief behind the Today headline: the balance and the count of the
+ * exact rows that balance is summed over. The follow-up queue is a different question
+ * (what deserves attention today), so it must never supply these two numbers — a
+ * snoozed amount leaves the queue while the money is still owed.
+ */
+export function openAmountBrief(state: LedgerState) {
+  const open = state.receivables.filter((receivable) => getOutstanding(receivable) > 0);
+  return { openCount: open.length, outstandingPaise: open.reduce((sum, receivable) => sum + getOutstanding(receivable), 0) };
+}
+
+/**
  * Only promises the customer actually answered say anything about keeping to a
  * date. A commitment that was replaced or withdrawn is neither kept nor broken.
  */

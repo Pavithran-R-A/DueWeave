@@ -15,6 +15,7 @@ import {
   getSnoozedUntil,
   getSuggestion,
   isBusinessDate,
+  openAmountBrief,
   parseINRToPaise,
   priorityBreakdown,
   priorityReasons,
@@ -336,5 +337,25 @@ describe("follow-up suggestion ladder", () => {
 
   it("stays friendly before the due date", () => {
     expect(getSuggestion(receivable({ dueDate: addIndiaBusinessDays(TODAY, 4) }), state())).toBe("friendly");
+  });
+});
+
+describe("Today brief counts", () => {
+  // Hosted acceptance caught the screen saying "0 open receivables" and "Across 0 open
+  // client amounts" beside a ₹1,500 balance: both counts came from the follow-up queue,
+  // the money from the balances, and a snooze emptied only the queue. One number, one source.
+  it("counts and sums exactly the receivables that still carry a balance", () => {
+    const settled = receivable({ id: "recv-paid", outstandingPaise: 0, status: "PAID" });
+    const ledger = state({ receivables: [receivable({ outstandingPaise: 150000 }), settled] });
+    expect(openAmountBrief(ledger)).toEqual({ openCount: 1, outstandingPaise: 150000 });
+  });
+
+  it("still counts an open amount that is snoozed out of the follow-up queue", () => {
+    const ledger = state({
+      receivables: [receivable({ outstandingPaise: 150000 })],
+      activities: [activity({ type: "snoozed", occurredAt: TODAY, snoozedUntil: addIndiaBusinessDays(TODAY, 7) })],
+    });
+    expect(getQueue(ledger)).toHaveLength(0);
+    expect(openAmountBrief(ledger)).toEqual({ openCount: 1, outstandingPaise: 150000 });
   });
 });

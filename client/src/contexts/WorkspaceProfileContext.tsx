@@ -5,7 +5,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { SupabaseProfileRepository } from "@/data/supabase-profile-repository";
 import { useSupabaseAuth } from "@/hooks/useSupabaseAuth";
-import { isWorkspaceSetupComplete } from "@/lib/profile";
+import { isWorkspaceSetupComplete, profileReadMode } from "@/lib/profile";
 import type { Profile } from "@/types/domain";
 
 interface WorkspaceProfileValue {
@@ -25,37 +25,52 @@ export function WorkspaceProfileProvider({ children }: { children: ReactNode }) 
   const [profile, setProfile] = useState<Profile | null>(null);
   const [profileOwnerId, setProfileOwnerId] = useState("");
   const readVersion = useRef(0);
+  // Which account is actually on screen, written at the same moment as the state it mirrors.
+  // reload() cannot read profile state without making its own identity change on every read
+  // and re-firing its effect forever, so the decision lives in a ref.
+  const displayedRef = useRef({ ownerId: "", hasProfile: false });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const ownerId = user?.id ?? "";
 
+  const showProfile = useCallback((next: Profile | null, nextOwnerId: string) => {
+    displayedRef.current = { ownerId: nextOwnerId, hasProfile: next !== null };
+    setProfile(next);
+    setProfileOwnerId(nextOwnerId);
+  }, []);
+
   const reload = useCallback(async () => {
     const version = ++readVersion.current;
     if (!ownerId) {
-      setProfile(null);
-      setProfileOwnerId("");
+      showProfile(null, "");
       setError("");
       setLoading(false);
       return;
     }
-    setLoading(true);
-    setError("");
+    // This account's row is already on screen, so re-reading it happens behind that screen.
+    // Making it look like a first load replaces the mounted workspace with a spinner, and
+    // React builds it again from its initial state — the customer lands back on Today.
+    const background = profileReadMode(displayedRef.current, ownerId) === "background";
+    if (!background) {
+      setLoading(true);
+      setError("");
+    }
     try {
       const stored = await repository.read(ownerId);
       if (!stored) throw new Error("We could not open your workspace details. Please try signing in again.");
       // A stale read for user A must never overwrite user B's private profile after sign-out
       // and sign-in, even if the old network request finishes after the new one.
       if (version !== readVersion.current) return;
-      setProfile(stored);
-      setProfileOwnerId(ownerId);
+      showProfile(stored, ownerId);
     } catch (caught) {
-      if (version === readVersion.current) {
-        setError(caught instanceof Error ? caught.message : "We could not open your workspace. Please try again.");
-      }
+      if (version !== readVersion.current) return;
+      // A failed refresh leaves the row this app last wrote or read on screen. The write that
+      // triggered it reports its own refusal on the form it came from, so nothing is silenced.
+      if (!background) setError(caught instanceof Error ? caught.message : "We could not open your workspace. Please try again.");
     } finally {
-      if (version === readVersion.current) setLoading(false);
+      if (version === readVersion.current && !background) setLoading(false);
     }
-  }, [ownerId, repository]);
+  }, [ownerId, repository, showProfile]);
 
   useEffect(() => {
     if (!authLoading) void reload();
@@ -73,10 +88,9 @@ export function WorkspaceProfileProvider({ children }: { children: ReactNode }) 
     if (!ownerId) throw new Error("Your session has ended. Please sign in again.");
     if (!currentProfile) throw new Error("Your workspace details are still loading. Please try again in a moment.");
     const saved = await repository.updateWorkspace({ ownerId, displayName: input.displayName, businessName: input.businessName, expectedUpdatedAt: currentProfile.updatedAt });
-    setProfile(saved);
-    setProfileOwnerId(ownerId);
+    showProfile(saved, ownerId);
     return saved;
-  }, [ownerId, currentProfile, repository]);
+  }, [ownerId, currentProfile, repository, showProfile]);
 
   const value = useMemo<WorkspaceProfileValue>(() => ({ profile: currentProfile, loading: currentLoading, error, setupComplete: isWorkspaceSetupComplete(currentProfile), reload, saveWorkspace }), [currentProfile, currentLoading, error, reload, saveWorkspace]);
 

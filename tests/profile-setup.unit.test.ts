@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BUSINESS_NAME_LIMIT, DISPLAY_NAME_LIMIT, isWorkspaceSetupComplete } from "@/lib/profile";
+import { BUSINESS_NAME_LIMIT, DISPLAY_NAME_LIMIT, isWorkspaceSetupComplete, profileReadMode } from "@/lib/profile";
 import { toProfile } from "@/data/supabase-adapters";
 
 // Stage 6 decides "has this person set up their workspace?" from the persisted
@@ -8,6 +8,8 @@ import { toProfile } from "@/data/supabase-adapters";
 // a marker outside the database could flip these answers, the gate would be lying.
 
 const TOKEN = "2026-09-25T21:25:25.847824+00:00";
+const OWNER = "11111111-1111-4111-8111-111111111111";
+const OTHER = "22222222-2222-4222-8222-222222222222";
 
 function profile(overrides: Partial<ReturnType<typeof toProfile>> = {}) {
   return {
@@ -109,5 +111,27 @@ describe("field limits mirror the executed database rules (Stage 6 Phases 5-6)",
     // must never be described to the user as "the database requires it".
     expect(DISPLAY_NAME_LIMIT).toBeGreaterThan(0);
     expect(DISPLAY_NAME_LIMIT).toBeLessThanOrEqual(BUSINESS_NAME_LIMIT);
+  });
+});
+
+// Hosted acceptance found that saving the workspace name from the settings screen threw
+// the customer back to Today: the reload flipped `loading`, the route gate replaced the
+// mounted workspace with a spinner, and React rebuilt it from its initial state. A read
+// that has something correct already on screen is a refresh, not a blank screen.
+describe("profile read mode (deployed acceptance: settings save reset the workspace)", () => {
+  it("treats a re-read of the profile already on screen as a background refresh", () => {
+    expect(profileReadMode({ ownerId: OWNER, hasProfile: true }, OWNER)).toBe("background");
+  });
+
+  it("treats the first read of a session as blocking, because there is nothing to keep on screen", () => {
+    expect(profileReadMode({ ownerId: OWNER, hasProfile: false }, OWNER)).toBe("foreground");
+  });
+
+  it("treats a read for a different owner as blocking, never as a refresh of the previous account", () => {
+    expect(profileReadMode({ ownerId: OWNER, hasProfile: true }, OTHER)).toBe("foreground");
+  });
+
+  it("treats a read with no signed-in owner as blocking", () => {
+    expect(profileReadMode({ ownerId: OWNER, hasProfile: true }, "")).toBe("foreground");
   });
 });
