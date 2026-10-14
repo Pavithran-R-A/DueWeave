@@ -3,7 +3,8 @@
 // hand query left behind a claim the next session could not re-derive. This instrument answers the
 // same questions again from the repository: how many accounts exist, whether any customer data is
 // present, whether every table is still row-security-enforced, what the routine grants say now that
-// migration 25 is applied, which foreign keys the advisor still calls unindexed, and how many rows
+// migration 25 is applied, what the default-privilege catalog actually records for the role these
+// migrations run as, which foreign keys the advisor still calls unindexed, and how many rows
 // belong to one account — the before/after half of the erasure acceptance that `B17` still lacks.
 //
 // Two rules make it safe to point at production:
@@ -80,6 +81,16 @@ const POSTURE = "with f as (select p.oid, p.prosecdef, coalesce(nullif(array_to_
 
 const ADVISOR = "select class.relname as table_name, attr.attname as column_name, con.conname as constraint_name from pg_class class join pg_constraint con on con.conrelid = class.oid join pg_namespace nsp on nsp.oid = class.relnamespace join pg_attribute attr on attr.attrelid = class.oid and attr.attnum = con.conkey[1] left join pg_index idx on idx.indrelid = class.oid and idx.indkey[0] = attr.attnum where con.contype = 'f' and idx.indkey is null and nsp.nspname = 'public' order by 1, 2";
 
+// B05's last open half: the fail-closed default privileges have been proved on hosted by their
+// consequences (0 anonymous grants, 92 probes refused) and by the committed `alter default
+// privileges` text, never by reading the catalog that holds them. One row per grantee, because a
+// whole aclitem array on one line cannot be compared against the grant list the migration claims.
+// The array is spread from a LATERAL join rather than inside an expression: hosted answered the
+// first shape of this read with `set-returning functions are not allowed in COALESCE`, measured
+// 2026-10-14, and the outer join is what keeps a role with no recorded default visible as one row
+// instead of silently contributing no rows at all.
+const DEFAULT_PRIVILEGES = "select pg_get_userbyid(d.defaclrole) as owner_role, case when d.defaclnamespace = 0 then 'database-wide' else n.nspname end as scope, coalesce(acl.entry::text, '(no default privileges recorded)') as default_privilege from pg_default_acl d left join pg_namespace n on n.oid = d.defaclnamespace left join lateral unnest(d.defaclacl) as acl(entry) on true order by 1, 2, 3";
+
 function census(owner) {
   const reads = [
     { label: "migration-ledger", sql: "select count(*) as recorded_migrations, max(version) as newest_version from supabase_migrations.schema_migrations" },
@@ -97,6 +108,7 @@ function census(owner) {
       sql: "select count(*) filter (where c.relrowsecurity) as rls_enabled, count(*) as public_tables, (select count(*) from pg_policy pol join pg_class k on k.oid = pol.polrelid join pg_namespace n on n.oid = k.relnamespace where n.nspname = 'public') as policies from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relkind = 'r'",
     },
     { label: "routine-posture", sql: POSTURE },
+    { label: "default-privileges", sql: DEFAULT_PRIVILEGES },
     { label: "unindexed-foreign-keys", sql: ADVISOR },
   ];
   if (owner) {

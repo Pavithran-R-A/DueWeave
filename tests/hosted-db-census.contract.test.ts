@@ -143,7 +143,7 @@ describe("hosted database census instrument", () => {
     expect(code).toBe(0);
     const labels = out.split("\n").filter((line) => /^READ\s/.test(line)).map((line) => line.split(/\s+/)[1]);
     expect(new Set(labels).size).toBe(labels.length);
-    for (const expected of ["auth-users", "auth-residue", "ledger-census", "rls-coverage", "routine-posture", "unindexed-foreign-keys", "migration-ledger", "owner-census"]) {
+    for (const expected of ["auth-users", "auth-residue", "ledger-census", "rls-coverage", "routine-posture", "default-privileges", "unindexed-foreign-keys", "migration-ledger", "owner-census"]) {
       expect(labels).toContain(expected);
     }
     expect(calls.length).toBe(labels.length);
@@ -198,6 +198,35 @@ describe("hosted database census instrument", () => {
     expect(advisor).toMatch(/left join pg_index/i);
     expect(advisor).toMatch(/idx\.indkey is null/i);
     expect(advisor).toMatch(/nspname = 'public'/i);
+  });
+
+  // B05's last open half. Every other part of the fail-closed posture has been re-read on the real
+  // project — routine grants, RLS coverage, and 92 anonymous probes that all died at the grant gate
+  // — but `pg_default_acl` itself has never been read on hosted. The committed migration text and
+  // the observable consequences are not the catalog row, and the blocker row says so. An empty
+  // answer is a legitimate outcome, so this read must be one the operator can run again rather than
+  // a claim in a document.
+  it("reads the hosted default-privilege catalog rather than inferring it from consequences", async () => {
+    const { out } = await run(["--dry-run"], {});
+    const defaults = statementFor(out, "default-privileges");
+    expect(defaults, "no default-privilege statement was offered").toBeTruthy();
+    expect(defaults).toMatch(/from pg_default_acl/i);
+    // Each aclitem has to be its own answer: a whole array on one line cannot be read against the
+    // committed grant list.
+    expect(defaults, "the default privileges are not broken out per grantee").toMatch(/unnest\s*\(\s*\w+\.defaclacl\s*\)/i);
+    // Measured 2026-10-14: hosted refused this read the first time it was sent with
+    // `set-returning functions are not allowed in COALESCE`. The spread has to come from a FROM
+    // position so an empty or null array is carried by the join instead of by an expression the
+    // parser rejects — and the failure message is what proves this was read from the catalog, not
+    // guessed at.
+    expect(defaults, "the spread is wrapped in an expression, which hosted rejects").not.toMatch(/coalesce\s*\(\s*unnest/i);
+    expect(defaults, "the spread is not unnested from a FROM position").toMatch(/join\s+lateral\s+unnest\s*\(/i);
+    // Which role's defaults, and for which scope — a schema entry and a database-wide entry mean
+    // different things, and the grantor name is what proves the entry came from the migration role.
+    expect(defaults).toMatch(/defaclrole/i);
+    expect(defaults).toMatch(/pg_get_userbyid/i);
+    expect(defaults, "a database-wide entry must not read as an empty schema").toMatch(/defaclnamespace/i);
+    expect(defaults).toMatch(/database[- ]wide/i);
   });
 
   it("is an operator command that no CI job or release gate may reach", async () => {
