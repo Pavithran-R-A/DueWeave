@@ -70,22 +70,25 @@ function readProjectId(root) {
 }
 
 const { dryRun, verb, unexpected } = parse(process.argv.slice(2));
+// Everything that ends in `process.exit` belongs to a CLI run only: a unit import of this module has
+// no verb, and the readiness and target rules below are worth testing as the decisions they are.
+const isCli = process.argv[1]?.replace(/\\/g, "/").endsWith("scripts/local-functions-serve.mjs");
 const fail = (problem) => {
   console.error(`local-functions-serve: ${problem}`);
   process.exit(1);
 };
 
-if (unexpected.length > 0) fail(`unexpected argument(s): ${unexpected.join(" ")}`);
-if (verb !== "start" && verb !== "stop") fail(`unknown verb ${verb ?? "(none)"}; expected \`start\` or \`stop\`.`);
+if (isCli && unexpected.length > 0) fail(`unexpected argument(s): ${unexpected.join(" ")}`);
+if (isCli && verb !== "start" && verb !== "stop") fail(`unknown verb ${verb ?? "(none)"}; expected \`start\` or \`stop\`.`);
 
 const root = projectRoot.value;
 let projectId;
 try {
   projectId = readProjectId(root);
 } catch (error) {
-  fail(`could not read ${root}/supabase/config.toml: ${error.message}`);
+  if (isCli) fail(`could not read ${root}/supabase/config.toml: ${error.message}`);
 }
-if (!projectId) fail(`no project_id declared in ${root}/supabase/config.toml.`);
+if (isCli && !projectId) fail(`no project_id declared in ${root}/supabase/config.toml.`);
 
 const edgeContainer = `supabase_edge_runtime_${projectId}`;
 const cliEntry = path.join(root, "node_modules", "supabase", "dist", "supabase.js");
@@ -105,9 +108,16 @@ function readLocalEnv(name) {
 const apiUrl = (readLocalEnv("VITE_SUPABASE_URL") ?? "").replace(/\/+$/, "");
 const anonKey = readLocalEnv("VITE_SUPABASE_ANON_KEY") ?? "";
 
-function isLoopback(value) {
+export function isLoopback(value) {
   if (!value) return false;
-  const host = new URL(value).hostname;
+  let host;
+  try {
+    host = new URL(value).hostname;
+  } catch {
+    // A malformed `.env.local` value is a refusal, not a crash: `stop()` consults this rule from an
+    // `if: always()` teardown, and a cleanup step that throws reds the job for the wrong reason.
+    return false;
+  }
   return host === "127.0.0.1" || host === "localhost" || host === "::1";
 }
 
@@ -137,7 +147,7 @@ async function probe() {
   }
 }
 
-function classify(status, text) {
+export function classify(status, text) {
   if (status === 401 && /sign in/i.test(text)) return "served";
   if (status === 501) return "unconfigured";
   if (status === 404) return "not-mounted";
@@ -202,7 +212,7 @@ async function start() {
     const { result } = await probe();
     last = result;
     if (result === "served") {
-      console.log(`${functionName} is served and ${allowedOriginVar} reached the runtime (${Date.now() - startedAt} ms, ${edgeContainer} recreated by the serve})`);
+      console.log(`${functionName} is served and ${allowedOriginVar} reached the runtime (${Date.now() - startedAt} ms, ${edgeContainer} recreated by the serve)`);
       return;
     }
     if (result === "unconfigured") {
@@ -295,8 +305,10 @@ async function stop() {
   fail(`${edgeContainer} stopped but ${apiUrl}/functions/v1/${functionName} still answers as served`);
 }
 
-try {
-  await (verb === "start" ? start() : stop());
-} catch (error) {
-  fail(error.message);
+if (isCli) {
+  try {
+    await (verb === "start" ? start() : stop());
+  } catch (error) {
+    fail(error.message);
+  }
 }

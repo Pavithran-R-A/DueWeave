@@ -123,12 +123,16 @@ jobs:
       # the function is not mounted, 501 means `ALLOWED_APP_ORIGIN` never reached the container, and
       # only 401-for-a-caller-with-no-token means served-and-configured. Readiness polls every 500 ms
       # against a 90 s ceiling (both constants live in the script), and a missed ceiling is reported as
-      # a blocked gate rather than a pass. No workflow has executed this step yet, so the step is
-      # written-and-dry-run-verified only; locally, a serve whose watcher was running against the
-      # Windows path never reached served-and-configured at all and the battery answered 502 — the
-      # churn and its counts are recorded in `docs/CONSUMER_LIVE_PROGRESS.md` and
-      # `docs/RELEASE_GATE_MATRIX.md` note 8, which is why readiness is read from the endpoint and not
-      # from a sleep.
+      # a blocked gate rather than a pass. Measured on 2026-10-13, run 38448131068's Database
+      # contracts job executed this step at its own commit: the serve answered `delete-account is
+      # served and ALLOWED_APP_ORIGIN reached the runtime (2888 ms, supabase_edge_runtime_dueweave
+      # recreated by the serve)`, `pnpm test:live` then ran 10 files / 331 tests with
+      # `tests/arc3c-local-account-erasure.test.ts` among them (22 tests), and the teardown step
+      # terminated the watcher and proved the container had stopped. That endpoint-read is the reason
+      # this step exists at all: the first attempt, a serve whose watcher ran against a Windows
+      # checkout, never reached served-and-configured and the battery answered 502 — its churn and
+      # counts are recorded in `docs/CONSUMER_LIVE_PROGRESS.md` and `docs/RELEASE_GATE_MATRIX.md`
+      # note 8.
       - name: Serve the delete-account Edge Function for the erasure battery
         run: node scripts/local-functions-serve.mjs start
 
