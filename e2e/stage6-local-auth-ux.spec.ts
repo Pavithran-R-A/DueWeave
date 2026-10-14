@@ -462,3 +462,68 @@ test.describe("Stage 6 password recovery and sign-out", () => {
     await expect(page.getByLabel("Primary navigation")).toBeVisible();
   });
 });
+
+test.describe("An emailed link that arrives reporting a problem", () => {
+  test("explains a link that no longer works instead of staying silent, and clears it from the address", async ({ page }) => {
+    // Measured from the hosted auth server itself on 2026-10-14: a confirmation link opened
+    // a second time — after the first, successful pass already consumed the one-time token —
+    // answers 303 and lands here as
+    // `/auth#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid
+    // +or+has+expired`. The deployed screen showed a silent sign-in form and left that
+    // sentence in the address bar, so a confirmed customer was told nothing at all.
+    await page.goto("/auth#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired&sb=");
+
+    await expect(page.getByText("This emailed link no longer works")).toBeVisible();
+    // The way forward is the form, still working, not a dead end.
+    await expect(page.getByLabel("Email address")).toBeVisible();
+    await expect(page.getByLabel("Password")).toBeVisible();
+    // The report is read once: a refresh cannot re-announce it, and the server wording is
+    // never what the customer is made to read.
+    await expect(page).toHaveURL(/\/auth$/);
+    await expect(page.locator("body")).not.toContainText(/otp_expired|access_denied|Email link is invalid|SQLSTATE|PGRST|gotrue/i);
+    await page.reload();
+    await expect(page.getByText("This emailed link no longer works")).toHaveCount(0);
+  });
+
+  test("says nothing at all when the link worked and carried a session back", async ({ page }) => {
+    // The same address shape is how a successful confirmation arrives, so an unconditional
+    // complaint would blame a customer whose link actually did its job.
+    await page.goto("/auth#access_token=not-a-real-token&refresh_token=not-a-real-token&token_type=bearer&expires_in=3600&type=confirmation&sb=");
+
+    await expect(page.getByText("This emailed link no longer works")).toHaveCount(0);
+    await expect(page.getByText("could not be read as a DueWeave confirmation link")).toHaveCount(0);
+    await expect(page.getByLabel("Email address")).toBeVisible();
+  });
+
+  test("explains a link that arrives while this screen is already open", async ({ page }) => {
+    // The likeliest duplicate open is exactly this one: the customer is already on the
+    // sign-in screen — they were just told to confirm their email — and clicks the link
+    // from there. That navigation changes only the address fragment, so the document is
+    // never reloaded and a read made only on the first render says nothing. Measured on
+    // the built bundle on 2026-10-14: `location.hash` alone moved, one `hashchange` fired,
+    // the sentence stayed in the address bar.
+    await page.goto("/auth");
+    await page.evaluate(() => {
+      window.location.hash = "error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired&sb=";
+    });
+
+    await expect(page.getByText("This emailed link no longer works")).toBeVisible();
+    await expect(page.getByLabel("Email address")).toBeVisible();
+    await expect(page).toHaveURL(/\/auth$/);
+    await expect(page.locator("body")).not.toContainText(/otp_expired|access_denied|Email link is invalid|SQLSTATE|PGRST|gotrue/i);
+  });
+
+  test("does not keep complaining once a later arrival carries a session", async ({ page }) => {
+    // An explanation is about the link that just arrived. When the next arrival is a working
+    // one, holding the old complaint on screen would tell a confirmed customer they failed.
+    await page.goto("/auth#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired&sb=");
+    await expect(page.getByText("This emailed link no longer works")).toBeVisible();
+
+    await page.evaluate(() => {
+      window.location.hash = "access_token=not-a-real-token&refresh_token=not-a-real-token&token_type=bearer&expires_in=3600&type=confirmation&sb=";
+    });
+
+    await expect(page.getByText("This emailed link no longer works")).toHaveCount(0);
+    await expect(page.getByLabel("Email address")).toBeVisible();
+  });
+});

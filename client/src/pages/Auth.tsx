@@ -4,6 +4,7 @@ import { useLocation } from "wouter";
 import { BRAND } from "@/config/brand";
 import { useSupabaseAuth } from "@/hooks/useSupabaseAuth";
 import { RESEND_REQUESTED_COPY } from "@/lib/auth-outcome";
+import { linkArrivalNotice, withoutLinkArrival } from "@/lib/auth-redirect";
 import { PASSWORD_MIN_LENGTH, noFieldErrors, validateAuthFields, type AuthFieldErrors, type AuthMode } from "@/lib/auth-validation";
 import { releaseFlagEnabled } from "@/lib/release-flags";
 
@@ -46,6 +47,11 @@ export default function Auth() {
   const [unconfirmedEmail, setUnconfirmedEmail] = useState("");
   const [resending, setResending] = useState(false);
   const [resendNews, setResendNews] = useState("");
+  // A link that arrives reporting a problem is the one arrival this screen used to say
+  // nothing about: a customer who had already confirmed, and opened the link a second
+  // time, was left on a silent sign-in form with the auth server's technical failure text
+  // sitting in their address bar.
+  const [linkReport, setLinkReport] = useState("");
   // A flow is offered only when a build states its flag as exactly "true"; an unstated flag
   // is refused by `vite build` rather than compiled in as enabled. See `@/lib/release-flags`.
   const publicSignUpEnabled = releaseFlagEnabled(import.meta.env.VITE_PUBLIC_SIGNUP_ENABLED);
@@ -70,6 +76,22 @@ export default function Auth() {
   useEffect(() => {
     if (location.includes("update-password")) setMode("update");
   }, [location]);
+
+  // A link can also arrive reporting a problem, and it can arrive while this screen is
+  // already open — clicking an emailed link from here changes nothing but the address
+  // fragment, which never reloads the document. So the arrival is read on every fragment
+  // change as well as on the first render, answered in DueWeave's own words, and removed
+  // from the address so a refresh cannot re-announce a link question that is already closed.
+  useEffect(() => {
+    const readArrival = () => {
+      const report = linkArrivalNotice(window.location.hash);
+      setLinkReport(report);
+      if (report) window.history.replaceState(null, "", withoutLinkArrival(window.location.href));
+    };
+    readArrival();
+    window.addEventListener("hashchange", readArrival);
+    return () => window.removeEventListener("hashchange", readArrival);
+  }, []);
 
   function changeMode(nextMode: AuthMode) {
     setMode(nextMode);
@@ -216,6 +238,7 @@ export default function Auth() {
             </div>
 
             <form className="auth-form" onSubmit={onSubmit} noValidate>
+              {linkReport && <p className="auth-message auth-message--notice" role="status"><Mail size={16} />{linkReport}</p>}
               {mode === "signUp" && <div className="field">
                 <label className="field__label" htmlFor="auth-name">Your name</label>
                 <input id="auth-name" className="form-input" autoComplete="name" required value={name} aria-invalid={Boolean(fieldErrors.name)} aria-describedby={fieldErrors.name ? "auth-name-error" : undefined} onChange={(event) => { setName(event.target.value); clearFieldError("name"); }} placeholder="How should we greet you?" />
