@@ -35,9 +35,16 @@ Any later SHA must earn its own CI and deployment verification.
    `emailRedirectTo=https://dueweave.pages.dev/auth`, read from the real Gmail mailbox, and the link
    completed confirmation at 07:46:57 UTC; navigating that same link again four seconds later was
    refused, because its one-time token had already been spent. What this gate still lacks is
-   **password-recovery** delivery to a real mailbox — untestable while the deployed bundle holds the
-   recovery entry closed — and the SPF/DKIM/DMARC properties, which are provider-console facts no
-   probe from this repository can read.
+   **password-recovery** delivery to a real mailbox — untestable through the product while the
+   deployed bundle holds the recovery entry closed — and the SPF/DKIM/DMARC properties, which are
+   provider-console facts no probe from this repository can read. The request side is now an
+   executable, repeatable step rather than a hand command:
+   `node scripts/hosted-auth-status.mjs --identity <qa-identity> --request-recovery` asks the hosted
+   sender for a reset mail at `https://dueweave.pages.dev/auth/update-password`, which is the
+   destination `client/src/hooks/useSupabaseAuth.ts:83` asks GoTrue for and the only route that
+   renders the password form; the run answered `RECOVER redirect_to=… HTTP 200` twice, and a repeat
+   inside roughly a minute answers `HTTP 429` instead. **That 200 is not evidence the link lands on
+   DueWeave** — see gate 2's measured control.
 2. **Auth URL configuration:** Re-read hosted Site URL, exact redirect allow-list, signup
    confirmation settings, SMTP identity and rate limits. Historical production measurement had
    Site URL `http://localhost:3000` and password minimum 6; set Site URL to
@@ -51,6 +58,20 @@ Any later SHA must earn its own CI and deployment verification.
    fresh sign-in. A *configuration read* of these values still needs the management credential, since
    `GET /auth/v1/settings` exposes neither `site_url`, `additional_redirect_urls` nor
    `password_min_length`, and rate limits were not read at all.
+   **Further amended 2026-10-14, because the behavioural substitute for that read failed its own
+   control:** `POST /auth/v1/recover?redirect_to=…` on this project answers **HTTP 200 for a
+   destination it was never configured to allow** — a probe carrying
+   `redirect_to=https://redirect-control-not-configured.example/auth/update-password` for an address
+   that exists was accepted exactly as the production destination was, and the same endpoint answers
+   `HTTP 429` inside roughly a minute of a prior request, which is a rate window and not a refusal.
+   Two consequences, both stated rather than smoothed over: a 200 from the recovery probe certifies
+   nothing about the allow-list, so the only proof of a reset link's destination is the delivered
+   message read in the mailbox; and whether an arbitrary `redirect_to` is honoured in the emailed link
+   or silently replaced by the Site URL is now an **open hosted-configuration question** that no
+   credential-free probe can settle. It needs one read in the Supabase dashboard
+   (`Authentication → URL Configuration`: Site URL and Redirect URLs) — and it matters, because if the
+   parameter is honoured, anyone able to call `/recover` with a customer's address could point a reset
+   link at a domain that is not DueWeave's.
 3. **Live signed-in customer acceptance:** Use disposable verified QA users in a real production
    browser. Test onboarding; client/receivable create/edit; partial payments; promise creation,
    withdrawal and timeline; follow-up drafts and manual WhatsApp handoff; snooze; free-tier cap;

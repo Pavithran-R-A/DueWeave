@@ -5,11 +5,12 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 
-// Four hosted questions have been answered this release line by hand-typed curl commands: which
+// Five hosted questions have been answered this release line by hand-typed curl commands: which
 // project the deployed bundle actually names, what the hosted Auth service admits about itself,
-// whether the disposable QA identity is still unconfirmed, and whether the deployed erasure function
-// still answers cross-origin the way the release line promises. Hand commands answer once and leave
-// nothing behind, so this is those four as one repeatable operator instrument.
+// whether the disposable QA identity is still unconfirmed, whether the deployed erasure function
+// still answers cross-origin the way the release line promises, and what the hosted sender does with
+// the recovery destination the product asks for. Hand commands answer once and leave nothing behind,
+// so this is those five as one repeatable operator instrument.
 //
 // Two facts measured against production on 2026-10-13 decide what the instrument may claim:
 //   - `GET /auth/v1/settings` answers provider switches, `disable_signup`, `mailer_autoconfirm` and
@@ -242,6 +243,74 @@ describe("Hosted auth status", () => {
     expect(auth.requests.some((request) => request.url.startsWith("/auth/v1/resend"))).toBe(false);
     expect(out).toMatch(/RESEND\s+skipped:/);
     expect(code).toBe(0);
+  });
+
+  // The reset link a customer taps has to land on `/auth/update-password`, because that is the only
+  // route holding the password form (`client/src/hooks/useSupabaseAuth.ts` asks GoTrue for it). Two
+  // facts measured against production on 2026-10-14 decide what this probe may claim:
+  //   - `/auth/v1/settings` does not expose the redirect allow-list, so a request carrying the
+  //     product's own destination is the only credential-free way to make the hosted sender use it.
+  //   - That same afternoon, an unconfigured destination (`redirect-control-not-configured.example`)
+  //     was answered HTTP 200 for an address that exists. So a 200 says the request was accepted and
+  //     nothing at all about which domain the emailed link opens; claiming otherwise would be
+  //     reading a green light out of a status code.
+  it("requests a recovery mail addressed to the route that holds the password form", async () => {
+    const { site, auth } = await serveStack({
+      "GET /auth/v1/settings": settingsReply,
+      "POST /auth/v1/token": confirmedGrant("5fbc55df"),
+      "POST /auth/v1/recover": { status: 200, body: { message: "If the email exists, a recovery link has been sent" } },
+    });
+    const { code, out } = await run(["--site", site, "--identity", identity("qa@example.test", "a-password-value"), "--request-recovery"]);
+
+    const recover = auth.requests.find((request) => request.url.startsWith("/auth/v1/recover"));
+    expect(recover, `no recovery request reached the Auth service: ${out}`).toBeDefined();
+    expect(decodeURIComponent(recover!.url.split("redirect_to=")[1])).toBe(`${site}/auth/update-password`);
+    expect(JSON.parse(recover!.body)).toMatchObject({ email: "qa@example.test" });
+    expect(out).toMatch(new RegExp(`RECOVER\\s+redirect_to=${site.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/auth/update-password HTTP 200`));
+    expect(out).toMatch(/RECOVER[^]*readable only in the mailbox[^]*never configured to allow/);
+    expect(code).toBe(0);
+  });
+
+  it("sends no recovery mail unless it is asked to", async () => {
+    const { site, auth } = await serveStack({
+      "GET /auth/v1/settings": settingsReply,
+      "POST /auth/v1/token": confirmedGrant("5fbc55df"),
+      "POST /auth/v1/recover": { status: 200, body: {} },
+    });
+    const { code, out } = await run(["--site", site, "--identity", identity("qa@example.test", "a-password-value")]);
+
+    expect(auth.requests.some((request) => request.url.startsWith("/auth/v1/recover"))).toBe(false);
+    expect(out).toMatch(/RECOVER\s+skipped:/);
+    expect(code).toBe(0);
+  });
+
+  // GoTrue rate-limits recovery per address, so a second run moments after the first is the normal
+  // state of this instrument rather than a broken release. A note, not a problem.
+  it("reads a recovery rate limit as a request already made, not as a failure", async () => {
+    const { site, auth } = await serveStack({
+      "GET /auth/v1/settings": settingsReply,
+      "POST /auth/v1/token": confirmedGrant("5fbc55df"),
+      "POST /auth/v1/recover": { status: 429, body: { error_description: "For security purposes, you can only request this after 55 seconds." } },
+    });
+    const { code, out } = await run(["--site", site, "--identity", identity("qa@example.test", "a-password-value"), "--request-recovery"]);
+
+    expect(auth.requests.some((request) => request.url.startsWith("/auth/v1/recover"))).toBe(true);
+    expect(out).toMatch(/RECOVER\s+redirect_to=\S+\/auth\/update-password HTTP 429[^]*already asked/);
+    expect(out).not.toMatch(/PROBLEM/);
+    expect(code).toBe(0);
+  });
+
+  it("reports a recovery request the hosted Auth service refuses outright", async () => {
+    const { site, auth } = await serveStack({
+      "GET /auth/v1/settings": settingsReply,
+      "POST /auth/v1/token": confirmedGrant("5fbc55df"),
+      "POST /auth/v1/recover": { status: 401, body: { error_description: "invalid claim: missing admin token" } },
+    });
+    const { code, out } = await run(["--site", site, "--identity", identity("qa@example.test", "a-password-value"), "--request-recovery"]);
+
+    expect(auth.requests.some((request) => request.url.startsWith("/auth/v1/recover"))).toBe(true);
+    expect(out).toMatch(/PROBLEM\s+RECOVER[^]*HTTP 401/);
+    expect(code).toBe(1);
   });
 
   it("checks the deployed erasure boundary from the site's own origin", async () => {

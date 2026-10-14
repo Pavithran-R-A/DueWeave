@@ -3,10 +3,11 @@
 //
 //   node scripts/hosted-auth-status.mjs --site https://dueweave.pages.dev
 //   node scripts/hosted-auth-status.mjs --identity p3c-red-baseline/qa-identity.json --request-confirmation
+//   node scripts/hosted-auth-status.mjs --identity p3c-red-baseline/qa-identity.json --request-recovery
 //
 // Everything it reads is reachable with the key a customer's browser already holds, so it runs on a
 // laptop with no Supabase management token — which is the state this project has been in since the
-// machine-global token was replaced by another product's on 2026-10-07. Two limits of that surface
+// machine-global token was replaced by another product's on 2026-10-07. Three limits of that surface
 // are measured facts, not guesses, and the report states them rather than leaving a silent field to
 // look like a green light:
 //   - `GET /auth/v1/settings` answers provider switches, `disable_signup`, `mailer_autoconfirm` and
@@ -14,6 +15,9 @@
 //     `password_min_length`, so no credential-free read can prove where an emailed link will land.
 //   - Whether a delivered message actually arrived, and to which address, is readable only in the
 //     mailbox. A 200 from `/resend` proves the sender accepted the request, nothing more.
+//   - Asked on 2026-10-14, `/recover` answered HTTP 200 for a `redirect_to` on a domain this project
+//     was never configured to allow. So no status code from that endpoint is evidence about the
+//     redirect allow-list either; it only says a request was accepted.
 //
 // The project URL and the publishable key are read out of the bundle the deployed site is serving
 // right now, so "the live site points at this project" is measured on every run. In the served entry
@@ -30,15 +34,19 @@ import { readFileSync } from "node:fs";
 const DEFAULT_SITE = "https://dueweave.pages.dev";
 
 function parseArgs(argv) {
-  const options = { site: DEFAULT_SITE, identity: "", requestConfirmation: false };
+  const options = { site: DEFAULT_SITE, identity: "", requestConfirmation: false, requestRecovery: false };
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
     if (token === "--request-confirmation") {
       options.requestConfirmation = true;
       continue;
     }
+    if (token === "--request-recovery") {
+      options.requestRecovery = true;
+      continue;
+    }
     if (token !== "--site" && token !== "--identity") {
-      console.error(`Unrecognised argument "${token}". Expected --site <origin>, --identity <file> or --request-confirmation.`);
+      console.error(`Unrecognised argument "${token}". Expected --site <origin>, --identity <file>, --request-confirmation or --request-recovery.`);
       process.exit(2);
     }
     const value = argv[index + 1];
@@ -256,8 +264,44 @@ if (options.requestConfirmation) {
   report("RESEND skipped: this run sends no mail; pass --request-confirmation to request one confirmation message");
 }
 
+// A reset link has to land on the one route that holds the password form, so this asks the hosted
+// sender for a recovery mail at exactly the destination `client/src/hooks/useSupabaseAuth.ts` asks
+// for. Measured 2026-10-14: this project answers HTTP 200 even for a `redirect_to` on a domain that
+// is nowhere in its configuration, so the status says the request was accepted and nothing about
+// which domain the emailed link opens. Only the mailbox can settle that, and the line says so.
+if (options.requestRecovery) {
+  if (!qaEmail) {
+    report("RECOVER skipped: --request-recovery needs --identity <file> so it knows which address to ask for");
+  } else {
+    const redirectTo = `${site}/auth/update-password`;
+    const recover = await request(`${api}/auth/v1/recover?redirect_to=${encodeURIComponent(redirectTo)}`, {
+      method: "POST",
+      headers: { ...publicHeaders, "content-type": "application/json" },
+      body: JSON.stringify({ email: qaEmail }),
+    }).catch((error) => {
+      problem(`RECOVER could not be requested (${error.message})`);
+      return null;
+    });
+    if (recover) {
+      const body = await readJson(recover);
+      const message = body?.error_description ?? body?.msg ?? body?.error ?? "";
+      if (recover.status === 200) {
+        report(`RECOVER  redirect_to=${redirectTo} HTTP 200`);
+        report("RECOVER  a recovery request was accepted; which domain the emailed link opens is readable only in the mailbox, never from this command — this project also answers HTTP 200 for a redirect_to it was never configured to allow");
+      } else if (recover.status === 429) {
+        report(`RECOVER  redirect_to=${redirectTo} HTTP 429${message ? ` — "${message}"` : ""}: a recovery mail for this address was already asked for moments ago, so nothing new was requested`);
+      } else {
+        problem(`RECOVER redirect_to=${redirectTo} answered HTTP ${recover.status}${message ? ` ("${message}")` : ""} — no recovery mail was requested`);
+      }
+    }
+  }
+} else {
+  report("RECOVER skipped: this run sends no mail; pass --request-recovery to request one recovery message");
+}
+
 if (problems.length > 0) {
   console.error(`Hosted auth status: ${problems.length} problem(s).`);
   process.exit(1);
 }
-report(`Hosted auth status: no problem found. Read-only probes only${options.requestConfirmation ? ", one confirmation request sent" : ""}.`);
+const mailed = [options.requestConfirmation && qaEmail ? "confirmation" : null, options.requestRecovery && qaEmail ? "recovery" : null].filter(Boolean);
+report(`Hosted auth status: no problem found. Read-only probes only${mailed.length > 0 ? `; ${mailed.length} mail request(s) sent: ${mailed.join(", ")}` : ""}.`);
