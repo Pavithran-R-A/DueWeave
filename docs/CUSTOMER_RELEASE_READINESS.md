@@ -19,7 +19,7 @@ Any later SHA must earn its own CI and deployment verification.
 | Database authorization, tenant separation and anonymous isolation | Hosted Phase 3B two-account isolation matrix; 13/13 public tables RLS-enabled; anon/PUBLIC routine EXECUTE zero | Verified for measured hosted matrix |
 | Monetary dates, receivable/promise/payment history, exports, Founder refusal behavior and customer journeys | Vitest, pgTAP, DB/live, and Playwright local-stack CI gates; consult exact-head run, not earlier counts. **Amended 2026-10-14:** the advertised free-tier journey was then executed signed-in on `https://dueweave.pages.dev` as a real confirmed customer — onboarding, adding a client, promising money, recording a payment, following up and exporting — and each step was read back from `ugzdqcytouwfdlcjujqv` through `scripts/hosted-db-census.mjs --owner <qa-account>`, which answers 5 activities / 1 client / 1 promise / 1 promise event / 1 payment / 1 receivable / 1 entitlement / 1 profile and 0 analytics or Founder rows; Founder stays refused on production, and the eight-character password minimum was proved on the deployed build including a rejected seven-character attempt | Hosted browser acceptance executed for the single-account free-tier journey; cross-tenant isolation and account erasure **on production**, and the large-data export, are still open |
 | User-owned account erasure with history | Production migration 25 and transaction-rollback database acceptance. **Amended 2026-10-12:** CI's `Browser release smoke` executes the destructive path end to end at every head — `e2e/stage9-release-journey.spec.ts:505` opens the sheet, requires the exact phrase, clicks delete through the served `delete-account` function (`.github/workflows/ci.yml:160`), lands on `/auth` and is then refused sign-in with the old credentials (`✓ 80 … (1.6s)` in run `38253358122`) — which is a real cross-origin browser erasure with real Auth removal, against the **local** stack rather than production | Browser side executed on the local stack; the same run against `ugzdqcytouwfdlcjujqv` with a before/after row census is still open |
-| Real hosted frontend source and Supabase config | Pages project production branch `release/consumer-live`, build `pnpm build`, output `dist`, active Supabase URL/publishable-key envs | Deployment state verified; exact-head certification required |
+| Real hosted frontend source and Supabase config | Pages project production branch `release/consumer-live`, build `pnpm build`, output `dist`, active Supabase URL/publishable-key envs. **Amended 2026-10-14 at the released tip `505ff51`:** `node scripts/verify-deployed-parity.mjs --dist dist-paused --url https://dueweave.pages.dev` answers exit 0 — a flags-off build of this head reproduces the served entry `assets/index-Bv2LIPpN.js` and the lazily-loaded `assets/Auth-BIHs1b_G.js`, all 20 built files match, and both host configurations hold by effect (`_headers` with 80 live declarations honoured, `_redirects` answering `/parity-probe` with HTTP 200). The served Auth chunk is the closed-flag artifact: the registration affordance is absent from its bytes and "New registrations are temporarily paused" is present in them, so what production holds closed is proved at build time rather than inferred from a runtime conditional | Exact-head deployed parity and served flag state verified on production |
 | Full ledger and downloadable archive past PostgREST 1,000-row default limit | Page-by-page queries with stable order, unit tests for 1,201 rows and errors | Code+unit gated; full live large-data export outstanding |
 | Password and Auth network errors do not strand the form | Guarded `try/catch/finally` and friendly error responses. **Amended 2026-10-14:** the adverse browser-network simulation was executed against the deployed build in real Chromium with a confirmed customer session, with every REST read routed through an aborting interceptor. A cold load whose profile reads fail answers honestly after the REST client's own GET backoff (attempts measured at 0.26 s, 1.28 s, 3.31 s and 7.34 s, each `net::ERR_FAILED`) with "Couldn't load this view / Your private ledger remains protected. / We could not refresh this screen. Check your connection and try again…" and a `Try again` button, and no technical detail; retrying against a still-failing read returns that same screen with no blank or detached frame in between; retrying after the connection returns reproduces the online money brief exactly; and a client save attempted with the browser offline refuses in 581 ms with "Could not add client — We could not reach DueWeave. Check your connection and try again.", keeps the typed name on screen, re-enables Save, and leaves the hosted row census byte-identical to the one taken before the run. The wait before the error is the library's documented retry (`@supabase/postgrest-js` 2.112.3: 3 attempts, GET only, 1 s/2 s/4 s), not an application strand — money writes are POST RPCs and are never retried, so a flaky network cannot double-apply one | Verified on deployed production |
 
@@ -30,16 +30,42 @@ Any later SHA must earn its own CI and deployment verification.
    Configure a legitimate production SMTP identity/domain, verify SPF/DKIM/DMARC, and execute
    signup-confirmation and password-recovery acceptance with a real mailbox. Do not claim an email
    arrived based only on an API 200 or a local test inbox.
+   **Amended 2026-10-14:** the signup-confirmation half now rests on delivered evidence rather than
+   configuration intent. A confirmation message for the released QA identity was sent with
+   `emailRedirectTo=https://dueweave.pages.dev/auth`, read from the real Gmail mailbox, and the link
+   completed confirmation at 07:46:57 UTC; navigating that same link again four seconds later was
+   refused, because its one-time token had already been spent. What this gate still lacks is
+   **password-recovery** delivery to a real mailbox — untestable while the deployed bundle holds the
+   recovery entry closed — and the SPF/DKIM/DMARC properties, which are provider-console facts no
+   probe from this repository can read.
 2. **Auth URL configuration:** Re-read hosted Site URL, exact redirect allow-list, signup
    confirmation settings, SMTP identity and rate limits. Historical production measurement had
    Site URL `http://localhost:3000` and password minimum 6; set Site URL to
    `https://dueweave.pages.dev`, allow exactly required HTTPS recovery redirects, set
    hosted password minimum to 8, then independently re-measure and test.
+   **Amended 2026-10-14:** the three writes named here have landed, and were re-measured by their
+   consequences rather than accepted on report. The confirmation link that arrived pointed at
+   `https://dueweave.pages.dev/auth` and the sign-in it enabled succeeded on that origin — which is
+   what a correct Site URL and redirect allow-list must produce — and the hosted Auth API refused a
+   seven-character password change while the eight-character replacement was accepted and used for a
+   fresh sign-in. A *configuration read* of these values still needs the management credential, since
+   `GET /auth/v1/settings` exposes neither `site_url`, `additional_redirect_urls` nor
+   `password_min_length`, and rate limits were not read at all.
 3. **Live signed-in customer acceptance:** Use disposable verified QA users in a real production
    browser. Test onboarding; client/receivable create/edit; partial payments; promise creation,
    withdrawal and timeline; follow-up drafts and manual WhatsApp handoff; snooze; free-tier cap;
    search, dark mode, export/download, signout, account erasure, and cross-account refusal.
    Assert before/after DB rows and remove every QA user/artifact. No customer funds.
+   **Amended 2026-10-14:** one identity is done and read back — see the free-tier journey row above,
+   executed signed-in on `https://dueweave.pages.dev` with every step counted in `ugzdqcytouwfdlcjujqv`
+   — and the rest of this gate is **ordered behind the owner's flag decision, not in front of it.**
+   A second disposable identity cannot be created through the deployed product while
+   `VITE_PUBLIC_SIGNUP_ENABLED` is false in the served bundle, password-recovery delivery cannot be
+   observed while `VITE_AUTH_EMAIL_ENABLED` is false in it, and account erasure then needs a confirmed
+   second session to be worth anything as an isolation test. Both flags are proved false *in the served
+   bytes* by the exact-head parity row above, so the remaining sub-items of gates 1, 3 and 4 all unblock
+   from one owner action — open the two flags and let Pages rebuild — and none of them can be reached by
+   more engineering on this side.
 4. **Account-deletion runtime:** Redeploy the updated `delete-account` source after exact-head
    gates. Test browser CORS preflight (including `apikey` and `x-client-info`) and the complete
    Auth-account removal, not just a transaction-scoped SQL simulation.
