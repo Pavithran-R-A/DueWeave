@@ -31,7 +31,7 @@ const { buildSnapshot, erasureFindings, runErasure, buildEraseCall, parseErasure
 /** The measured production shape of one census, reduced to the five reads an erasure is judged by. */
 function censusRows(spec: {
   users: { total: number; confirmed: number; unconfirmed: number };
-  account?: { emailConfirmed: boolean };
+  account?: { emailConfirmed: boolean; email?: string };
   ledger: Record<string, number>;
   owner: Record<string, number>;
   auth?: Record<string, { total: number; orphaned: number; forOwner: number }>;
@@ -48,7 +48,7 @@ function censusRows(spec: {
     "auth-residue": residue,
     "ledger-census": Object.entries(spec.ledger).map(([tbl, rows]) => ({ tbl, rows })),
     "owner-census": Object.entries(spec.owner).map(([tbl, rows]) => ({ tbl, rows })),
-    "account-state": spec.account ? [{ account: "dueweave+releaseqa-20261012@gmail.com", email_confirmed: spec.account.emailConfirmed, email_confirmed_at: "2026-10-12 15:31:02 +0000 UTC", recovery_sent_at: null, last_sign_in_at: "2026-10-15 06:12:44 +0000 UTC", updated_at: "2026-10-15 06:12:44 +0000 UTC" }] : [],
+    "account-state": spec.account ? [{ account: spec.account.email ?? "qa@example.test", email_confirmed: spec.account.emailConfirmed, email_confirmed_at: "2026-10-12 15:31:02 +0000 UTC", recovery_sent_at: null, last_sign_in_at: "2026-10-15 06:12:44 +0000 UTC", updated_at: "2026-10-15 06:12:44 +0000 UTC" }] : [],
   };
 }
 
@@ -262,6 +262,81 @@ describe("hosted account erasure instrument", () => {
     expect(calls).toEqual(["signIn", `snapshot:${QA_A}`]);
     expect(outcome.refused).toBe(true);
     expect(join(lines)).toMatch(/no per-account rows/i);
+  });
+
+  // A label that fails to read is *absent* from the census answer, and every rule below is driven by
+  // what is present — so an unchecked absence deletes the rule rather than failing the run. These are
+  // the three reads the two guards above cannot see: without the ledger count the collateral rule has
+  // no table to compare, without the auth residue the October 5 orphans have no baseline, and without
+  // the account row the instrument is erasing an account it has never observed.
+  for (const label of ["ledger-census", "auth-residue", "account-state"]) {
+    it(`refuses to call the erasure when the before census reads nothing from ${label}`, async () => {
+      const calls: string[] = [];
+      const lines: string[] = [];
+      const outcome = await runErasure({
+        identity: { email: "qa@example.test", password: FAKE_PASSWORD },
+        confirmErasing: true,
+        signIn: async () => { calls.push("signIn"); return { status: 200, token: "SESSION-TOKEN-SECRET", userId: QA_A }; },
+        snapshot: async (owner: string) => {
+          calls.push(`snapshot:${owner}`);
+          const rows = censusRows({ users: { total: 2, confirmed: 1, unconfirmed: 1 }, account: { emailConfirmed: true }, ...REAL });
+          rows[label] = [];
+          return rows;
+        },
+        erase: async () => { calls.push("erase"); return DELETED; },
+        log: (line: string) => lines.push(line),
+      });
+      expect(calls, `the deletion ran on a census missing ${label}`).toEqual(["signIn", `snapshot:${QA_A}`]);
+      expect(outcome.refused).toBe(true);
+      expect(join(lines)).toMatch(new RegExp(label, "i"));
+      expect(join(lines)).toMatch(/not attempted/i);
+    });
+  }
+
+  // The same absence on the far side of an irreversible call cannot be allowed to read as success.
+  it("reports the erasure as unproven when the after census reads nothing from auth-residue", () => {
+    const rows = censusRows({
+      users: { total: 1, confirmed: 0, unconfirmed: 1 },
+      ledger: Object.fromEntries(Object.entries(REAL.ledger).map(([table, count]) => [table, count - (REAL.owner[table] ?? 0)])),
+      owner: Object.fromEntries(Object.keys(REAL.owner).map((table) => [table, 0])),
+      auth: Object.fromEntries(Object.entries(REAL.auth).map(([table, counts]) => [table, { total: counts.total - counts.forOwner, orphaned: counts.orphaned, forOwner: 0 }])),
+    });
+    rows["auth-residue"] = [];
+    const text = join(erasureFindings({ before: before(), after: buildSnapshot(rows), functionOutcome: DELETED, credentialAfter: REFUSED }));
+    expect(text).toMatch(/auth-residue/i);
+    expect(text).toMatch(/not (be )?proven|unreadable/i);
+  });
+
+  // The account to erase is named by the token, and the token came from an identity file. If the
+  // account that file's credential signs into is not the account the census describes, the operator
+  // pointed at the wrong file — and the arithmetic below would still call the result clean.
+  it("refuses to erase when the census names an account other than the identity file's", async () => {
+    const calls: string[] = [];
+    const lines: string[] = [];
+    const outcome = await runErasure({
+      identity: { email: "someone-else@example.test", password: FAKE_PASSWORD },
+      confirmErasing: true,
+      signIn: async () => { calls.push("signIn"); return { status: 200, token: "SESSION-TOKEN-SECRET", userId: QA_A }; },
+      snapshot: async (owner: string) => {
+        calls.push(`snapshot:${owner}`);
+        return censusRows({ users: { total: 2, confirmed: 1, unconfirmed: 1 }, account: { emailConfirmed: true, email: "qa@example.test" }, ...REAL });
+      },
+      erase: async () => { calls.push("erase"); return DELETED; },
+      log: (line: string) => lines.push(line),
+    });
+    expect(calls, "the erasure was called for an account the identity file does not name").toEqual(["signIn", `snapshot:${QA_A}`]);
+    expect(outcome.refused).toBe(true);
+    expect(join(lines)).toMatch(/identity file/i);
+    expect(join(lines), "the refusal carried the credential").not.toContain(FAKE_PASSWORD);
+  });
+
+  // Whole-table counts are the only way to see an auth purge wider than the account. The public tables
+  // already have this rule; the auth schema had the numbers and used none of them.
+  it("names collateral loss when an auth table sheds more rows than the erased account owned", () => {
+    const after = afterClean();
+    after.auth.sessions = { total: 11, orphaned: 11, forOwner: 0 };
+    const text = join(erasureFindings({ before: before(), after, functionOutcome: DELETED, credentialAfter: REFUSED }));
+    expect(text).toMatch(/auth\.sessions lost 3 rows, 1 of them naming the erased account/i);
   });
 
   it("reads the before census, erases, reads the after census, then re-tries the credential", async () => {

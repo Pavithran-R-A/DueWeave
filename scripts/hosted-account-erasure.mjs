@@ -77,6 +77,9 @@ export function buildSnapshot(rowsByLabel) {
     ledger: countMap(rowsByLabel["ledger-census"] ?? []),
     ownerRows: countMap(rowsByLabel["owner-census"] ?? []),
     auth,
+    // Every rule below iterates what a read returned, so a read that returned nothing has to be
+    // recorded as missing rather than left to look like a table with no rows in it.
+    missing: SNAPSHOT_LABELS.filter((label) => !Array.isArray(rowsByLabel[label]) || rowsByLabel[label].length === 0),
   };
 }
 
@@ -89,14 +92,28 @@ function summarize(snapshot) {
 }
 
 /**
- * The two conditions under which a before census cannot support a proof at all.
- * before the irreversible call, because a snapshot that turned out to be half-empty after the
- * deletion is a finding nobody can act on — the account is already gone.
+ * What each census read owes the judgement, and the sentence printed when it reads nothing at all.
+ *
+ * Every rule in `erasureFindings` iterates the rows a read returned, so a read that failed is not a
+ * neutral gap — it silently deletes the rules that would have needed it. A deletion that cannot be
+ * undone has to stop at the first one of those, before the function is called.
  */
+const READ_GAP = {
+  "auth-users": "read no account count, so nothing here can be judged",
+  "auth-residue": "read no auth-schema counts, so neither the erased account's own residue nor the October 5 orphans have a baseline",
+  "ledger-census": "read no ledger counts, so a table shedding another account's rows could not be seen",
+  "owner-census": "carried no per-account rows, so an empty result after it would prove nothing",
+  "account-state": "read no account row for the signed-in uuid, so this run cannot see the account it is about to erase",
+};
+
+/** The reads an after census must also carry; the account row is legitimately absent once it is gone. */
+const AFTER_READS = SNAPSHOT_LABELS.filter((label) => label !== "account-state");
+
 export function beforeEraseFindings(before) {
-  const findings = [];
-  if (before.usersTotal === null) findings.push("BEFORE the before census read no account count, so nothing here can be judged and the erasure was not attempted");
-  if (entries(before.ownerRows).length === 0) findings.push("BEFORE the before census carried no per-account rows, so an empty result after it would prove nothing and the erasure was not attempted");
+  const findings = before.missing.map((label) => `BEFORE ${label} ${READ_GAP[label]} — the erasure was not attempted and nothing was changed`);
+  if (before.usersTotal === null && !before.missing.includes("auth-users")) {
+    findings.push(`BEFORE auth-users ${READ_GAP["auth-users"]} — the erasure was not attempted and nothing was changed`);
+  }
   return findings;
 }
 
@@ -106,6 +123,9 @@ export function beforeEraseFindings(before) {
  */
 export function erasureFindings({ before, after, functionOutcome, credentialAfter }) {
   const findings = [];
+  for (const label of AFTER_READS) {
+    if (after.missing.includes(label)) findings.push(`AFTER the after census read nothing from ${label}, so the erasure cannot be proven against a read that returned nothing`);
+  }
   const answered = functionOutcome?.body?.status ?? null;
   const http = functionOutcome?.status ?? 0;
   if (http !== 200 || answered !== "deleted") {
@@ -140,6 +160,18 @@ export function erasureFindings({ before, after, functionOutcome, credentialAfte
     const lost = rowsBefore - rowsAfter;
     if (lost > owned) findings.push(`AFTER public.${table} lost ${lost} rows, ${owned} of them owned by the erased account — rows belonging to another account went with them, or something else wrote to production during the run`);
     else if (lost < owned) findings.push(`AFTER public.${table} lost ${lost} rows while the erased account owned ${owned}, so ${owned - lost} of its rows are still in the table`);
+  }
+
+  // Whole-table auth counts are the only way to see a purge wider than the account: `forOwner` says
+  // how many rows the erased account could justify taking, and anything past that belonged to someone
+  // else. The `orphaned` column cannot express it because those rows also never named this account.
+  for (const [table, countsBefore] of entries(before.auth)) {
+    const countsAfter = after.auth[table];
+    if (!countsAfter || countsBefore.total === null || countsAfter.total === null || countsBefore.forOwner === null) continue;
+    const lost = countsBefore.total - countsAfter.total;
+    if (lost > countsBefore.forOwner) {
+      findings.push(`AFTER auth.${table} lost ${lost} rows, ${countsBefore.forOwner} of them naming the erased account — rows that named other accounts went with them, so this erasure reached past its own account or something else wrote to auth during the run`);
+    }
   }
 
   // The orphans are the release record's standing debt: rows naming no account, to be preserved.
@@ -208,6 +240,14 @@ export async function runErasure({ identity, confirmErasing, signIn, snapshot, e
   // A half-empty before census cannot support an after proof, and the deletion it would license is
   // irreversible, so the run stops here instead of discovering the gap once the account is gone.
   const unprovable = beforeEraseFindings(before);
+  // The uuid came from the token and the census read that uuid, but the account was *chosen* by the
+  // identity file. If that file's credential signs into a different address than the census describes,
+  // the operator pointed at the wrong file — and every delta below would still read as clean.
+  const censusEmail = String(before.account.email ?? "").toLowerCase();
+  const identityEmail = String(identity.email ?? "").toLowerCase();
+  if (censusEmail && identityEmail && censusEmail !== identityEmail) {
+    unprovable.push(`BEFORE the census describes ${before.account.email} for ${owner} but the identity file signs in as ${identity.email} — the erasure was not attempted and nothing was changed`);
+  }
   if (unprovable.length > 0) {
     for (const finding of unprovable) report(finding);
     return { refused: true, findings: [], before, after: null, owner };
