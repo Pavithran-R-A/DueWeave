@@ -143,7 +143,7 @@ describe("hosted database census instrument", () => {
     expect(code).toBe(0);
     const labels = out.split("\n").filter((line) => /^READ\s/.test(line)).map((line) => line.split(/\s+/)[1]);
     expect(new Set(labels).size).toBe(labels.length);
-    for (const expected of ["auth-users", "auth-residue", "ledger-census", "rls-coverage", "routine-posture", "default-privileges", "unindexed-foreign-keys", "migration-ledger", "owner-census"]) {
+    for (const expected of ["auth-users", "account-state", "auth-residue", "ledger-census", "rls-coverage", "routine-posture", "default-privileges", "unindexed-foreign-keys", "migration-ledger", "owner-census"]) {
       expect(labels).toContain(expected);
     }
     expect(calls.length).toBe(labels.length);
@@ -293,5 +293,40 @@ describe("hosted database census instrument", () => {
     const listed = (out: string) => [...new Set([...statementFor(out, "auth-residue").matchAll(/from auth\.(\w+)/g)].map((match) => match[1]))].sort();
     expect(listed(scoped.out)).toEqual(listed(unscoped.out));
     expect(listed(unscoped.out).length).toBe(AUTH_ACCOUNT_TABLES.length + 1);
+  });
+
+  // Measured on production 2026-10-15: the password grant answers `HTTP 400 / "Invalid login
+  // credentials"` both for an address that has never been confirmed and for a confirmed account whose
+  // password was just reset, so the sender's refusal text cannot tell a completed recovery from an
+  // untouched one. The auth catalog can. This was first written against `password_changed_at`, and
+  // production answered `column u.password_changed_at does not exist` — the hosted `auth.users` of
+  // GoTrue v2.197.0 has no such column, so the read names the four it measured in that catalog dump
+  // instead: when the address was confirmed, when the last sign-in landed, when the row last changed,
+  // and when a recovery message was last requested.
+  it("reads one named account's confirmation and recovery state from the auth catalog", async () => {
+    const { code, out } = await run(["--dry-run", "--owner", QA_OWNER], {});
+    expect(code).toBe(0);
+    const state = statementFor(out, "account-state");
+    expect(state, "no per-account auth state statement was offered").toBeTruthy();
+    expect(state).toMatch(/from auth\.users/i);
+    for (const column of ["email_confirmed_at", "last_sign_in_at", "updated_at", "recovery_sent_at"]) {
+      expect(state, `the read does not ask for ${column}`).toMatch(new RegExp(column, "i"));
+    }
+    expect(state, "a confirmed address must not read as a blank cell").toMatch(/\) as email_confirmed\b/i);
+    expect(state, "the read is not scoped to the account the operator named").toContain(QA_OWNER);
+    // The one-way hash and the live one-time tokens sit in this same row. Reading them would carry a
+    // spendable recovery link into an operator log, so the read names columns instead of the row.
+    for (const secret of ["encrypted_password", "recovery_token", "confirmation_token", "email_change_token"]) {
+      expect(state, `the read reaches the ${secret} column`).not.toMatch(new RegExp(secret, "i"));
+    }
+  });
+
+  it("keeps per-account auth state out of a census that named no account", async () => {
+    const { out } = await run(["--dry-run"], {});
+    expect(statementFor(out, "account-state"), "an unscoped census would print every account's email and reset state").toBe("");
+    const printed = statements(out).filter((statement) => /from auth\.users/i.test(statement));
+    for (const statement of printed) {
+      expect(statement, `an unscoped read prints account rows: ${statement.slice(0, 80)}`).not.toMatch(/\bselect\s+u\.email\b/i);
+    }
   });
 });

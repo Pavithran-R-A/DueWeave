@@ -82,8 +82,25 @@ Any later SHA must earn its own CI and deployment verification.
    in, so the reset was never completed` (exit code 1). That is the accurate pre-state, not a green
    gate: no reset has completed on either identity, QA-A's existing sign-in still works, and the
    recovery password is refused everywhere. Four contract cases pin both refusal paths, the accepted
-   pair, and the skip when an identity holds no recovery password — `21 passed (21)` for this file,
-   `668 passed` for the unit suite at this head.
+   pair, and the skip when an identity holds no recovery password — `21 passed (21)` for this file.
+   **The refusal text cannot close this half, so the census now reads the catalog (measured
+   2026-10-15):** that same `HTTP 400` answers `"Invalid login credentials"` for an address that was
+   never confirmed *and* for a confirmed account whose password was just changed, so QA-B's refusal
+   could not distinguish "the link is unused" from "the link worked and this probe typed the old
+   password". `scripts/hosted-db-census.mjs --owner <account>` now answers it out of `auth.users`:
+   `READ account-state` returns the confirmation state plus `recovery_sent_at`, `last_sign_in_at` and
+   `updated_at`, and it is offered **only when an account is named**, so a census naming nobody prints
+   no account's state. The first shape of this read asked for `password_changed_at` and production
+   refused it (`column u.password_changed_at does not exist`), so the four columns it names now are the
+   ones this catalog actually holds, chosen after listing all 35. At `07:04:32Z` QA-B read
+   `email_confirmed false` / `email_confirmed_at NULL` / `last_sign_in_at NULL` /
+   `recovery_sent_at 06:11:32Z` / `updated_at 06:11:35Z` — an unspent link, read rather than inferred.
+   At `07:05:02Z` QA-A read confirmed at `2026-10-14T07:46:57.528688Z` with `last_sign_in_at
+   06:29:20Z`, and **that timestamp is the verifier's own old-password probe signing in, not a reset** —
+   which is the honest limit of this read: `last_sign_in_at` stops proving "nobody has used this
+   account" the moment the operator instrument authenticates successfully, and is also why the unscoped
+   census moved `sessions` 17 → 21 across 2026-10-15 while no customer did anything. Seventeen census
+   contract cases, and the unit suite at this head is `47 files / 678 tests`.
 2. **Auth URL configuration:** Re-read hosted Site URL, exact redirect allow-list, signup
    confirmation settings, SMTP identity and rate limits. Historical production measurement had
    Site URL `http://localhost:3000` and password minimum 6; set Site URL to
@@ -148,12 +165,21 @@ Any later SHA must earn its own CI and deployment verification.
      proved; the census then counts the account rather than trusting the response.
    - Recovery is not blocked by `VITE_AUTH_EMAIL_ENABLED`. The flag gates the two **request** entry
      points only — `client/src/pages/Auth.tsx:141-144` refuses the forgot-password mode and `:228`
-     replaces its retry button with a note, and `client/src/pages/Home.tsx:271,381` refuses the
+     replaces its retry button with a note, and `client/src/pages/Home.tsx:279,388` refuses the
      settings-screen action. The **completion** route reads its mode from the address
      (`client/src/pages/Auth.tsx:38`, `location.includes("update-password")`) and shows the password
      form to any browser holding a recovery session, with no flag consulted. So a reset link requested
      by the operator instrument (`scripts/hosted-auth-status.mjs --request-recovery`) can be opened and
      used on the bundle production serves today, and the new-works/old-fails pair is measurable.
+   - **That route is on the artifact production serves — measured in a browser, not argued from the
+     source.** At `2026-10-15T06:26Z` real Chromium navigated to
+     `https://dueweave.pages.dev/auth/update-password` holding no credential and no session. It is
+     neither a 404 nor a redirect: the accessibility tree carries `ACCOUNT RECOVERY` and the heading
+     "This recovery link is not active." with no password field, and the note inside it — "Password
+     recovery emails are temporarily unavailable. No reset request can be sent right now." — is
+     `VITE_AUTH_EMAIL_ENABLED` being false reaching the page. So the seam that decides whether a reset
+     can be completed is the browser holding a recovery session, not the flag, and the mailbox link has
+     a landing place on the released SHA.
    - What the flag genuinely still gates is self-service: a locked-out customer asking for their own
      reset link from the deployed UI, and a new customer creating an account from that UI. Those two
      journeys cannot be walked before the owner opens the flags, and the flag-flip row below stays the
@@ -190,17 +216,54 @@ Any later SHA must earn its own CI and deployment verification.
 7. **Durability, abuse and performance:** Define zero-cost backup/restore and incident response
    appropriate to the hosted Free plan (no PITR), anti-abuse/rate-limit acceptance, load estimates,
    and investigate the five informational unindexed foreign keys using measured workloads.
-   *Measured 2026-10-15, the laptop half of the backup path:* there is no credential-safe dump route on
-   this machine today. `supabase db dump` shells out to Docker (it failed 2026-10-14 with
-   `failed to inspect docker image: … npipe … dockerDesktopLinuxEngine`, and the daemon has been
-   reachable on only some of the days since), no host `pg_dump`/`psql`/`pg_restore` is installed
-   (`where pg_dump` → not found, re-checked 2026-10-15), and the two flags that would point the CLI at
-   the remote — `--db-url` and `--password` — put the database credential in the process command line,
-   which this release line does not do. The census instrument already reads the password from
-   `~/.config/dueweave/prod-db-password` and prints `password=[redacted-db-password]`, so the missing
-   piece is a backup command on that same convention, not a new secret. Until then this gate stays open
-   as an operator decision (install a client, run it where Docker is dependable, or accept a
-   provider-side export), and no restore has been executed.
+   *Corrected, then executed, 2026-10-15.* The sentence this gate carried — that `--db-url` and
+   `--password` "put the database credential in the process command line, which this release line does
+   not do" — is withdrawn as false. The committed census instrument does exactly that: it percent-encodes
+   the password from `~/.config/dueweave/prod-db-password` into
+   `postgresql://postgres.<ref>:…@aws-0-ap-south-1.pooler.supabase.com:5432/postgres` and passes it as
+   `--db-url` **argv to a directly spawned CLI child**, then scrubs the raw and encoded forms from
+   everything it prints. What the release line avoids is a shell-interpreted command string and a
+   credential in Git, CI logs or an interactive environment — not argv, and saying otherwise made this
+   gate look blocked by a rule that never existed.
+   The gap was that no backup command existed on that convention, so this head adds one:
+   `scripts/hosted-db-backup.mjs` (`pnpm verify:hosted:backup`) wraps `supabase db dump`, keeps the same
+   off-repo password file and scrubbing, and **refuses any `--out` that lands inside the repository**
+   before the CLI is reached, because this tree is published. Structure-only unless `--data` is passed,
+   which adds `--data-only` and prints the warning that the file then holds client names, receivables,
+   promises and payments. Eight contract cases pin the containment rule, the credential handling and the
+   `--data` opt-in; like the census it is an operator command, named by no workflow and by no release gate.
+   **The gate caught the instrument that was written to satisfy it.** Staging this file made it readable to
+   `pnpm verify:secrets` for the first time — that scan walks `git ls-files`, so a script written this session
+   is invisible to it until it is committed — and the scan reported one hard finding, `database-url-with-password`,
+   on the dry-run plan line that printed `--db-url postgresql://postgres.<ref>:[redacted-db-password]@…`. The
+   marker was a placeholder, but `verify-secrets.mjs:153` applies the placeholder guard only to non-hard rules
+   (`if (!rule.hard && nonLiteral.test(line)) continue;`) so that a file cannot be edited into blindness, and a
+   hard rule therefore fires on the *shape* regardless of what the password field holds. The plan line now names
+   the argument instead of reproducing the shape, which loses no information because the `TARGET` line above it
+   already prints ref, user, host, port, database and `password=[redacted-db-password]`; and because the real fix
+   was only discoverable at staging time, a contract case now asserts that the instrument's own source contains
+   no connection-string shape, so `pnpm test:unit` catches it before `git add` does. Observed as RED on the
+   written line and GREEN after the repair; `verify:secrets` then scanned `292 files` with `No privileged
+   credential found`. The repair touched only a printed line, so the executed dump below — run by the pre-repair
+   script — handed the CLI the same argv either way.
+   **Executed against production at `2026-10-15T07:09:12Z`**, structure-only, to
+   `~/.local/share/dueweave/backups/dueweave-hosted-schema-20261015T070912Z.sql`: 140,710 bytes / 3,291
+   lines carrying 15 `CREATE TABLE`, 51 `CREATE FUNCTION` (the census independently counts 51 routines),
+   15 `CREATE POLICY` and 13 `ENABLE ROW LEVEL SECURITY` — matching the measured 13-of-13 RLS posture —
+   152 grant/revoke statements, and migration 25's `public.delete_my_account`. No line of it matches a
+   credential shape. The dump therefore preserves the authorization posture, which is precisely the part
+   a backup that restores it wrongly would silently lose.
+   *What remains open, measured rather than assumed:* (a) **no restore has been executed.** The dump
+   names `anon`, `authenticated`, `service_role` and `postgres` as grantees, so replaying it requires
+   those roles to pre-exist in the target, and this host still has no `pg_dump`/`psql`/`pg_restore`
+   (`where pg_dump` → not found, re-checked 2026-10-15). Docker was reachable for the dump
+   (`server=29.8.1`, 20 containers at `06:41:52Z` and again at `07:09Z`) after failing on 2026-10-14 at
+   `failed to inspect docker image: … dockerDesktopLinuxEngine`, which is why the backup half could
+   finally run here — the restore rehearsal needs a scratch database with the Supabase role set created
+   first, and that has not been built or run. (b) Row data has never been dumped: `--data` exists and is
+   pinned by tests, but producing it writes real customer content to disk, so it stays an explicit
+   operator decision. (c) Anti-abuse acceptance and load estimates are untouched by this instrument; the
+   only abuse measurement on this line is the `/recover` rate window (HTTP 429 inside ~1 minute) in gate 1.
 8. **Release governance:** Reconcile the long-lived `main` branch, branch/PR protection, final
    changelog and operations rollback; verify head==GitHub CI SHA==Pages deployed SHA, all intended
    gates pass, and no secret is in Git or client assets. The repository is temporarily public for

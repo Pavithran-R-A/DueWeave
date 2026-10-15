@@ -4,8 +4,9 @@
 // same questions again from the repository: how many accounts exist, whether any customer data is
 // present, whether every table is still row-security-enforced, what the routine grants say now that
 // migration 25 is applied, what the default-privilege catalog actually records for the role these
-// migrations run as, which foreign keys the advisor still calls unindexed, and how many rows
-// belong to one account — the before/after half of the erasure acceptance that `B17` still lacks.
+// migrations run as, which foreign keys the advisor still calls unindexed, how many rows belong to
+// one account — the before/after half of the erasure acceptance that `B17` still lacks — and, when an
+// account is named, whether its address is confirmed and when a recovery was last requested.
 //
 // Two rules make it safe to point at production:
 //   * It has no path to a statement it did not author. The SQL below is a frozen list of read-only
@@ -78,7 +79,6 @@ function authResidueSql(owner) {
 }
 
 const POSTURE = "with f as (select p.oid, p.prosecdef, coalesce(nullif(array_to_string(p.proconfig, ','), ''), '(none)') as config, pg_get_userbyid(p.proowner) as owner, has_function_privilege('anon', p.oid, 'execute') as anon_exec, has_function_privilege('authenticated', p.oid, 'execute') as auth_exec, has_function_privilege('service_role', p.oid, 'execute') as svc_exec from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public') select count(*) as routines, count(*) filter (where prosecdef) as security_definer, count(*) filter (where config like '%search_path%') as search_path_pinned, count(*) filter (where anon_exec) as anon_execute, count(*) filter (where svc_exec) as service_execute, count(*) filter (where owner <> 'postgres') as non_postgres_owner, count(*) filter (where prosecdef and config not like '%search_path%') as definer_unpinned from f";
-
 const ADVISOR = "select class.relname as table_name, attr.attname as column_name, con.conname as constraint_name from pg_class class join pg_constraint con on con.conrelid = class.oid join pg_namespace nsp on nsp.oid = class.relnamespace join pg_attribute attr on attr.attrelid = class.oid and attr.attnum = con.conkey[1] left join pg_index idx on idx.indrelid = class.oid and idx.indkey[0] = attr.attnum where con.contype = 'f' and idx.indkey is null and nsp.nspname = 'public' order by 1, 2";
 
 // B05's last open half: the fail-closed default privileges have been proved on hosted by their
@@ -112,6 +112,17 @@ function census(owner) {
     { label: "unindexed-foreign-keys", sql: ADVISOR },
   ];
   if (owner) {
+    reads.push({
+      // A password grant refuses with the same words — `Invalid login credentials` — for an address
+      // that has never been confirmed and for a confirmed account whose password was just reset, so
+      // the sender's refusal cannot tell a completed recovery from an untouched one (measured on
+      // production 2026-10-15). These columns can, and they are the four this catalog actually holds:
+      // hosted has no `password_changed_at`, which an earlier shape of this read asked for and was
+      // refused. The row's hash and its live one-time tokens are named by nothing here. Scoped to the
+      // account the operator named: an unscoped census prints no account's state.
+      label: "account-state",
+      sql: `select u.email as account, (u.email_confirmed_at is not null) as email_confirmed, u.email_confirmed_at, u.recovery_sent_at, u.last_sign_in_at, u.updated_at from auth.users u where u.id = '${owner}'::uuid`,
+    });
     reads.push({
       label: "owner-census",
       sql: Object.entries(OWNER_COLUMN)
