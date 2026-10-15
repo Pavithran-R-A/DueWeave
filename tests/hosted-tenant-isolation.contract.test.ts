@@ -23,6 +23,16 @@ const projectRoot = path.resolve(import.meta.dirname, "..");
 // empty reply instead of read back as the owner, and a run continued with a session that was never
 // issued.
 
+/** The RPCs that change a row already in place rather than adding one. Each names the table the
+ *  attack reads its target from and the field the stand-in moves when a broken policy applies it. */
+const RPC_APPLIED = {
+  cancel_receivable: { table: "receivables", id: "p_receivable_id", fields: () => ({ status: "CANCELLED" }) },
+  snooze_receivable: { table: "receivables", id: "p_receivable_id", fields: () => ({ status: "SNOOZED" }) },
+  update_receivable_details: { table: "receivables", id: "p_receivable_id", fields: (json) => ({ label: json.p_label }) },
+  update_client: { table: "clients", id: "p_client_id", fields: (json) => ({ name: json.p_name }) },
+  cancel_promise: { table: "promises", id: "p_promise_id", fields: () => ({ status: "CANCELLED" }) },
+};
+
 const OWNER_A = "11111111-1111-4111-8111-111111111111";
 const OWNER_B = "22222222-2222-4222-8222-222222222222";
 const TOKEN_A = "token-victim-never-printed";
@@ -71,7 +81,7 @@ async function serveBackend({ policy = {}, rows = seedRows() } = {}) {
       const text = Buffer.concat(body).toString("utf8");
       const json = text ? JSON.parse(text) : {};
       const caller = ownerOf(request.headers.authorization);
-      requests.push({ asked: `${request.method} ${url.pathname}${url.search}`, body: json, hasBearer: Boolean(request.headers.authorization && request.headers.authorization !== `Bearer ${KEY}`) });
+      requests.push({ asked: `${request.method} ${url.pathname}${url.search}`, body: json, hasBearer: Boolean(request.headers.authorization && request.headers.authorization !== `Bearer ${KEY}`), asOwner: caller === OWNER_A });
       const reply = (status, payload) => {
         response.writeHead(status, { "content-type": "application/json" });
         response.end(JSON.stringify(payload));
@@ -85,6 +95,15 @@ async function serveBackend({ policy = {}, rows = seedRows() } = {}) {
 
       if (url.pathname.startsWith("/rest/v1/rpc/")) {
         const fn = url.pathname.split("/").pop();
+        if (policy.rpcApplies && fn in RPC_APPLIED) {
+          const attack = RPC_APPLIED[fn];
+          const target = rows[attack.table].find((entry) => entry.id === json[attack.id]);
+          if (target) Object.assign(target, attack.fields(json));
+          // A function declared to return nothing answers with an empty body, so the attacker's reply
+          // looks exactly like the reply a refused call gets. Only the owner's read can tell them apart.
+          response.writeHead(204);
+          return response.end();
+        }
         if (policy.founderOpen && fn.startsWith("list_pending_founder")) return reply(200, [{ claim_id: "fc-real" }]);
         if (policy.rpcNotFound && fn === "record_payment") return reply(404, { code: "PGRST202", message: "Could not find the function record_payment(...) in the schema cache" });
         if (fn.includes("founder")) return reply(403, { code: "42501", message: "author only" });
@@ -204,8 +223,20 @@ describe("Hosted tenant isolation probes", () => {
     expect(findings.join("\n"), `a write the owner's read-back says landed was reported clean:\n${lines.join("\n")}`).toMatch(/patch|delete/i);
   });
 
-  it("aims every destructive probe at the sacrificial row the victim created for this run", async () => {
-    // The victim account holds the free-tier journey rows the release record is built on. If isolation
+  it("proves a targeted RPC was refused by the owner's read-back, not by the attacker's empty reply", async () => {
+    // The read probes can trust an empty representation because a read has nothing else to do. A write
+    // cannot: a function declared to return nothing answers 204 whether it refused the target or moved
+    // it, and the four mutate-in-place attacks (cancel, snooze, edit details, edit client) change no
+    // row count, so the recount that protects the victim's real ledger is blind to them too. Without a
+    // read-back aimed at the RPC target, a deployment whose policy is broken reports the gate green.
+    const site = await serveBackend({ policy: { rpcApplies: true } });
+    const { findings, lines } = await runIsolationProbes({ ...site, ...sessions(), log: () => {} });
+    const ownerReadsTargets = site.requests.filter((entry) => entry.asOwner && /^GET \/rest\/v1\/(clients|receivables|promises)\?select=\*&id=eq\.(cl-probe|rc-probe|pm-probe)/.test(entry.asked));
+    expect(ownerReadsTargets.length, "the instrument never read an RPC attack's target back as its owner").toBeGreaterThan(0);
+    expect(findings.join("\n"), `an RPC attack that moved the victim's row was counted as a refusal:\n${lines.join("\n")}`).toMatch(/cancel_receivable|snooze_receivable|update_receivable_details|update_client/i);
+  });
+
+  it("aims every destructive probe at the sacrificial row the victim created for this run", async () => {    // The victim account holds the free-tier journey rows the release record is built on. If isolation
     // ever regressed, a destructive probe aimed at those ids would damage real data rather than prove a
     // boundary — so the real ledger is probed by read only, and every PATCH/DELETE/RPC attack is aimed
     // at a row created for this run, which the QA erasure removes afterwards.

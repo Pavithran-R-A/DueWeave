@@ -140,6 +140,19 @@ export async function runIsolationProbes({ api, key, victim, attacker, log = () 
   }
 
   let declinedCount = 0;
+  /** Read one row the way its owner can, which is the only view that can tell a refused write from an
+   *  applied one. Returns null when the owner cannot read the row at all. */
+  async function ownerRow(table, id) {
+    const outcome = await call(victimSession, "GET", table, { query: `?select=*&id=eq.${id}` });
+    return rowsOf(outcome?.payload)[0] ?? null;
+  }
+
+  function changedColumns(before, after) {
+    if (before === null && after === null) return [];
+    if (after === null) return ["the row itself"];
+    const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
+    return [...keys].filter((key) => JSON.stringify(before[key]) !== JSON.stringify(after[key]));
+  }
   /** Record one probe. `refused` is the outcome the gate requires; a pre-policy rejection is called
    *  out as inconclusive instead of quietly counting, because "it would not parse" is not "it was blocked". */
   const verdict = (probe, outcome, outcomeText) => {
@@ -243,22 +256,42 @@ export async function runIsolationProbes({ api, key, victim, attacker, log = () 
   // isolation can answer. `mark_due_promises_broken` is deliberately absent: it takes no target and
   // sweeps the caller's own promises, so calling it on production would write real rows to prove
   // nothing about a boundary.
+  //
+  // A targeted attack also carries the row it aimed at, because the attacker's reply cannot be the
+  // evidence for a write: a function declared to return nothing answers an applied call with the same
+  // empty body as a refused one, and the mutate-in-place attacks move no row count, so the recount
+  // that guards the victim's ledger at the end of this run is blind to them too.
   const rpcAttacks = [
-    ["record_payment on the victim's receivable", "rpc/record_payment", { p_receivable_id: probeReceivableId, p_amount_paise: 1, p_paid_on: "2099-12-01", p_method: "cash", p_reference: "isolation probe", p_request_id: `isolation-payment-${Date.now()}` }, false],
-    ["create_promise on the victim's receivable", "rpc/create_promise", { p_receivable_id: probeReceivableId, p_promised_amount_paise: 1, p_made_on: "2099-12-01", p_promised_date: "2099-12-31", p_source: "verbal", p_note: "isolation probe", p_request_id: `isolation-promise-${Date.now()}` }, false],
-    ["cancel_receivable on the victim's receivable", "rpc/cancel_receivable", { p_receivable_id: probeReceivableId, p_reason: "isolation probe" }, false],
-    ["snooze_receivable on the victim's receivable", "rpc/snooze_receivable", { p_receivable_id: probeReceivableId, p_until: "2099-12-31" }, false],
-    ["update_receivable_details on the victim's receivable", "rpc/update_receivable_details", { p_receivable_id: probeReceivableId, p_label: HIJACK_NAME, p_invoice_ref: "", p_amount_due_paise: 1, p_due_date: "2099-12-31", p_notes: "" }, false],
-    ["update_client on the victim's client", "rpc/update_client", { p_client_id: probeClientId, p_name: HIJACK_NAME, p_company: "", p_phone: "", p_email: "", p_notes: "" }, false],
-    ["create_receivable inside the victim's client", "rpc/create_receivable", { p_client_id: probeClientId, p_label: HIJACK_NAME, p_invoice_ref: "", p_amount_due_paise: 1, p_due_date: "2099-12-31", p_notes: "" }, false],
-    ...(probePromiseId ? [["cancel_promise on the victim's promise", "rpc/cancel_promise", { p_promise_id: probePromiseId, p_reason: "isolation probe" }, false]] : []),
-    ["get_founder_offer as a customer", "rpc/get_founder_offer", {}, true],
-    ["list_pending_founder_claims as a customer", "rpc/list_pending_founder_claims", {}, true],
-    ["get_founder_funnel as a customer", "rpc/get_founder_funnel", {}, true],
+    ["record_payment on the victim's receivable", "rpc/record_payment", { p_receivable_id: probeReceivableId, p_amount_paise: 1, p_paid_on: "2099-12-01", p_method: "cash", p_reference: "isolation probe", p_request_id: `isolation-payment-${Date.now()}` }, false, { table: "receivables", id: probeReceivableId }],
+    ["create_promise on the victim's receivable", "rpc/create_promise", { p_receivable_id: probeReceivableId, p_promised_amount_paise: 1, p_made_on: "2099-12-01", p_promised_date: "2099-12-31", p_source: "verbal", p_note: "isolation probe", p_request_id: `isolation-promise-${Date.now()}` }, false, { table: "receivables", id: probeReceivableId }],
+    ["cancel_receivable on the victim's receivable", "rpc/cancel_receivable", { p_receivable_id: probeReceivableId, p_reason: "isolation probe" }, false, { table: "receivables", id: probeReceivableId }],
+    ["snooze_receivable on the victim's receivable", "rpc/snooze_receivable", { p_receivable_id: probeReceivableId, p_until: "2099-12-31" }, false, { table: "receivables", id: probeReceivableId }],
+    ["update_receivable_details on the victim's receivable", "rpc/update_receivable_details", { p_receivable_id: probeReceivableId, p_label: HIJACK_NAME, p_invoice_ref: "", p_amount_due_paise: 1, p_due_date: "2099-12-31", p_notes: "" }, false, { table: "receivables", id: probeReceivableId }],
+    ["update_client on the victim's client", "rpc/update_client", { p_client_id: probeClientId, p_name: HIJACK_NAME, p_company: "", p_phone: "", p_email: "", p_notes: "" }, false, { table: "clients", id: probeClientId }],
+    ["create_receivable inside the victim's client", "rpc/create_receivable", { p_client_id: probeClientId, p_label: HIJACK_NAME, p_invoice_ref: "", p_amount_due_paise: 1, p_due_date: "2099-12-31", p_notes: "" }, false, { table: "clients", id: probeClientId }],
+    ...(probePromiseId ? [["cancel_promise on the victim's promise", "rpc/cancel_promise", { p_promise_id: probePromiseId, p_reason: "isolation probe" }, false, { table: "promises", id: probePromiseId }]] : []),
+    ["get_founder_offer as a customer", "rpc/get_founder_offer", {}, true, null],
+    ["list_pending_founder_claims as a customer", "rpc/list_pending_founder_claims", {}, true, null],
+    ["get_founder_funnel as a customer", "rpc/get_founder_funnel", {}, true, null],
   ];
-  for (const [probe, pathname, body, isFounderGate] of rpcAttacks) {
+  for (const [probe, pathname, body, isFounderGate, target] of rpcAttacks) {
+    const before = target ? await ownerRow(target.table, target.id) : null;
+    if (target && before === null) {
+      problem(`${probe} was not attempted: the victim cannot read back its own ${target.table} ${target.id}, so this run has no way to tell whether the attack applied`);
+      continue;
+    }
     const outcome = await call(attackerSession, "POST", pathname, { body, prefer: "return=representation" });
     if (!outcome) continue;
+    if (target) {
+      const after = await ownerRow(target.table, target.id);
+      const moved = changedColumns(before, after);
+      if (moved.length > 0) {
+        const detail = after === null ? `${target.table} ${target.id} no longer reads back at all` : moved.map((column) => `${column} went from ${JSON.stringify(before[column])} to ${JSON.stringify(after[column])}`).join(", ");
+        report(`APPLIED    ${probe}  the owner reads ${detail}`);
+        problem(`${probe} was applied: the owner's read-back shows ${detail}`);
+        continue;
+      }
+    }
     const code = codeOf(outcome.payload);
     if (PRE_POLICY_CODES.has(code)) {
       problem(`${probe} never reached a row-security policy: HTTP ${outcome.status} ${code} ${outcome?.payload?.message ?? ""}`.trim());
