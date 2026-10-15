@@ -286,10 +286,15 @@ test.describe("Stage 6 forms, keyboard and toast lifetime", () => {
     await expect(submit).toHaveAttribute("aria-busy", "true");
     await expect(sheet.getByLabel("Amount")).toHaveValue("500");
 
-    // The control that cannot be used again is not a stop anywhere in a full cycle,
-    // and the sheet's own Cancel and Close still are.
+    // The control that cannot be used again is not a stop anywhere in a full cycle, and the sheet's own
+    // Cancel and Close still are. The count is the same one the idle walk above proves a full cycle plus
+    // Chromium's date-field segments with, not a shorter guess, because Chromium walks a radio group
+    // either as one stop or as one stop per input depending on how focus enters it: the busy cycle is
+    // therefore 5 or 8 stops long, and a walk shorter than the cycle reports a control it never reached.
+    // Every stop is still required to stay inside the sheet, so a focus escape that really happens fails
+    // here however long the walk is.
     await sheet.getByLabel("Amount").focus();
-    const walk = await tabWalk(page, 12);
+    const walk = await tabWalk(page, 16);
     expect(walk.map(labelOf).join(" "), `a busy submit must not be a stop: ${walk.map(labelOf).join(" | ")}`).not.toContain("Record payment");
     expect(walk.map(labelOf).join(" "), "Close must stay reachable while a write is in flight").toContain("Close");
     expect(walk.every((stop) => stop.inSheet), `focus left the sheet: ${walk.map(labelOf).join(" | ")}`).toBe(true);
