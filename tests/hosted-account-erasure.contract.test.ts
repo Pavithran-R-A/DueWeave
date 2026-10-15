@@ -221,6 +221,49 @@ describe("hosted account erasure instrument", () => {
     expect(join(lines), "the refusal line carried the credential").not.toContain(FAKE_PASSWORD);
   });
 
+  // The census is read before the deletion precisely so that a broken read cannot be discovered
+  // afterwards, when the account is already gone. A half-empty before snapshot must therefore stop
+  // the run at the snapshot, not merely colour the verdict.
+  it("refuses to call the erasure when the before census read no account count", async () => {
+    const calls: string[] = [];
+    const lines: string[] = [];
+    const outcome = await runErasure({
+      identity: { email: "qa@example.test", password: FAKE_PASSWORD },
+      confirmErasing: true,
+      signIn: async () => { calls.push("signIn"); return { status: 200, token: "SESSION-TOKEN-SECRET", userId: QA_A }; },
+      snapshot: async (owner: string) => {
+        calls.push(`snapshot:${owner}`);
+        const rows = censusRows({ users: { total: 2, confirmed: 1, unconfirmed: 1 }, account: { emailConfirmed: true }, ...REAL });
+        delete rows["auth-users"];
+        return rows;
+      },
+      erase: async () => { calls.push("erase"); return DELETED; },
+      log: (line: string) => lines.push(line),
+    });
+    expect(calls).toEqual(["signIn", `snapshot:${QA_A}`]);
+    expect(outcome.refused).toBe(true);
+    expect(join(lines)).toMatch(/no account count/i);
+  });
+
+  it("refuses to call the erasure when the before census carried no rows for the account", async () => {
+    const calls: string[] = [];
+    const lines: string[] = [];
+    const outcome = await runErasure({
+      identity: { email: "qa@example.test", password: FAKE_PASSWORD },
+      confirmErasing: true,
+      signIn: async () => { calls.push("signIn"); return { status: 200, token: "SESSION-TOKEN-SECRET", userId: QA_A }; },
+      snapshot: async (owner: string) => {
+        calls.push(`snapshot:${owner}`);
+        return censusRows({ users: { total: 2, confirmed: 1, unconfirmed: 1 }, account: { emailConfirmed: true }, ledger: REAL.ledger, owner: {} });
+      },
+      erase: async () => { calls.push("erase"); return DELETED; },
+      log: (line: string) => lines.push(line),
+    });
+    expect(calls).toEqual(["signIn", `snapshot:${QA_A}`]);
+    expect(outcome.refused).toBe(true);
+    expect(join(lines)).toMatch(/no per-account rows/i);
+  });
+
   it("reads the before census, erases, reads the after census, then re-tries the credential", async () => {
     const calls: string[] = [];
     const lines: string[] = [];

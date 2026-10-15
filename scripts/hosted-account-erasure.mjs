@@ -89,6 +89,18 @@ function summarize(snapshot) {
 }
 
 /**
+ * The two conditions under which a before census cannot support a proof at all.
+ * before the irreversible call, because a snapshot that turned out to be half-empty after the
+ * deletion is a finding nobody can act on — the account is already gone.
+ */
+export function beforeEraseFindings(before) {
+  const findings = [];
+  if (before.usersTotal === null) findings.push("BEFORE the before census read no account count, so nothing here can be judged and the erasure was not attempted");
+  if (entries(before.ownerRows).length === 0) findings.push("BEFORE the before census carried no per-account rows, so an empty result after it would prove nothing and the erasure was not attempted");
+  return findings;
+}
+
+/**
  * Judge the after census against the before one. Every rule reports what it measured, because a
  * finding nobody can re-check is the same problem as a missing one.
  */
@@ -103,9 +115,6 @@ export function erasureFindings({ before, after, functionOutcome, credentialAfte
       findings.push(`ERASURE delete-account answered HTTP ${http} status=${answered ?? "unreadable"} — no deletion was confirmed by the function`);
     }
   }
-
-  if (before.usersTotal === null) findings.push("BEFORE the before census read no account count, so nothing here can be judged");
-  if (entries(before.ownerRows).length === 0) findings.push("BEFORE the before census carried no per-account rows, so an empty result after it would prove nothing");
 
   if (after.account.exists) findings.push(`AFTER the auth account row is still present for ${before.account.email ?? "the erased account"}, so GoTrue's own record survived the admin removal`);
 
@@ -195,6 +204,14 @@ export async function runErasure({ identity, confirmErasing, signIn, snapshot, e
 
   const before = buildSnapshot(await snapshot(owner));
   report(`BEFORE   ${summarize(before)}`);
+
+  // A half-empty before census cannot support an after proof, and the deletion it would license is
+  // irreversible, so the run stops here instead of discovering the gap once the account is gone.
+  const unprovable = beforeEraseFindings(before);
+  if (unprovable.length > 0) {
+    for (const finding of unprovable) report(finding);
+    return { refused: true, findings: [], before, after: null, owner };
+  }
 
   const outcome = await erase({ token: session.token });
   report(`FUNCTION delete-account HTTP ${outcome.status} status=${outcome.body?.status ?? "unreadable"}${outcome.body?.message ? ` message="${outcome.body.message}"` : ""}`);
