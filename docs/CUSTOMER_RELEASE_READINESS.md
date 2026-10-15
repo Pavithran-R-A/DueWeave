@@ -184,6 +184,64 @@ Any later SHA must earn its own CI and deployment verification.
      reset link from the deployed UI, and a new customer creating an account from that UI. Those two
      journeys cannot be walked before the owner opens the flags, and the flag-flip row below stays the
      place where they get proved on the released SHA.
+   - **The second identity exists, and it was created the legitimate way.** QA-B was made by
+     `POST /auth/v1/signup` against the production host — the census `newest_user` timestamp reads
+     `2026-10-14 14:08:50.277677 +0000 UTC` — with confirmation required, so the answer carried a user
+     object and **no session**. No flag was flipped and no admin insert was used. Read back from
+     `ugzdqcytouwfdlcjujqv` at `2026-10-15T09:49Z`: `accounts=2 confirmed=1 unconfirmed=1`, and for QA-B
+     specifically `email_confirmed=false`, `email_confirmed_at=NULL`, `last_sign_in_at=NULL`,
+     `recovery_sent_at=2026-10-15 09:09:58.927234 +0000 UTC`, owning `profiles=1` and `entitlements=1` and
+     **zero rows in every ledger table**. It therefore cannot sign in, which is why gates 1, 3 and 4 still
+     queue behind one landing confirmation. The same read preserves the standing debt rather than touching
+     it: `auth.identities` 4 with 2 naming no account, `auth.sessions` 23 with 11 orphaned,
+     `auth.refresh_tokens` 24 with 11 orphaned — the October 5 records are counted, not cleaned, until
+     separately authorised — and the migration ledger answers 25 recorded with newest version
+     `20261006120000`. The recovery pair requested at `09:10:01Z` was still unopened in the controlled
+     browser at `09:49Z`, so its completion half is an owner action, not an engineering gap.
+   **The isolation instrument was audited for the same fail-open class, and one hole was found and closed
+   (2026-10-15).** `scripts/hosted-tenant-isolation.mjs` is the command that will answer cross-tenant
+   isolation on production, and its own header states the rule that makes a write refusal provable: *a
+   refused write is proved by the owner reading the row back, never by the attacker's reply*, because
+   PostgREST answers a write that matched no visible row with an empty representation. The `PATCH` and
+   `DELETE` probes followed that rule; the eleven RPC attacks did not — they were judged by the attacker's
+   reply alone. A function declared to return nothing answers `204` with an empty body whether it refused
+   the target or moved it, and the four mutate-in-place attacks (`cancel_receivable`, `snooze_receivable`,
+   `update_receivable_details`, `update_client`, `cancel_promise`) change no row **count**, so the recount
+   that guards the victim's ledger at the end of the run is blind to them as well. A deployment whose
+   policy had actually broken would therefore have been reported as `REFUSED` on those five probes and a
+   clean gate. Each targeted attack now reads its own target back as the owner before and after, and any
+   moved column — or a target that no longer reads back — is a finding naming that probe; an owner who
+   cannot read its own sacrificial row fails the run instead of clearing it. Observed RED first with the
+   stand-in policy that applies the write and answers 204 (`1 failed | 10 passed`: `the instrument never
+   read an RPC attack's target back as its owner`), then `11 passed (11)`; neutering the column comparison
+   fails exactly 1 case, so the finding is earned by the read-back and not by the request count. Insert-
+   shaped attacks stay covered by the ledger recount rather than a second rule. **This repair changes what
+   the instrument is willing to call a refusal; it does not make the production run any less open** — that
+   still needs a second confirmed session. Local gates with this repair in the tree: unit `49 files / 719
+   tests`, `lint` exit 0, `tsc` exit 0, `verify:secrets` `Scanned 297 files for 11 credential shapes` clean.
+   **One CI gate went red at `55b97d4`, and the diagnosis named the test, not the product (2026-10-15).**
+   Attempt 1 of that head: `CI` `38715383443`, `Live production public smoke` `38715383281` and `CodeQL`
+   `38715383215` all success; `Release regression` `38715383273` failed in job `116356674406`
+   (`all-customer-journeys`) at `Running 193 tests using 1 worker` → `1 failed / 8 skipped / 2 did not run
+   / 182 passed (17.9m)`. The failed test is `[chromium] › e2e/stage6-local-forms.spec.ts:270:3 › takes a
+   busy submit out of the keyboard order while the write is in flight`, and `git diff --name-only a651f2e
+   55b97d4` answers exactly two files — `scripts/hosted-account-erasure.mjs` and
+   `tests/hosted-account-erasure.contract.test.ts` — neither of them a Playwright input, while the same
+   slot printed `✓ 80 … stage6-local-forms.spec.ts:270:3` (2.4s, 2.0s) on each of the two preceding heads
+   (`38706290724` at `ca4d78d`, `38710064339` at `a651f2e`). The job log then states the mechanism in the
+   test's own words: `Expected substring: "Close"`, `Received string: "input input input input UPIBank
+   transferCashOther input input input input UPIBank transferCashOther input Cancel"` — twelve stops that
+   ran out at `Cancel`, with the payment-method group surfacing once per pass carrying its container's
+   concatenated text instead of four labelled inputs, so the walk never reached the control it asserted
+   on. Nothing left the sheet (`every(inSheet)` was true for all twelve) and the busy submit was correctly
+   absent from every stop, so the defect is a walk shorter than the cycle it was measuring rather than a
+   focus escape. The repair gives the busy walk the same 16 stops that the idle walk on *that same sheet*
+   proves in *that same run* — slot 79 `holds the keyboard contract for Record payment` passed at 1.5s
+   with `toContain("Close")` and `every(inSheet)` both asserted at 16 — and keeps the escape assertion over
+   every stop, so a focus escape that really happens still fails here at any length. **This spec cannot be
+   replayed on this machine:** `C:` is 100% full (212 MB free) so the local Supabase stack will not start,
+   and the WSL root carries no `docker`, so CI is the verifier for the walk length — which is why 16 was
+   taken from a pass CI had already produced against the same sheet instead of a longer, unmeasured guess.
 4. **Account-deletion runtime:** Redeploy the updated `delete-account` source after exact-head
    gates. Test browser CORS preflight (including `apikey` and `x-client-info`) and the complete
    Auth-account removal, not just a transaction-scoped SQL simulation.
@@ -206,6 +264,39 @@ Any later SHA must earn its own CI and deployment verification.
    served function by `tests/arc3c-local-account-erasure.test.ts:351-410` in CI, and no spec ever
    `POST`s to `ugzdqcytouwfdlcjujqv`. See `docs/CONSUMER_LIVE_PROGRESS.md` row 8, including its own
    correction paragraph.
+   **Instrumented, executed on its safe halves, and repaired before it was trusted (2026-10-15).**
+   `scripts/hosted-account-erasure.mjs` (`pnpm verify:hosted:erasure`, delivered at `a651f2e`) is the
+   operator command that walks this gate end to end in one run: it signs in with an identity file, reads
+   the five census labels, calls `functions/v1/delete-account` with the caller's own bearer and the exact
+   confirmation phrase, reads the census again, re-tries the credential, and only then judges the deletion
+   — a surviving account row, a row still owned by the erased uuid, an auth-schema row still naming it, an
+   account count that moved by anything but one, an October 5 orphan that moved, or a ledger table that
+   shed more rows than the account owned are each a finding, and any finding exits 1. It is named by no CI
+   job and by no release gate, because it deletes an account.
+   Two credential-free halves have been executed against `ugzdqcytouwfdlcjujqv`. At `09:16Z` the refusal
+   path ran on the real QA-B identity file: it printed the plan and `REFUSED … was not erased. Deletion
+   cannot be undone, so pass --confirm-erase when you mean it.` and exited 1 with zero credential bytes in
+   its log. At `09:17Z` the census half answered all five labels as JSON through the session pooler
+   (`auth-users 1 row, auth-residue 12, ledger-census 13, account-state 1, owner-census 12`), so the
+   numbers the proof is computed from are read, not eyeballed.
+   **A review of that instrument found four fail-open judgement holes, and each was repaired under a test
+   that was seen to fail first** (`10d9395`, `55b97d4`). Every rule iterates the rows a read *returned*, so
+   a read that failed did not fail the run — it deleted the rule that would have needed it. Concretely: the
+   before census checked only 2 of the 5 labels and erased on the other 3; the after census read a missing
+   label as "no rows left", which is the exact opposite of a finding; the auth schema carried
+   `total`/`orphaned`/`forOwner` per table but used none of them, so an auth purge wider than the account
+   was invisible while the public tables had that rule; and the uuid came from the token while the account
+   was *chosen* by the identity file, so pointing at the wrong file produced a clean-looking delta. Six new
+   cases were observed RED (`6 failed | 22 passed`) before the guards existed, then `28 passed (28)`.
+   Mutation-verified rather than asserted: deleting the absence record from the snapshot fails 5 cases,
+   neutering the auth collateral rule fails 1, neutering the identity-file guard fails 1. Local gates at
+   `55b97d4`: unit `49 files / 718 tests`, `lint` exit 0, `tsc` exit 0, `verify:secrets` `Scanned 297
+   files for 11 credential shapes` clean. **The signed-in half is still open** — it needs a confirmed QA
+   session, because erasing an account that never completed confirmation proves a state no customer is ever
+   in, and until that run lands this gate's verdict is unchanged. Neither repair head reaches the customer
+   bundle: `git diff --name-only 505ff51..HEAD` matches zero files under `client/`, `vite.config.ts`,
+   `index.html`, `.env*` or `wrangler*`, and the served entry is still `assets/index-Bv2LIPpN.js`, so
+   production is running the same flags-off `505ff51` artifact this record has been describing.
 5. **Founder monetization:** Production readiness deliberately reports `false`; no actual live
    UPI destination, approved support/refund/disclosures or reviewer allowlist. Do not collect or
    represent real Founder payments as enabled. Finish operator decisions and perform refund/manual
