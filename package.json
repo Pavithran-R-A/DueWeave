@@ -18,6 +18,8 @@
     "verify:deployed:parity": "node scripts/verify-deployed-parity.mjs",
     "verify:hosted:auth": "node scripts/hosted-auth-status.mjs",
     "verify:hosted:census": "node scripts/hosted-db-census.mjs",
+    "verify:hosted:isolation": "node scripts/hosted-tenant-isolation.mjs",
+    "verify:hosted:erasure": "node scripts/hosted-account-erasure.mjs",
     "verify:hosted:backup": "node scripts/hosted-db-backup.mjs",
     "db:lint": "supabase db lint --local",
     "verify:db:local": "pnpm db:reset:local && pnpm verify:types && pnpm verify:migrations && pnpm test:db && pnpm db:lint",

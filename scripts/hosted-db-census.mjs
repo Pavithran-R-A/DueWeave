@@ -21,6 +21,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import process from "node:process";
+import { pathToFileURL } from "node:url";
 
 const DEFAULT_REF = "ugzdqcytouwfdlcjujqv";
 const DEFAULT_POOLER_HOST = "aws-0-ap-south-1.pooler.supabase.com";
@@ -91,7 +92,7 @@ const ADVISOR = "select class.relname as table_name, attr.attname as column_name
 // instead of silently contributing no rows at all.
 const DEFAULT_PRIVILEGES = "select pg_get_userbyid(d.defaclrole) as owner_role, case when d.defaclnamespace = 0 then 'database-wide' else n.nspname end as scope, coalesce(acl.entry::text, '(no default privileges recorded)') as default_privilege from pg_default_acl d left join pg_namespace n on n.oid = d.defaclnamespace left join lateral unnest(d.defaclacl) as acl(entry) on true order by 1, 2, 3";
 
-function census(owner) {
+export function census(owner) {
   const reads = [
     { label: "migration-ledger", sql: "select count(*) as recorded_migrations, max(version) as newest_version from supabase_migrations.schema_migrations" },
     {
@@ -155,26 +156,27 @@ function parseArgs(argv) {
   return options;
 }
 
-const passwordPath = () => process.env.DWEAVE_DB_PASSWORD_FILE ?? path.join(homedir(), ".config/dueweave/prod-db-password");
-const cliPath = () => process.env.DWEAVE_SUPABASE_CLI ?? path.resolve("node_modules/supabase/dist/supabase.js");
-const scrub = (text, secrets) => secrets.reduce((acc, secret) => (secret ? acc.split(secret).join(REDACTION) : acc), text);
+export const passwordPath = () => process.env.DWEAVE_DB_PASSWORD_FILE ?? path.join(homedir(), ".config/dueweave/prod-db-password");
+export const cliPath = () => process.env.DWEAVE_SUPABASE_CLI ?? path.resolve("node_modules/supabase/dist/supabase.js");
+export const scrub = (text, secrets) => secrets.reduce((acc, secret) => (secret ? acc.split(secret).join(REDACTION) : acc), text);
 
 // The pooler selects the project through the user name (`postgres.<ref>`), so the ref belongs in the
 // credential's user part rather than the host. The URL is assembled through the parser instead of
 // written out as `user:password@host`: the release tree may not carry a line shaped like a live
 // connection string, secret or not, because `scripts/verify-secrets.mjs` treats that shape as a hard
 // finding and a template that only *looks* assembled is one edit away from a real one.
-function connectionUrl(ref, host, port, password) {
+export function connectionUrl(ref, host, port, password) {
   const url = new URL(`postgresql://${encodeURIComponent(`postgres.${ref}`)}@${host}:${port}/postgres`);
   url.password = encodeURIComponent(password);
   return url.toString();
 }
 
-function query(cli, url, sql) {
+export function query(cli, url, sql, format) {
   return new Promise((resolve) => {
     // The URL carries the credential, so it is passed as an argument to a direct spawn and never
     // through a shell: a shell would put it in a command line that other tooling can read back.
-    const child = spawn(process.execPath, [cli, "db", "query", "--db-url", url, sql], { stdio: ["ignore", "pipe", "pipe"] });
+    const shape = format ? ["--output-format", format] : [];
+    const child = spawn(process.execPath, [cli, "db", "query", ...shape, "--db-url", url, sql], { stdio: ["ignore", "pipe", "pipe"] });
     let out = "";
     child.stdout.on("data", (chunk) => (out += chunk));
     child.stderr.on("data", (chunk) => (out += chunk));
@@ -216,7 +218,12 @@ async function main() {
   return failed === 0 ? 0 : 1;
 }
 
-main().then((code) => process.exit(code), (error) => {
-  console.error(`census failed: ${error?.message ?? error}`);
-  process.exit(1);
-});
+// Running the census must stay an explicit operator action, so importing this file for its frozen
+// statements (the erasure instrument reads its before/after numbers from them) cannot start a
+// connection of its own.
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  main().then((code) => process.exit(code), (error) => {
+    console.error(`census failed: ${error?.message ?? error}`);
+    process.exit(1);
+  });
+}

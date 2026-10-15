@@ -58,11 +58,11 @@ function parseArgs(argv) {
   return options;
 }
 
-function request(url, init) {
+export function request(url, init) {
   return fetch(url, { cache: "no-store", ...init, signal: AbortSignal.timeout(30_000) });
 }
 
-async function readJson(response) {
+export async function readJson(response) {
   const text = await response.text();
   try {
     return JSON.parse(text);
@@ -310,18 +310,18 @@ export async function runIsolationProbes({ api, key, victim, attacker, log = () 
   return { findings, lines, declined: declinedCount };
 }
 
-function longestKey(chunk) {
+export function longestKey(chunk) {
   const matches = chunk.match(/sb_publishable_[A-Za-z0-9_-]+/g) ?? [];
   return matches.reduce((longest, match) => (longest === null || match.length > longest.length ? match : longest), null);
 }
 
-function projectUrl(chunk, key) {
+export function projectUrl(chunk, key) {
   const before = chunk.slice(0, chunk.indexOf(key));
   const matches = before.match(/https?:\/\/[^\s"'`)\\]+/g) ?? [];
   return matches.length > 0 ? matches[matches.length - 1] : null;
 }
 
-function readIdentity(file) {
+export function readIdentity(file) {
   try {
     const parsed = JSON.parse(readFileSync(file, "utf8"));
     return parsed?.email && parsed?.password ? parsed : null;
