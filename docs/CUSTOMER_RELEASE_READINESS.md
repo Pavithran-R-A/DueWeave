@@ -197,7 +197,22 @@ Any later SHA must earn its own CI and deployment verification.
      `auth.refresh_tokens` 24 with 11 orphaned — the October 5 records are counted, not cleaned, until
      separately authorised — and the migration ledger answers 25 recorded with newest version
      `20261006120000`. The recovery pair requested at `09:10:01Z` was still unopened in the controlled
-     browser at `09:49Z`, so its completion half is an owner action, not an engineering gap.
+     browser at `09:49Z`, so its completion half is an owner action, not an engineering gap. That pair
+     lapsed unopened, so a fresh one was requested at `10:06:08Z` and `10:06:14Z`; re-reading QA-B at
+     `10:22Z` answers the same state — the instrument's password grant returns `HTTP 400 — sign-in refused
+     ("Invalid login credentials")`, and the controlled browser is still on `/auth` with a zero-length
+     hash — and the standing census is unchanged: the October 5 orphaned `auth.identities`, `sessions` and
+     `refresh_tokens` rows are still counted, not cleaned, and QA-B still owns zero ledger rows. Both
+     instruments ran credential-free and printed no secret. A re-run of `scripts/hosted-db-census.mjs` at
+     `10:41Z` answers `DONE 8/8 reads answered` with `users_total=2 confirmed=1 unconfirmed=1`,
+     `identities=4` of which 2 name no account, `sessions=24` with 11 orphaned and `refresh_tokens=25` with
+     11 orphaned, and `one_time_tokens=3` with 0 orphans. The point this read carries for the gate is that
+     the **orphan** counts are identical to the `09:49Z` read (2 / 11 / 11), so neither recovery request,
+     nor any instrument run since, has touched the October 5 residue; the two totals did move up by one
+     row each against that read, which is consistent with a live session being rotated rather than a new
+     identity appearing — no third `users_total` row exists and `newest_user` is still
+     `2026-10-14 14:08:50.277677 +0000 UTC` — but whose session it is was not measured and is not claimed.
+     The migration ledger still answers 25 recorded, newest `20261006120000`.
    **The isolation instrument was audited for the same fail-open class, and one hole was found and closed
    (2026-10-15).** `scripts/hosted-tenant-isolation.mjs` is the command that will answer cross-tenant
    isolation on production, and its own header states the rule that makes a write refusal provable: *a
@@ -221,7 +236,8 @@ Any later SHA must earn its own CI and deployment verification.
    tests`, `lint` exit 0, `tsc` exit 0, `verify:secrets` `Scanned 297 files for 11 credential shapes` clean.
    **One CI gate went red at `55b97d4`, and the diagnosis named the test, not the product (2026-10-15).**
    Attempt 1 of that head: `CI` `38715383443`, `Live production public smoke` `38715383281` and `CodeQL`
-   `38715383215` all success; `Release regression` `38715383273` failed in job `116356674406`
+   `38715383215` all success; `Complete customer-browser regression` `38715383273` failed in job
+   `116356674406`
    (`all-customer-journeys`) at `Running 193 tests using 1 worker` → `1 failed / 8 skipped / 2 did not run
    / 182 passed (17.9m)`. The failed test is `[chromium] › e2e/stage6-local-forms.spec.ts:270:3 › takes a
    busy submit out of the keyboard order while the write is in flight`, and `git diff --name-only a651f2e
@@ -239,9 +255,22 @@ Any later SHA must earn its own CI and deployment verification.
    proves in *that same run* — slot 79 `holds the keyboard contract for Record payment` passed at 1.5s
    with `toContain("Close")` and `every(inSheet)` both asserted at 16 — and keeps the escape assertion over
    every stop, so a focus escape that really happens still fails here at any length. **This spec cannot be
-   replayed on this machine:** `C:` is 100% full (212 MB free) so the local Supabase stack will not start,
-   and the WSL root carries no `docker`, so CI is the verifier for the walk length — which is why 16 was
-   taken from a pass CI had already produced against the same sheet instead of a longer, unmeasured guess.
+   replayed on this machine:** `C:` was 100% full (212 MB free at diagnosis, 206 MB at 10:16Z) so the local
+   Supabase stack would not start, and the WSL root carries no `docker`, so CI is the verifier for the walk
+   length — which is why 16 was taken from a pass CI had already produced against the same sheet instead of
+   a longer, unmeasured guess. **The repair head `5bd3064` answers that verification.** All four workflows
+   succeeded at attempt 1 — `CodeQL security review` `38719471329`, `Live production public smoke`
+   `38719471498`, `CI` `38719471330` and `Complete customer-browser regression` `38719471491` — and that
+   regression job (`116370185775`) reports `Running 193 tests using 1 worker` → `8 skipped / 185 passed
+   (18.5m)` with no `failed` line and nothing left unrun, printing
+   `✓ 79 … stage6-local-forms.spec.ts:237:3 › holds the keyboard contract for Record payment (1.6s)` and
+   `✓ 80 … stage6-local-forms.spec.ts:270:3 › takes a busy submit out of the keyboard order while the write
+   is in flight (2.0s)`. The sweep for the same shape found no other fixed-length walk: the two `tabWalk`
+   callers are both in that file, and the fourteen other Tab-driven sites in `e2e/` either walk until the
+   control is found, walk until the cycle repeats, or judge per-stop properties rather than a named control.
+   `C:` later freed to 5.6 GB (99% used, 10:45Z), but the local stack was deliberately not started for a
+   replay: this machine's Docker host is shared with the CI's Supabase project, and the green CI verdict at
+   the exact head is the stronger evidence.
 4. **Account-deletion runtime:** Redeploy the updated `delete-account` source after exact-head
    gates. Test browser CORS preflight (including `apikey` and `x-client-info`) and the complete
    Auth-account removal, not just a transaction-scoped SQL simulation.
@@ -296,7 +325,10 @@ Any later SHA must earn its own CI and deployment verification.
    in, and until that run lands this gate's verdict is unchanged. Neither repair head reaches the customer
    bundle: `git diff --name-only 505ff51..HEAD` matches zero files under `client/`, `vite.config.ts`,
    `index.html`, `.env*` or `wrangler*`, and the served entry is still `assets/index-Bv2LIPpN.js`, so
-   production is running the same flags-off `505ff51` artifact this record has been describing.
+   production is running the same flags-off `505ff51` artifact this record has been describing. Re-measured
+   at the repair tip `5bd3064` (10:20Z): the same command exits 0 with all 20 built files `SAME` and both
+   configuration effects honoured (`_headers` 80 live declarations, `_redirects` `/parity-probe` HTTP 200),
+   so the exact-head parity claim moved forward with the branch instead of being inherited from `505ff51`.
 5. **Founder monetization:** Production readiness deliberately reports `false`; no actual live
    UPI destination, approved support/refund/disclosures or reviewer allowlist. Do not collect or
    represent real Founder payments as enabled. Finish operator decisions and perform refund/manual
