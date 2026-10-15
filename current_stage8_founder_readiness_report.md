@@ -163,7 +163,7 @@ Answer to the brief's `D-S8-1 … RED: YES / NO` line: NO for intent inference, 
 
 - RED (payment URI): the baseline built the amount with `(configuration.amountPaise / 100).toFixed(2)` (`git show 68a3cbb:client/src/lib/founder-payment.ts:23`). Measured in Node: `45035996273704960` paise yields `450359962737049.63` where the exact rupee value is `450359962737049.60` — a 3-paise drift, because the float cannot carry the integer. A payment URI that guesses the amount is a payment lie waiting for an unusual input, and the price authority is the same column for every customer.
 - FIX: integer-only paise arithmetic (`client/src/lib/founder-payment.ts:17-22`), a `Number.isSafeInteger` guard that returns an empty URI rather than a rounded one (`:24-27`), and one readiness gate in front of the builder (`:39`).
-- GREEN: `client/src/lib/founder-payment.test.ts:57` (unsafe integers refused, not silently re-priced) and `:66-76` (every safe paise sample, including `Number.MAX_SAFE_INTEGER` and values just below it, encodes the exact rupee text). The invariant itself is pinned by `e2e/stage8-local-founder-customer.spec.ts:288`, which clicks Open UPI and then dispatches `visibilitychange`, `focus`, `pageshow` and `focusin` at the tab: no money write reaches the network, the claim stays DRAFT, the plan stays `FREE:ACTIVE`, the audit set stays `["CLAIM_CREATED"]`, and a reload still shows the reference form and never "Payment submitted for review" or "Founder Lifetime is active". `tests/stage8-local-founder-readiness.test.ts:541` proves the server half — every read and view-recording call leaves the claim byte-identical. `tests/stage8-founder-contracts.test.ts:72` fails the build if any return-path listener is ever added to the client, and `submit_founder_payment` is asserted reachable from exactly one repository file. pgTAP `supabase/tests/stage8_02_payment_evidence.sql` (22 assertions) closes the loop: no path from an intent can set a claim to APPROVED.
+- GREEN: `client/src/lib/founder-payment.test.ts:57` (unsafe integers refused, not silently re-priced) and `:66-76` (every safe paise sample, including `Number.MAX_SAFE_INTEGER` and values just below it, encodes the exact rupee text). The invariant itself is pinned by `e2e/stage8-local-founder-customer.spec.ts:388` (`D-S8-1: opening UPI leaves the claim a draft…`), which clicks Open UPI and then dispatches `visibilitychange`, `focus`, `pageshow` and `focusin` at the tab: no money write reaches the network, the claim stays DRAFT, the plan stays `FREE:ACTIVE`, the audit set stays `["CLAIM_CREATED"]`, and a reload still shows the reference form and never "Payment submitted for review" or "Founder Lifetime is active". `tests/stage8-local-founder-readiness.test.ts:541` proves the server half — every read and view-recording call leaves the claim byte-identical. `tests/stage8-founder-contracts.test.ts:72` fails the build if any return-path listener is ever added to the client, and `submit_founder_payment` is asserted reachable from exactly one repository file. pgTAP `supabase/tests/stage8_02_payment_evidence.sql` (22 assertions) closes the loop: no path from an intent can set a claim to APPROVED.
 
 ## PLACEHOLDER FAIL-CLOSED
 
@@ -179,11 +179,11 @@ With the delivered row, `get_founder_offer` reports the destination as not confi
 
 ## CLAIM IDEMPOTENCY
 
-Calling `create_founder_claim` twice returns the same open claim id, and two further calls from two separate client instances fired together still leave exactly one claim in an open state — DRAFT or PENDING_REVIEW (`tests/stage8-local-founder-readiness.test.ts:522`). Re-submitting a submitted claim is refused without changing it (`:582`). Browser: reload, sign out and sign in again leave the same claim pending with the same reference (`e2e/stage8-local-founder-customer.spec.ts:377`).
+Calling `create_founder_claim` twice returns the same open claim id, and two further calls from two separate client instances fired together still leave exactly one claim in an open state — DRAFT or PENDING_REVIEW (`tests/stage8-local-founder-readiness.test.ts:522`). Re-submitting a submitted claim is refused without changing it (`:582`). Browser: reload, sign out and sign in again leave the same claim pending with the same reference (`e2e/stage8-local-founder-customer.spec.ts:477`).
 
 ## CUSTOMER CROSS-TENANT ATTACK
 
-One account cannot read, submit, cancel or approve another's claim; each attempt is refused and leaks nothing (`tests/stage8-local-founder-readiness.test.ts:757`, direct-write attempts `:787`). A second customer sees no claim, no reference and no payer name in the browser (`e2e/stage8-local-founder-customer.spec.ts:401`), and the reviewer's own account is an ordinary customer for everyone else's ledger (`:1174`).
+One account cannot read, submit, cancel or approve another's claim; each attempt is refused and leaks nothing (`tests/stage8-local-founder-readiness.test.ts:757`, direct-write attempts `:787`). A second customer sees no claim, no reference and no payer name in the browser (`e2e/stage8-local-founder-customer.spec.ts:501`), and the reviewer's own account is an ordinary customer for everyone else's ledger (`:1174`).
 
 ## UTR NORMALIZATION
 
@@ -199,7 +199,7 @@ Two accounts racing on one reference produce exactly one accepted submission and
 
 ## PENDING REVIEW
 
-A submitted reference lands as `PENDING_REVIEW` with no entitlement, no seat consumed, and no Founder access (`tests/stage8-local-founder-readiness.test.ts:565`). The queue shows the reviewer exactly the fields needed for a bank check and nothing else (`:841`), and the customer page says the reference is queued for manual verification without implying success (`e2e/stage8-local-founder-customer.spec.ts:345`).
+A submitted reference lands as `PENDING_REVIEW` with no entitlement, no seat consumed, and no Founder access (`tests/stage8-local-founder-readiness.test.ts:565`). The queue shows the reviewer exactly the fields needed for a bank check and nothing else (`:841`), and the customer page says the reference is queued for manual verification without implying success (`e2e/stage8-local-founder-customer.spec.ts:445`).
 
 ## NON-REVIEWER DENIAL
 
@@ -261,7 +261,7 @@ Stage 7's export and privacy suites were re-run against the Stage 8 tree: `e2e/s
 
 ## BROWSER STORAGE
 
-The whole customer journey leaves no payment facts in browser storage: `localStorage`, `sessionStorage` and `indexedDB` are enumerated after the run and contain no UTR, payer name, VPA or claim id (`e2e/stage8-local-founder-customer.spec.ts:526`). The reference lives in component state only (`tests/stage8-founder-contracts.test.ts:173`), and no Founder value is written to a log.
+The whole customer journey leaves no payment facts in browser storage: `localStorage`, `sessionStorage` and `indexedDB` are enumerated after the run and contain no UTR, payer name, VPA or claim id (`e2e/stage8-local-founder-customer.spec.ts:607`). The reference lives in component state only (`tests/stage8-founder-contracts.test.ts:173`), and no Founder value is written to a log.
 
 ## REVIEWER LOGOUT/BACK
 
@@ -277,11 +277,11 @@ A reviewer account has no generalized cross-tenant ledger power: it reads only t
 
 ## QR PAYLOAD
 
-The QR image and the UPI link are generated from the same string, and the browser compares them pixel for pixel after decoding (`e2e/stage8-local-founder-customer.spec.ts:203`, 6.2s in the final pair run). A QR that decodes to something other than the link the customer could copy is therefore a visible failure, not an assumption. Note that decoding proves the two artifacts agree with each other; it does not prove the address belongs to the business — that is an owner-side independent check.
+The QR image and the UPI link are generated from the same string, and the browser compares them pixel for pixel after decoding (`e2e/stage8-local-founder-customer.spec.ts:303`, 6.2s in the final pair run). A QR that decodes to something other than the link the customer could copy is therefore a visible failure, not an assumption. Note that decoding proves the two artifacts agree with each other; it does not prove the address belongs to the business — that is an owner-side independent check.
 
 ## PRICE DISCLOSURE
 
-₹499.00 is rendered from the offer amount at every surface that mentions price: the payment card header, the QR block, the disclosures strip ("Founder Lifetime · ₹499.00 once"), and the settings row that routes to Founder (`client/src/pages/Home.tsx:334`). The browser asserts the displayed price against the stored paise value, not against a literal (`e2e/stage8-local-founder-customer.spec.ts:178`).
+₹499.00 is rendered from the offer amount at every surface that mentions price: the payment card header, the QR block, the disclosures strip ("Founder Lifetime · ₹499.00 once"), and the settings row that routes to Founder (`client/src/pages/Home.tsx:334`). The browser asserts the rendered price on the delivered screen (`e2e/stage8-local-founder-customer.spec.ts:171`) and the stored claim's paise snapshot (`:315`, `49_900`). Read that second check precisely: the rupee text on screen is compared against `PRICE_DISPLAY`, which is itself a literal in `e2e/founder-local-fixture.ts:26`, while the paise figure is compared against the claim row the database returned — so the pair proves the screen and the stored claim agree on ₹499, not that the screen was derived from the offer row.
 
 ## SUPPORT GATE
 
@@ -305,7 +305,7 @@ The QR image and the UPI link are generated from the same string, and the browse
 
 ## CUSTOMER BROWSER
 
-`e2e/stage8-local-founder-customer.spec.ts`, 11 tests, real browser against the built bundle at `127.0.0.1:3000`, serial, `STAGE8_LOCAL_E2E=1`: delivered placeholder; Free-limit routing without opening a payment; fixture-revealed price/payee/seats; idempotent claim plus QR-vs-link pixel compare; D-S8-1 open-UPI case; a database-rejected reference refused in product language; submission lands in manual review without claiming success; reload/sign-out/sign-in keeps it pending; another customer sees nothing; keyboard operation and all five widths; no payment facts in storage.
+`e2e/stage8-local-founder-customer.spec.ts`, 12 tests (the width sweep of the non-payable refusal is this launch audit's addition; the accepted pair run recorded further down is 11), real browser against the built bundle at `127.0.0.1:3000`, serial, `STAGE8_LOCAL_E2E=1`: delivered placeholder; non-payable refusal held inside all five qualified widths; Free-limit routing without opening a payment; fixture-revealed price/payee/seats; idempotent claim plus QR-vs-link pixel compare; D-S8-1 open-UPI case; a database-rejected reference refused in product language; submission lands in manual review without claiming success; reload/sign-out/sign-in keeps it pending; another customer sees nothing; keyboard operation and all five widths; no payment facts in storage.
 
 ## REVIEWER BROWSER
 
@@ -313,7 +313,7 @@ The QR image and the UPI link are generated from the same string, and the browse
 
 ## ACCESSIBILITY
 
-Both Founder surfaces are keyboard-operable end to end: focus reaches every reviewer action, the reconsideration checkbox is reachable and its state is exposed, the payment card's controls are real buttons, and the toast region is a labelled live region that the tests read (`e2e/stage8-local-founder-customer.spec.ts:427`, `e2e/stage8-local-founder-reviewer.spec.ts:580`). Stage 6's own accessibility suite was re-run against the Stage 8 tree: 30 passed including `stage6-local-accessibility.spec.ts` (`../stage8-artifacts/e2e-stage6-a.log`).
+Both Founder surfaces are keyboard-operable end to end: focus reaches every reviewer action, the reconsideration checkbox is reachable and its state is exposed, the payment card's controls are real buttons, and the toast region is a labelled live region that the tests read (`e2e/stage8-local-founder-customer.spec.ts:232`, `e2e/stage8-local-founder-reviewer.spec.ts:580`). Stage 6's own accessibility suite was re-run against the Stage 8 tree: 30 passed including `stage6-local-accessibility.spec.ts` (`../stage8-artifacts/e2e-stage6-a.log`).
 
 ## RESPONSIVE
 

@@ -45,6 +45,27 @@ Any later SHA must earn its own CI and deployment verification.
    renders the password form; the run answered `RECOVER redirect_to=… HTTP 200` twice, and a repeat
    inside roughly a minute answers `HTTP 429` instead. **That 200 is not evidence the link lands on
    DueWeave** — see gate 2's measured control.
+   **Second identity created through the public API, and its confirmation is still owed 2026-10-14:**
+   `dueweave+releaseqa-b-20261014@gmail.com` (`81a37c9e-9103-4e4c-b89c-3991965da1cd`) was created by
+   `POST /auth/v1/signup` — the same call a customer's browser makes, not an admin insert — and the
+   answer carried a user object with **no session**, which is what a confirmation-required project
+   returns. The census on `ugzdqcytouwfdlcjujqv` read it back rather than trusting that response:
+   `auth.users` 1 → 2 and `unconfirmed` 0 → 1, with `profiles` and `entitlements` each 1 → 2. The
+   credential-bearing probe then refused it: `GRANT … HTTP 400 — sign-in refused ("Invalid login
+   credentials"), so confirmation is still required`, while the same probe for QA-A answers HTTP 200.
+   So this identity is real, is not confirmed, and cannot be signed in with — the second half of gate
+   1 is genuinely open for it, not merely undocumented.
+   **How it gets closed, measured from the GoTrue source rather than assumed:** this project runs
+   GoTrue v2.197.0 (`supabase/.temp/gotrue-version`), whose `internal/api/verify.go` `recoverVerify`
+   runs `user.Recover(tx)` and then, `if !user.IsConfirmed()`, logs `UserSignedUpAction` and calls
+   `user.Confirm(tx)`. Completing a password recovery therefore **confirms an unconfirmed address**, so
+   one mailbox action on the reset link already requested for it at `2026-10-14T15:07:03Z`
+   (`RECOVER … HTTP 200`) both sets a usable password and closes the confirmation — no management
+   credential is needed. That corrects an earlier claim on this very gate, which held that this
+   identity required an admin `deleteUser` because a first signup attempt was misread: the script looked
+   for `json.user` while GoTrue returns the user at the top level when confirmation is required, and the
+   account existed all along, as the census above shows. It also corrects gate 3's flag reasoning,
+   because the recovery **completion** route is not flag-gated at all (see gate 3).
 2. **Auth URL configuration:** Re-read hosted Site URL, exact redirect allow-list, signup
    confirmation settings, SMTP identity and rate limits. Historical production measurement had
    Site URL `http://localhost:3000` and password minimum 6; set Site URL to
@@ -67,11 +88,20 @@ Any later SHA must earn its own CI and deployment verification.
    Two consequences, both stated rather than smoothed over: a 200 from the recovery probe certifies
    nothing about the allow-list, so the only proof of a reset link's destination is the delivered
    message read in the mailbox; and whether an arbitrary `redirect_to` is honoured in the emailed link
-   or silently replaced by the Site URL is now an **open hosted-configuration question** that no
-   credential-free probe can settle. It needs one read in the Supabase dashboard
-   (`Authentication → URL Configuration`: Site URL and Redirect URLs) — and it matters, because if the
-   parameter is honoured, anyone able to call `/recover` with a customer's address could point a reset
-   link at a domain that is not DueWeave's.
+   or silently replaced by the Site URL was left as **an open hosted-configuration question** that no
+   credential-free probe can settle.
+   **Closed 2026-10-14 by the mailbox read, not by a status code:** the operator read the delivered
+   messages in the connected DueWeave mailbox (`dueweave@gmail.com`, which also receives the QA
+   identities' plus-addressed mail) — this is the operator's report of the mailbox contents, not a
+   reading this repository can make itself. The request carrying the approved destination produced a
+   reset link pointing at `https://dueweave.pages.dev/auth/update-password`; the control request
+   carrying `redirect_to=https://redirect-control-not-configured.example/…` produced a link pointing
+   instead at the configured Site URL, `https://dueweave.pages.dev`. The
+   unauthorised destination is therefore **replaced, not honoured**, so the phishing shape the open
+   question worried about does not exist on this project, and the `Redirect URLs` dashboard read is no
+   longer needed to settle it. What still stands from the original probe is the reason the mailbox was
+   needed at all: `/recover` answers `HTTP 200` to either request and `HTTP 429` inside its rate
+   window, so no response from that endpoint is allow-list evidence.
 3. **Live signed-in customer acceptance:** Use disposable verified QA users in a real production
    browser. Test onboarding; client/receivable create/edit; partial payments; promise creation,
    withdrawal and timeline; follow-up drafts and manual WhatsApp handoff; snooze; free-tier cap;
@@ -87,6 +117,26 @@ Any later SHA must earn its own CI and deployment verification.
    bytes* by the exact-head parity row above, so the remaining sub-items of gates 1, 3 and 4 all unblock
    from one owner action — open the two flags and let Pages rebuild — and none of them can be reached by
    more engineering on this side.
+   **Corrected 2026-10-14: that paragraph overstated the flag dependency in two places, and the
+   correction widens what this side can finish before any flag moves.**
+   - A second disposable identity does not need the product's form. `GET /auth/v1/settings` read off
+     the served bundle reports `disable_signup=false` and `mailer_autoconfirm=false` on this project,
+     so the legitimate public signup API is open at the backend, and asking it is the same code path a
+     customer's browser uses. An identity created that way with confirmation required answers with a
+     user object and **no session**, which is the confirmation-required behaviour this gate wants
+     proved; the census then counts the account rather than trusting the response.
+   - Recovery is not blocked by `VITE_AUTH_EMAIL_ENABLED`. The flag gates the two **request** entry
+     points only — `client/src/pages/Auth.tsx:141-144` refuses the forgot-password mode and `:228`
+     replaces its retry button with a note, and `client/src/pages/Home.tsx:271,381` refuses the
+     settings-screen action. The **completion** route reads its mode from the address
+     (`client/src/pages/Auth.tsx:38`, `location.includes("update-password")`) and shows the password
+     form to any browser holding a recovery session, with no flag consulted. So a reset link requested
+     by the operator instrument (`scripts/hosted-auth-status.mjs --request-recovery`) can be opened and
+     used on the bundle production serves today, and the new-works/old-fails pair is measurable.
+   - What the flag genuinely still gates is self-service: a locked-out customer asking for their own
+     reset link from the deployed UI, and a new customer creating an account from that UI. Those two
+     journeys cannot be walked before the owner opens the flags, and the flag-flip row below stays the
+     place where they get proved on the released SHA.
 4. **Account-deletion runtime:** Redeploy the updated `delete-account` source after exact-head
    gates. Test browser CORS preflight (including `apikey` and `x-client-info`) and the complete
    Auth-account removal, not just a transaction-scoped SQL simulation.

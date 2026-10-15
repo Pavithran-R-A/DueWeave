@@ -222,6 +222,38 @@ test.describe("Stage 4 persistence and safe editing in a real browser", () => {
     await expect(page.getByText(owner.editedLabel, { exact: false }).first()).toBeVisible();
   });
 
+  // The skip audit recorded that the existing-client picker's chosen option has no executed twin:
+  // the claim lives in the credential-gated `stage41-client-conversion.spec.ts:20`, so nothing that
+  // actually runs in CI proved the listbox tells assistive technology which client a person picked.
+  // The state is real and falsifiable — `client/src/components/sheets.tsx` initialises the selection
+  // to `""` and sets it only in the option's own click handler — so the before/after pair below can
+  // fail, which is what makes it evidence rather than a description.
+  test("announces which existing client a person deliberately chose, and changes nothing else", async () => {
+    await openSection(page, "Today");
+    await page.getByRole("button", { name: "Add receivable" }).first().click();
+    await expect(page.getByText("DueWeave never merges people by name.")).toBeVisible();
+    await page.getByRole("button", { name: "Existing client" }).click();
+    await page.getByLabel("Search existing clients").fill(owner.token);
+
+    const listbox = page.getByRole("listbox", { name: "Matching clients" });
+    const option = listbox.getByRole("option", { name: new RegExp(owner.token) });
+    await expect(option).toHaveCount(1);
+    await expect(option).toHaveAttribute("aria-selected", "false");
+
+    await option.click();
+    await expect(option).toHaveAttribute("aria-selected", "true");
+
+    // Choosing a client marks one option and exactly one: a picker that selected every row would
+    // pass the assertion above and still leave a screen reader user unable to act on it.
+    await expect(listbox.locator('[role="option"][aria-selected="true"]')).toHaveCount(1);
+
+    await page.getByRole("button", { name: "Cancel" }).click();
+    await expect(page.getByRole("dialog", { name: "Add receivable" })).toHaveCount(0);
+    // The read-only walk through the picker wrote nothing, so the ledger still holds the one
+    // receivable the journey created in setup.
+    await expect(ledgerCard(page)).toHaveCount(1);
+  });
+
   test("signing out and back in returns the same persisted records", async () => {
     await signOut(page);
     await signIn(page, owner);

@@ -132,6 +132,35 @@ test.describe("Stage 8 local Founder customer journey", () => {
     await expect(page.getByRole("heading", { name: "Pay with your UPI app" })).toHaveCount(0);
   }
 
+  // The sideways measurement both width walks need. Kept as one function so the refusal screen and
+  // the payable screen are measured by the same ruler: two copies of this expression drifted apart
+  // in other suites before, and a sweep that measures different things at different widths proves
+  // nothing about either.
+  async function sidewaysMeasurement(page: Page) {
+    return page.evaluate(() => {
+      const width = document.documentElement.clientWidth;
+      const scrollWidth = Math.max(document.documentElement.scrollWidth, document.body.scrollWidth);
+      const offenders = scrollWidth > width + 1
+        ? Array.from(document.querySelectorAll<HTMLElement>("body *"))
+          .filter((element) => {
+            const box = element.getBoundingClientRect();
+            return box.width > 0 && box.right > width + 1 && getComputedStyle(element).position !== "fixed";
+          })
+          .slice(0, 4)
+          .map((element) => `${element.tagName.toLowerCase()}.${String(element.className).split(" ")[0] || "-"}→${Math.round(element.getBoundingClientRect().right)}`)
+        : [];
+      return { width, scrollWidth, offenders };
+    });
+  }
+
+  const qualifiedWidths = [
+    { name: "360×800", width: 360, height: 800 },
+    { name: "390×844", width: 390, height: 844 },
+    { name: "768×1024", width: 768, height: 1024 },
+    { name: "1280×800", width: 1280, height: 800 },
+    { name: "1440×900", width: 1440, height: 900 },
+  ];
+
   test("the delivered build shows a non-payable placeholder with no destination at all", async ({ page }) => {
     await signUp(page, owner);
     await openFounderPage(page);
@@ -150,6 +179,37 @@ test.describe("Stage 8 local Founder customer journey", () => {
     // The privacy promise sits on the same screen as the refusal.
     await expect(page.getByText(/UPI PIN, OTP, banking password, card details/)).toBeVisible();
     observed("fail-closed", "the delivered build rendered no destination, no QR and no claim action");
+  });
+
+  // The skip audit recorded that the executing width walk measured only the *payable* screen, after
+  // `applyReadyOffer()`. The refusal this release actually ships had therefore never been measured at
+  // any width — a state that is fail-closed at 1280 and overflowing at 360 is exactly what a
+  // screenshot review misses. Same ruler, same five widths, delivered offer.
+  test("keeps the non-payable refusal inside every qualified width", async ({ page }) => {
+    await signIn(page, owner);
+    await openFounderPage(page);
+
+    for (const size of qualifiedWidths) {
+      await page.setViewportSize({ width: size.width, height: size.height });
+      await page.evaluate(async () => {
+        await Promise.all(Array.from(document.getAnimations()).map((animation) => animation.finished.catch(() => undefined)));
+      });
+
+      const overflow = await sidewaysMeasurement(page);
+      expect(overflow.offenders, `${size.name} overflowed sideways (${overflow.scrollWidth} against ${overflow.width})`).toEqual([]);
+
+      const refusal = page.locator(".founder-not-ready");
+      await refusal.scrollIntoViewIfNeeded();
+      await expect(refusal, `${size.name}: the refusal card is not drawn`).toBeInViewport();
+      await expect(page.locator(".founder-price strong")).toHaveText(PRICE_DISPLAY);
+      await expectNoWayToPay(page);
+    }
+
+    await page.setViewportSize({ width: 1280, height: 800 });
+    observed(
+      "fail-closed-widths",
+      `the delivered refusal kept its price, its warning and its absence of any destination at ${qualifiedWidths.map((size) => size.name).join(", ")}, with no sideways overflow at any of them`
+    );
   });
 
   test("hitting the Free limit routes to Founder without opening a payment", async ({ page }) => {
@@ -471,31 +531,12 @@ test.describe("Stage 8 local Founder customer journey", () => {
     await page.getByRole("button", { name: "Start payment claim" }).click();
     await expect(page.getByRole("img", { name: /UPI QR code/ })).toBeVisible();
 
-    for (const size of [
-      { name: "360×800", width: 360, height: 800 },
-      { name: "390×844", width: 390, height: 844 },
-      { name: "768×1024", width: 768, height: 1024 },
-      { name: "1280×800", width: 1280, height: 800 },
-      { name: "1440×900", width: 1440, height: 900 },
-    ]) {
+    for (const size of qualifiedWidths) {
       await page.setViewportSize({ width: size.width, height: size.height });
       await page.evaluate(async () => {
         await Promise.all(Array.from(document.getAnimations()).map((animation) => animation.finished.catch(() => undefined)));
       });
-      const overflow = await page.evaluate(() => {
-        const width = document.documentElement.clientWidth;
-        const scrollWidth = Math.max(document.documentElement.scrollWidth, document.body.scrollWidth);
-        const offenders = scrollWidth > width + 1
-          ? Array.from(document.querySelectorAll<HTMLElement>("body *"))
-            .filter((element) => {
-              const box = element.getBoundingClientRect();
-              return box.width > 0 && box.right > width + 1 && getComputedStyle(element).position !== "fixed";
-            })
-            .slice(0, 4)
-            .map((element) => `${element.tagName.toLowerCase()}.${String(element.className).split(" ")[0] || "-"}→${Math.round(element.getBoundingClientRect().right)}`)
-          : [];
-        return { width, scrollWidth, offenders };
-      });
+      const overflow = await sidewaysMeasurement(page);
       expect(overflow.offenders, `${size.name} overflowed sideways (${overflow.scrollWidth} against ${overflow.width})`).toEqual([]);
 
       // The parts that carry the payment truth have to be reachable at this width,
