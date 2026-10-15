@@ -235,17 +235,28 @@ Any later SHA must earn its own CI and deployment verification.
    **The gate caught the instrument that was written to satisfy it.** Staging this file made it readable to
    `pnpm verify:secrets` for the first time — that scan walks `git ls-files`, so a script written this session
    is invisible to it until it is committed — and the scan reported one hard finding, `database-url-with-password`,
-   on the dry-run plan line that printed `--db-url postgresql://postgres.<ref>:[redacted-db-password]@…`. The
-   marker was a placeholder, but `verify-secrets.mjs:153` applies the placeholder guard only to non-hard rules
-   (`if (!rule.hard && nonLiteral.test(line)) continue;`) so that a file cannot be edited into blindness, and a
-   hard rule therefore fires on the *shape* regardless of what the password field holds. The plan line now names
-   the argument instead of reproducing the shape, which loses no information because the `TARGET` line above it
-   already prints ref, user, host, port, database and `password=[redacted-db-password]`; and because the real fix
-   was only discoverable at staging time, a contract case now asserts that the instrument's own source contains
-   no connection-string shape, so `pnpm test:unit` catches it before `git add` does. Observed as RED on the
-   written line and GREEN after the repair; `verify:secrets` then scanned `292 files` with `No privileged
-   credential found`. The repair touched only a printed line, so the executed dump below — run by the pre-repair
-   script — handed the CLI the same argv either way.
+   on the dry-run plan line, which handed `--db-url` a full scheme-and-authority connection string whose
+   password field held the redaction marker. The marker was no defence: `verify-secrets.mjs:153` applies the
+   placeholder guard only to non-hard rules (`if (!rule.hard && nonLiteral.test(line)) continue;`) so a file
+   cannot be edited into blindness, and a hard rule therefore fires on the *shape* regardless of what its
+   password field says. The plan line now names the argument instead of reproducing that shape, which loses no
+   information because the `TARGET` line above it already prints ref, user, host, port, database and
+   `password=[redacted-db-password]`; and because the real fix was only discoverable at staging time, a
+   contract case now asserts that the instrument's own source contains no connection-string shape, so
+   `pnpm test:unit` catches it before `git add` does. Observed as RED on the written line and GREEN after the
+   repair; `verify:secrets` then scanned `292 files` with `No privileged credential found`. The repair touched
+   only a printed line, so the executed dump below — run by the pre-repair script — handed the CLI the same
+   argv either way.
+   **This release record is itself scanned source, and it failed that gate on this head.** CI run
+   `38698052579` reported `Static verification → Secret and privileged-credential scan` as
+   `docs/CUSTOMER_RELEASE_READINESS.md:238: HARD database-url-with-password`, because the paragraph above was
+   first written by *quoting the rejected string* to explain it — to a pattern matcher a quotation is a
+   literal, and a prose edit changes a scanned file like any other. The sentence now describes the shape in
+   words instead of reproducing it. **The lesson is about ordering, not vocabulary:** the last local
+   `verify:secrets` in that pass ran before this paragraph was written, so the other three gates were green and
+   only the scan was stale. Re-run all four gates after the final edit — including an edit that only touches
+   prose — and read the CI log's own `file:line` before classifying a hosted failure as someone else's
+   environment.
    **Executed against production at `2026-10-15T07:09:12Z`**, structure-only, to
    `~/.local/share/dueweave/backups/dueweave-hosted-schema-20261015T070912Z.sql`: 140,710 bytes / 3,291
    lines carrying 15 `CREATE TABLE`, 51 `CREATE FUNCTION` (the census independently counts 51 routines),
