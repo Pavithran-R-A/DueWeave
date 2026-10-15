@@ -45,11 +45,18 @@ const servers: ReturnType<typeof createServer>[] = [];
  * serves `_headers` or `_redirects`, because it consumes them as configuration. An entry that is
  * not a string answers with a redirect, which is how Pages canonicalises `/index.html` to `/`.
  */
-async function serveSite(files: Site, headers: Record<string, string> = {}): Promise<string> {
+async function serveSite(files: Site, headers: Record<string, string> = {}, options: { fallback?: string } = {}): Promise<string> {
   const server = createServer((request, response) => {
     const key = decodeURIComponent(request.url ?? "/").replace(/^\/+/, "");
     const entry = Object.prototype.hasOwnProperty.call(files, key) ? files[key] : undefined;
     if (entry === undefined) {
+      // A Cloudflare Pages site with `/* /index.html 200` never 404s: an unknown path answers the
+      // SPA entry file. `fallback` stands in for that, because the difference is what the case is
+      // about — a loopback 404 makes the instrument look like it detects a missing file.
+      if (options.fallback !== undefined) {
+        response.writeHead(200, { "content-type": "text/html" }).end(options.fallback);
+        return;
+      }
       response.writeHead(404).end("not found");
       return;
     }
@@ -119,6 +126,25 @@ describe("Deployed artifact parity", () => {
     expect(code, out).toBe(0);
   });
 
+  it("prints the two digests it actually compared, so a SAME verdict can be audited", async () => {
+    // Run against production on 2026-10-15 this line read `SAME icon.svg local=15c80b908ebf
+    // deployed=0f0c1a24583a`, and the only reasonable reader response was to suspect the instrument
+    // of passing what it should have failed: the verdict compares carriage returns away while the
+    // digests printed were of the raw bytes. A release gate that certifies exact-SHA deployment has
+    // to show the bytes its own verdict was computed from, and say out loud when the checkout and
+    // the deployment differ only by line endings.
+    const crlf = html.replace(/\n/g, "\r\n");
+    expect(crlf, "the fixture is not actually CRLF, so this case proves nothing").not.toBe(html);
+    const url = await serveSite(distFiles);
+    const { code, out } = await run(writeDist({ ...distFiles, "index.html": crlf }), url);
+    const line = out.split(/\r?\n/).find((entry) => /SAME\s+index\.html/.test(entry)) ?? "";
+    const shown = [...line.matchAll(/(?:local|deployed)=([0-9a-f]{12})/g)].map((match) => match[1]);
+    expect(shown.length, `the SAME line has to carry both digests: ${line}`).toBe(2);
+    expect(shown[1], `a SAME verdict that prints two different digests cannot be audited: ${line}`).toBe(shown[0]);
+    expect(line, "the line must name the normalization that made the verdict SAME").toMatch(/carriage/i);
+    expect(code, out).toBe(0);
+  });
+
   it("names the hashed chunk whose bytes differ", async () => {
     const url = await serveSite({ ...distFiles, "assets/index-Abc123.js": "const a=2;\n" });
     const { code, out } = await run(writeDist(distFiles), url);
@@ -133,6 +159,22 @@ describe("Deployed artifact parity", () => {
     expect(out, `the healthy file was not reached, so nothing was compared: ${out}`).toMatch(comparedHtml);
     expect(code, out).not.toBe(0);
     expect(out, "a chunk the deployed site never served has to be named").toMatch(/MISS\s+assets\/index-Abc123\.js/);
+  });
+
+  it("names an asset the deployment only answers with its SPA fallback as absent, not as changed", async () => {
+    // Measured on production on 2026-10-15: a chunk this build carries and Cloudflare does not serve
+    // answered HTTP 200 with the 1222 bytes of `index.html`, because the site's `_redirects` rule is
+    // `/* /index.html 200`. The instrument reported "495294 local bytes differ from 1222 served
+    // bytes" for ten such files at once — an accurate byte count that pointed at a content change
+    // while the real finding was that the deployment never contained those artifacts. A launch gate
+    // that has to say whether the exact SHA is live cannot describe an absent file as a differing
+    // one, so the fallback is recognised and named.
+    const url = await serveSite({ "index.html": html }, {}, { fallback: html });
+    const { code, out } = await run(writeDist(distFiles), url);
+    expect(out, `the healthy file was not reached, so nothing was compared: ${out}`).toMatch(/SAME\s+index\.html/);
+    expect(code, out).not.toBe(0);
+    expect(out, "a file answered only by the fallback is a file the deployment does not serve").toMatch(/MISS\s+assets\/index-Abc123\.js\s+.*fallback/i);
+    expect(out, "the mismatch list has to say the same thing the line says").toMatch(/not served by the deployed site/i);
   });
 
   it("follows the host's canonical redirect to an artifact instead of reading the redirect as a defect", async () => {

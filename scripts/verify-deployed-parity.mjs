@@ -160,6 +160,19 @@ const configs = files.filter((relative) => CONFIG_FILES.has(relative));
 const mismatches = [];
 const servedHeaders = new Map();
 
+// Pages answers a path it has no file for with the SPA entry (`/* /index.html 200`), so an artifact
+// the deployment never contained still reads HTTP 200 with real headers. Measured on production
+// 2026-10-15: ten chunks of a stale local build each answered the 1222 bytes of `index.html`, and
+// the report said "495294 local bytes differ from 1222 served bytes" — a byte count that reads as a
+// content change and hides the finding that matters for an exact-SHA claim: the file is absent.
+let fallbackBytes = Buffer.alloc(0);
+try {
+  fallbackBytes = Buffer.from(await (await fetchPath(new URL("/", origin), "follow")).arrayBuffer());
+} catch {
+  // Nothing reachable at the root, so nothing to recognise as a fallback. Each artifact then
+  // reports its own reachability, which is the behaviour the missing-file cases already pin.
+}
+
 for (const relative of artifacts) {
   const local = readFileSync(path.join(dist, ...relative.split("/")));
   let response;
@@ -177,8 +190,18 @@ for (const relative of artifacts) {
   }
   servedHeaders.set(relative, response.headers);
   const served = Buffer.from(await response.arrayBuffer());
+  if (relative !== "index.html" && fallbackBytes.length > 0 && served.equals(fallbackBytes)) {
+    mismatches.push(`${relative}: not served by the deployed site, which answered HTTP 200 with its ${fallbackBytes.length}-byte SPA fallback`);
+    console.log(`MISS  ${relative}  the deployment answered this path with the SPA fallback, so the file is not served by the deployed site`);
+    continue;
+  }
   const same = comparable(local, relative) === comparable(served, relative);
-  console.log(`${same ? "SAME" : "DIFF"}  ${relative}  local=${digest(local).slice(0, 12)} deployed=${digest(served).slice(0, 12)}`);
+  // The digests printed are of the bytes the verdict was computed from, not of the raw files. On
+  // 2026-10-15 this line read `SAME icon.svg local=15c80b908ebf deployed=0f0c1a24583a`, which made
+  // the instrument itself look broken — a reader had no way to tell that the carriage-return rule
+  // had already been applied. A release gate has to show the evidence its own verdict ran on.
+  const normalized = same && local.toString("utf8") !== served.toString("utf8");
+  console.log(`${same ? "SAME" : "DIFF"}  ${relative}  local=${digest(comparable(local, relative)).slice(0, 12)} deployed=${digest(comparable(served, relative)).slice(0, 12)}${normalized ? " [identical once the checkout's carriage returns are removed; raw files differ]" : ""}`);
   if (!same) mismatches.push(`${relative}: ${local.length} local bytes differ from ${served.length} served bytes`);
 }
 
