@@ -234,8 +234,10 @@ if (options.identity) {
           const refused = messageOf(recovered.body);
           if (recovered.response.status === 200) {
             report(`NEWPW  ${identity.email} HTTP 200 — the recovery password signs in, so the reset landed and the address is confirmed`);
+          } else if (refused === "Email not confirmed") {
+            problem(`NEWPW ${identity.email} HTTP ${recovered.response.status} — the recovery password is refused ("${refused}"), so the delivered link has not been used`);
           } else {
-            problem(`NEWPW ${identity.email} HTTP ${recovered.response.status} — the recovery password is refused${refused ? ` ("${refused}")` : ""}, so the delivered link has not been used`);
+            problem(`NEWPW ${identity.email} HTTP ${recovered.response.status} — the recovery password is refused${refused ? ` ("${refused}")` : ""}; this cannot tell an unused link from a link that installed a different password, so read the catalog with scripts/hosted-db-census.mjs --owner <account>`);
           }
         }
       }
@@ -244,7 +246,8 @@ if (options.identity) {
       if (grant) {
         const refused = messageOf(grant.body);
         if (grant.response.status === 200) report(`GRANT  ${identity.email} HTTP 200 — a session was issued, so the emailed confirmation has been used`);
-        else report(`GRANT  ${identity.email} HTTP ${grant.response.status} — sign-in refused${refused ? ` ("${refused}")` : ""}, so confirmation is still required`);
+        else if (refused === "Email not confirmed") report(`GRANT  ${identity.email} HTTP ${grant.response.status} — sign-in refused ("${refused}"), so confirmation is still required`);
+        else report(`GRANT  ${identity.email} HTTP ${grant.response.status} — sign-in refused${refused ? ` ("${refused}")` : ""}; this cannot tell an unconfirmed address from a confirmed one whose password has changed, so read the catalog with scripts/hosted-db-census.mjs --owner <account>`);
       }
     }
   }

@@ -200,12 +200,25 @@ describe("Hosted auth status", () => {
     expect(code).toBe(0);
   });
 
-  it("reads an unconfirmed QA identity as confirmation still required, not as a failure", async () => {
+  it("reads a grant GoTrue refuses for an unconfirmed address as confirmation still required", async () => {
     const { site, auth } = await serveStack({ "GET /auth/v1/settings": settingsReply, "POST /auth/v1/token": unconfirmedGrant });
     const { code, out } = await run(["--site", site, "--identity", identity("qa@example.test", "a-password-value")]);
 
-    expect(out).toMatch(/GRANT\s+qa@example\.test HTTP 400[^]*confirmation is still required/);
+    expect(out).toMatch(/GRANT\s+qa@example\.test HTTP 400[^]*Email not confirmed[^]*confirmation is still required/);
     expect(auth.requests.find((request) => request.url.startsWith("/auth/v1/token"))?.url).toContain("grant_type=password");
+    expect(code).toBe(0);
+  });
+
+  it("refuses to name one cause for a credentials refusal, because a confirmed account with a rotated password answers the same way", async () => {
+    const { site } = await serveStack({
+      "GET /auth/v1/settings": settingsReply,
+      "POST /auth/v1/token": { status: 400, body: { msg: "Invalid login credentials" } },
+    });
+    const { code, out } = await run(["--site", site, "--identity", identity("qa@example.test", "a-password-value")]);
+
+    expect(out).toMatch(/GRANT\s+qa@example\.test HTTP 400[^]*cannot tell an unconfirmed address[^]*password has changed/);
+    expect(out).toMatch(/hosted-db-census\.mjs --owner/);
+    expect(out).not.toMatch(/confirmation is still required/);
     expect(code).toBe(0);
   });
 
@@ -373,6 +386,18 @@ describe("Hosted auth status", () => {
 
     expect(out).toMatch(/OLDPW\s+qa@example\.test HTTP 400[^]*no longer signs in/);
     expect(out).toMatch(/PROBLEM\s+NEWPW[^]*Email not confirmed[^]*link has not been used/);
+    expect(code).toBe(1);
+  });
+
+  it("reads a credentials refusal on the recovery password as an unknown, not as an unused link", async () => {
+    const { site } = await serveStack({
+      "POST /auth/v1/token": grantByCredential({ old: refused("Invalid login credentials"), recovered: refused("Invalid login credentials") }),
+    });
+    const { code, out } = await run(["--site", site, "--identity", identityWithRecovery("qa@example.test", OLD_CREDENTIAL, RECOVERED_CREDENTIAL), "--verify-recovery"]);
+
+    expect(out).toMatch(/PROBLEM\s+NEWPW[^]*cannot tell an unused link[^]*read the catalog/);
+    expect(out).toMatch(/hosted-db-census\.mjs --owner/);
+    expect(out).not.toMatch(/link has not been used/);
     expect(code).toBe(1);
   });
 

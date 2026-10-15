@@ -48,16 +48,33 @@ Any later SHA must earn its own CI and deployment verification.
    (`HTTP 200` at `06:10:27Z` and `06:11:30Z`), while a faster repeat had answered `HTTP 429` on
    2026-10-14 — the sender throttles, and a 429 means nothing new was mailed. **That 200 is not evidence the link lands on
    DueWeave** — see gate 2's measured control.
-   **Second identity created through the public API, and its confirmation is still owed 2026-10-14:**
+   **Second identity created through the public API 2026-10-14, confirmed 2026-10-15:**
    `dueweave+releaseqa-b-20261014@gmail.com` (`81a37c9e-9103-4e4c-b89c-3991965da1cd`) was created by
    `POST /auth/v1/signup` — the same call a customer's browser makes, not an admin insert — and the
    answer carried a user object with **no session**, which is what a confirmation-required project
    returns. The census on `ugzdqcytouwfdlcjujqv` read it back rather than trusting that response:
    `auth.users` 1 → 2 and `unconfirmed` 0 → 1, with `profiles` and `entitlements` each 1 → 2. The
    credential-bearing probe then refused it: `GRANT … HTTP 400 — sign-in refused ("Invalid login
-   credentials"), so confirmation is still required`, while the same probe for QA-A answers HTTP 200.
-   So this identity is real, is not confirmed, and cannot be signed in with — the second half of gate
-   1 is genuinely open for it, not merely undocumented.
+   credentials")`, while the same probe for QA-A answers HTTP 200. **That refusal proved the stored
+   credential was not the account's password, nothing more — see the correction below.**
+   **Corrected 2026-10-15: the second half of gate 1 is closed for QA-B, by a completed recovery rather
+   than a confirmation link.** The census read `email_confirmed true` / `email_confirmed_at
+   2026-10-15 10:40:28.861752Z` / `last_sign_in_at 2026-10-15 10:40:28.868984Z`, i.e. the GoTrue
+   behaviour documented two paragraphs below did exactly what it says: the owner opened a reset link in
+   their own browser and completing it confirmed the address. So QA-B is real, is confirmed, and is
+   signed-in-able — but **not with either credential this repository holds**, because the password the
+   form received was typed by the owner, not read from `qa-identity-b.json`: the probe now answers
+   `OLDPW … HTTP 400` and `NEWPW … HTTP 400`. The live pair is therefore still owed, and the only exits
+   are the owner typing this file's `recoveryNewPassword` into a fresh link or writing the password they
+   chose into the file. **The instrument that printed the wrong inference has been repaired:**
+   `scripts/hosted-auth-status.mjs` used to render any refused grant as "so confirmation is still
+   required", which the catalog then contradicted, and it rendered a refused recovery password as "so
+   the delivered link has not been used", which is exactly what a link that installed a *different*
+   password also looks like. Both lines now keep that conclusion only when GoTrue states the state
+   itself (`"Email not confirmed"`) and otherwise name the two readings and point at
+   `hosted-db-census.mjs --owner <account>`, with two contract cases per line pinning which refusal text
+   may carry a conclusion and which may not — this file at `23 passed (23)`, re-measured against
+   production at `12:13:17Z` where QA-B's `NEWPW` refusal now prints the ambiguous form.
    **How it gets closed, measured from the GoTrue source rather than assumed:** this project runs
    GoTrue v2.197.0 (`supabase/.temp/gotrue-version`), whose `internal/api/verify.go` `recoverVerify`
    runs `user.Recover(tx)` and then, `if !user.IsConfirmed()`, logs `UserSignedUpAction` and calls
