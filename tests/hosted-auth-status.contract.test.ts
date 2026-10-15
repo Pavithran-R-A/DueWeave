@@ -32,6 +32,10 @@ const script = path.join(projectRoot, "scripts", "hosted-auth-status.mjs");
 type Json = Record<string, unknown>;
 type Recorded = { method: string; url: string; headers: Record<string, string | string[] | undefined>; body: string };
 type Reply = { status: number; body: Json; headers?: Record<string, string> };
+/** A route may answer from the request it received, which is what lets one case hold both halves of
+ *  a password reset: the same `POST /auth/v1/token` path must reply differently to the old
+ *  credential than to the recovery one. */
+type Route = Reply | ((request: Recorded) => Reply);
 
 const servers: ReturnType<typeof createServer>[] = [];
 
@@ -47,7 +51,7 @@ async function listen(server: ReturnType<typeof createServer>): Promise<string> 
  * A stand-in hosted Auth service. `routes` maps `METHOD /pathname` to a reply, and every request is
  * recorded so a case can assert what was actually sent rather than merely that the run finished.
  */
-async function serveAuth(routes: Record<string, Reply>): Promise<{ url: string; requests: Recorded[] }> {
+async function serveAuth(routes: Record<string, Route>): Promise<{ url: string; requests: Recorded[] }> {
   const requests: Recorded[] = [];
   const server = createServer((request, response) => {
     const chunks: Buffer[] = [];
@@ -55,12 +59,14 @@ async function serveAuth(routes: Record<string, Reply>): Promise<{ url: string; 
     request.on("end", () => {
       const url = request.url ?? "/";
       const method = request.method ?? "GET";
-      requests.push({ method, url, headers: request.headers, body: Buffer.concat(chunks).toString("utf8") });
-      const route = routes[`${method} ${url.split("?")[0]}`];
-      if (!route) {
+      const recorded: Recorded = { method, url, headers: request.headers, body: Buffer.concat(chunks).toString("utf8") };
+      requests.push(recorded);
+      const entry = routes[`${method} ${url.split("?")[0]}`];
+      if (!entry) {
         response.writeHead(404, { "content-type": "application/json" }).end(JSON.stringify({ error: "no such route" }));
         return;
       }
+      const route = typeof entry === "function" ? entry(recorded) : entry;
       response.writeHead(route.status, { "content-type": "application/json", ...route.headers }).end(JSON.stringify(route.body));
     });
   });
@@ -87,7 +93,7 @@ async function serveSite(apiUrl: string, keys: string[]): Promise<string> {
   return listen(server);
 }
 
-async function serveStack(routes: Record<string, Reply>, keys: string[] = [SHORT_FRAGMENT, LONG_KEY]): Promise<{ site: string; auth: { url: string; requests: Recorded[] } }> {
+async function serveStack(routes: Record<string, Route>, keys: string[] = [SHORT_FRAGMENT, LONG_KEY]): Promise<{ site: string; auth: { url: string; requests: Recorded[] } }> {
   const auth = await serveAuth({ ...baseRoutes, ...routes });
   return { site: await serveSite(auth.url, keys), auth };
 }
@@ -96,6 +102,15 @@ function identity(email: string, password: string): string {
   const dir = mkdtempSync(path.join(tmpdir(), "dw-hosted-auth-"));
   const file = path.join(dir, "qa-identity.json");
   writeFileSync(file, JSON.stringify({ email, password }), { mode: 0o600 });
+  return file;
+}
+
+/** The shape the recovery instrument writes: the pre-reset password plus the password the delivered
+ *  link is meant to install. Both are credential values and neither may reach the report. */
+function identityWithRecovery(email: string, password: string, recoveryNewPassword: string): string {
+  const dir = mkdtempSync(path.join(tmpdir(), "dw-hosted-auth-"));
+  const file = path.join(dir, "qa-identity.json");
+  writeFileSync(file, JSON.stringify({ email, password, recoveryNewPassword }), { mode: 0o600 });
   return file;
 }
 
@@ -311,6 +326,67 @@ describe("Hosted auth status", () => {
     expect(auth.requests.some((request) => request.url.startsWith("/auth/v1/recover"))).toBe(true);
     expect(out).toMatch(/PROBLEM\s+RECOVER[^]*HTTP 401/);
     expect(code).toBe(1);
+  });
+
+  const OLD_CREDENTIAL = "the-pre-recovery-password-value";
+  const RECOVERED_CREDENTIAL = "the-recovery-new-password-value";
+
+  /** One route has to answer two different grants, so it reads the credential the request carried:
+   *  a completed recovery refuses the old password and accepts the one the delivered link installed,
+   *  and an unused link still refuses both. */
+  function grantByCredential(replies: { old: Reply; recovered: Reply }) {
+    return (request: Recorded): Reply => (request.body.includes(RECOVERED_CREDENTIAL) ? replies.recovered : replies.old);
+  }
+  const refused = (msg: string): Reply => ({ status: 400, body: { msg } });
+
+  it("reads a used recovery link as the old password refused and the recovery password accepted", async () => {
+    const { site, auth } = await serveStack({
+      "POST /auth/v1/token": grantByCredential({ old: refused("Invalid login credentials"), recovered: confirmedGrant("81a37c9e") }),
+    });
+    const { code, out } = await run(["--site", site, "--identity", identityWithRecovery("qa@example.test", OLD_CREDENTIAL, RECOVERED_CREDENTIAL), "--verify-recovery"]);
+
+    expect(auth.requests.filter((request) => request.url.startsWith("/auth/v1/token"))).toHaveLength(2);
+    expect(out).toMatch(/OLDPW\s+qa@example\.test HTTP 400[^]*no longer signs in/);
+    expect(out).toMatch(/NEWPW\s+qa@example\.test HTTP 200[^]*recovery password signs in[^]*confirmed/);
+    expect(out).not.toMatch(/PROBLEM/);
+    expect(out).not.toContain(OLD_CREDENTIAL);
+    expect(out).not.toContain(RECOVERED_CREDENTIAL);
+    expect(out).not.toContain(SESSION_VALUE);
+    expect(code).toBe(0);
+  });
+
+  it("reports a reset that never took effect when the pre-recovery password still signs in", async () => {
+    const { site } = await serveStack({
+      "POST /auth/v1/token": confirmedGrant("81a37c9e"),
+    });
+    const { code, out } = await run(["--site", site, "--identity", identityWithRecovery("qa@example.test", OLD_CREDENTIAL, RECOVERED_CREDENTIAL), "--verify-recovery"]);
+
+    expect(out).toMatch(/PROBLEM\s+OLDPW[^]*still signs in[^]*reset was never completed/);
+    expect(code).toBe(1);
+  });
+
+  it("reports an untouched delivered link when the recovery password is refused as unconfirmed", async () => {
+    const { site } = await serveStack({
+      "POST /auth/v1/token": grantByCredential({ old: refused("Invalid login credentials"), recovered: refused("Email not confirmed") }),
+    });
+    const { code, out } = await run(["--site", site, "--identity", identityWithRecovery("qa@example.test", OLD_CREDENTIAL, RECOVERED_CREDENTIAL), "--verify-recovery"]);
+
+    expect(out).toMatch(/OLDPW\s+qa@example\.test HTTP 400[^]*no longer signs in/);
+    expect(out).toMatch(/PROBLEM\s+NEWPW[^]*Email not confirmed[^]*link has not been used/);
+    expect(code).toBe(1);
+  });
+
+  it("skips the recovery check rather than inventing one when the identity holds no recovery password", async () => {
+    const { site, auth } = await serveStack({
+      "POST /auth/v1/token": refused("Invalid login credentials"),
+    });
+    const { code, out } = await run(["--site", site, "--identity", identity("qa@example.test", OLD_CREDENTIAL), "--verify-recovery"]);
+
+    expect(auth.requests.filter((request) => request.url.startsWith("/auth/v1/token"))).toHaveLength(0);
+    expect(out).toMatch(/NEWPW\s+skipped: .*recoveryNewPassword/);
+    expect(out).not.toMatch(/OLDPW/);
+    expect(out).not.toMatch(/PROBLEM/);
+    expect(code).toBe(0);
   });
 
   it("checks the deployed erasure boundary from the site's own origin", async () => {

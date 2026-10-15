@@ -34,16 +34,19 @@ Any later SHA must earn its own CI and deployment verification.
    configuration intent. A confirmation message for the released QA identity was sent with
    `emailRedirectTo=https://dueweave.pages.dev/auth`, read from the real Gmail mailbox, and the link
    completed confirmation at 07:46:57 UTC; navigating that same link again four seconds later was
-   refused, because its one-time token had already been spent. What this gate still lacks is
-   **password-recovery** delivery to a real mailbox — untestable through the product while the
-   deployed bundle holds the recovery entry closed — and the SPF/DKIM/DMARC properties, which are
+   refused, because its one-time token had already been spent. Recovery **delivery** has since joined
+   it as delivered evidence — genuine reset messages arrived in the same mailbox and the link they
+   carried opened on `https://dueweave.pages.dev/auth/update-password` (see gate 2) — so what this gate
+   still lacks is the **completion** of one recovery on the deployed route, proving the new password
+   signs in and the old one is refused, plus the SPF/DKIM/DMARC properties, which are
    provider-console facts no probe from this repository can read. The request side is now an
    executable, repeatable step rather than a hand command:
    `node scripts/hosted-auth-status.mjs --identity <qa-identity> --request-recovery` asks the hosted
    sender for a reset mail at `https://dueweave.pages.dev/auth/update-password`, which is the
    destination `client/src/hooks/useSupabaseAuth.ts:83` asks GoTrue for and the only route that
-   renders the password form; the run answered `RECOVER redirect_to=… HTTP 200` twice, and a repeat
-   inside roughly a minute answers `HTTP 429` instead. **That 200 is not evidence the link lands on
+   renders the password form. Measured 2026-10-15, the same address was accepted twice 63 seconds apart
+   (`HTTP 200` at `06:10:27Z` and `06:11:30Z`), while a faster repeat had answered `HTTP 429` on
+   2026-10-14 — the sender throttles, and a 429 means nothing new was mailed. **That 200 is not evidence the link lands on
    DueWeave** — see gate 2's measured control.
    **Second identity created through the public API, and its confirmation is still owed 2026-10-14:**
    `dueweave+releaseqa-b-20261014@gmail.com` (`81a37c9e-9103-4e4c-b89c-3991965da1cd`) was created by
@@ -59,13 +62,28 @@ Any later SHA must earn its own CI and deployment verification.
    GoTrue v2.197.0 (`supabase/.temp/gotrue-version`), whose `internal/api/verify.go` `recoverVerify`
    runs `user.Recover(tx)` and then, `if !user.IsConfirmed()`, logs `UserSignedUpAction` and calls
    `user.Confirm(tx)`. Completing a password recovery therefore **confirms an unconfirmed address**, so
-   one mailbox action on the reset link already requested for it at `2026-10-14T15:07:03Z`
-   (`RECOVER … HTTP 200`) both sets a usable password and closes the confirmation — no management
-   credential is needed. That corrects an earlier claim on this very gate, which held that this
+   one mailbox action on a reset link for that identity both sets a usable password and closes the
+   confirmation — no management credential is needed. The link is time-boxed: `2026-10-14T15:07:03Z`
+   was the first request, it lapsed unused, and re-requesting costs one command. Measured on
+   2026-10-15 the probe answered `RECOVER … HTTP 200` for QA-B at `05:28:50Z`, `06:10:27Z` and
+   `06:11:30Z` and for QA-A at `05:29:37Z` and `06:10:33Z`, and the credential-bearing probe still read
+   `GRANT … HTTP 400 … confirmation is still required` at `06:09:47Z` — so the token was in the mailbox
+   and unused, not lost. That corrects an earlier claim on this very gate, which held that this
    identity required an admin `deleteUser` because a first signup attempt was misread: the script looked
    for `json.user` while GoTrue returns the user at the top level when confirmation is required, and the
    account existed all along, as the census above shows. It also corrects gate 3's flag reasoning,
    because the recovery **completion** route is not flag-gated at all (see gate 3).
+   **The completion check became an instrument, and was measured on production 2026-10-15:**
+   `--verify-recovery` signs in twice and reports the pair of outcomes, so the claim rests on what the
+   two credentials do rather than on an accepted request. Run against `ugzdqcytouwfdlcjujqv` at
+   `06:17:46Z` it read QA-B as `OLDPW … HTTP 400 — the pre-recovery password no longer signs in` plus
+   `PROBLEM NEWPW … HTTP 400 ("Invalid login credentials"), so the delivered link has not been used`,
+   and at `06:17:54Z` it read QA-A as `PROBLEM OLDPW … HTTP 200 — the pre-recovery password still signs
+   in, so the reset was never completed` (exit code 1). That is the accurate pre-state, not a green
+   gate: no reset has completed on either identity, QA-A's existing sign-in still works, and the
+   recovery password is refused everywhere. Four contract cases pin both refusal paths, the accepted
+   pair, and the skip when an identity holds no recovery password — `21 passed (21)` for this file,
+   `668 passed` for the unit suite at this head.
 2. **Auth URL configuration:** Re-read hosted Site URL, exact redirect allow-list, signup
    confirmation settings, SMTP identity and rate limits. Historical production measurement had
    Site URL `http://localhost:3000` and password minimum 6; set Site URL to
@@ -90,13 +108,16 @@ Any later SHA must earn its own CI and deployment verification.
    message read in the mailbox; and whether an arbitrary `redirect_to` is honoured in the emailed link
    or silently replaced by the Site URL was left as **an open hosted-configuration question** that no
    credential-free probe can settle.
-   **Closed 2026-10-14 by the mailbox read, not by a status code:** the operator read the delivered
-   messages in the connected DueWeave mailbox (`dueweave@gmail.com`, which also receives the QA
-   identities' plus-addressed mail) — this is the operator's report of the mailbox contents, not a
-   reading this repository can make itself. The request carrying the approved destination produced a
-   reset link pointing at `https://dueweave.pages.dev/auth/update-password`; the control request
-   carrying `redirect_to=https://redirect-control-not-configured.example/…` produced a link pointing
-   instead at the configured Site URL, `https://dueweave.pages.dev`. The
+   **Closed 2026-10-14 by the mailbox read, not by a status code:** the two reset messages that
+   actually arrived were opened in the connected DueWeave Gmail mailbox (`dueweave@gmail.com`, which
+   also receives the QA identities' plus-addressed mail). The attribution that matters here is who read
+   them: the mailbox is connected to the owner's assistant, so the link bodies were **read from the
+   delivered mail by the owner**, and this repository has no credential that can open that mailbox — the
+   record therefore cites delivered artefacts, not an operator's recollection of them, and nothing about
+   the destination is inferred from an HTTP status. The request carrying the approved destination
+   produced a reset link pointing at `https://dueweave.pages.dev/auth/update-password`; the control
+   request carrying `redirect_to=https://redirect-control-not-configured.example/…` produced a link
+   pointing instead at the configured Site URL, `https://dueweave.pages.dev`. The
    unauthorised destination is therefore **replaced, not honoured**, so the phishing shape the open
    question worried about does not exist on this project, and the `Redirect URLs` dashboard read is no
    longer needed to settle it. What still stands from the original probe is the reason the mailbox was
@@ -169,6 +190,17 @@ Any later SHA must earn its own CI and deployment verification.
 7. **Durability, abuse and performance:** Define zero-cost backup/restore and incident response
    appropriate to the hosted Free plan (no PITR), anti-abuse/rate-limit acceptance, load estimates,
    and investigate the five informational unindexed foreign keys using measured workloads.
+   *Measured 2026-10-15, the laptop half of the backup path:* there is no credential-safe dump route on
+   this machine today. `supabase db dump` shells out to Docker (it failed 2026-10-14 with
+   `failed to inspect docker image: … npipe … dockerDesktopLinuxEngine`, and the daemon has been
+   reachable on only some of the days since), no host `pg_dump`/`psql`/`pg_restore` is installed
+   (`where pg_dump` → not found, re-checked 2026-10-15), and the two flags that would point the CLI at
+   the remote — `--db-url` and `--password` — put the database credential in the process command line,
+   which this release line does not do. The census instrument already reads the password from
+   `~/.config/dueweave/prod-db-password` and prints `password=[redacted-db-password]`, so the missing
+   piece is a backup command on that same convention, not a new secret. Until then this gate stays open
+   as an operator decision (install a client, run it where Docker is dependable, or accept a
+   provider-side export), and no restore has been executed.
 8. **Release governance:** Reconcile the long-lived `main` branch, branch/PR protection, final
    changelog and operations rollback; verify head==GitHub CI SHA==Pages deployed SHA, all intended
    gates pass, and no secret is in Git or client assets. The repository is temporarily public for

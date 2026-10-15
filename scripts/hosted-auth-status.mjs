@@ -4,6 +4,11 @@
 //   node scripts/hosted-auth-status.mjs --site https://dueweave.pages.dev
 //   node scripts/hosted-auth-status.mjs --identity p3c-red-baseline/qa-identity.json --request-confirmation
 //   node scripts/hosted-auth-status.mjs --identity p3c-red-baseline/qa-identity.json --request-recovery
+//   node scripts/hosted-auth-status.mjs --identity p3c-red-baseline/qa-identity.json --verify-recovery
+//
+// The last of those is the half that a 200 from `/recover` cannot carry: it signs in twice, once with
+// the password the account used before the reset and once with the one the delivered link installs, so
+// "the reset worked" is read as the old credential refused and the new one accepted.
 //
 // Everything it reads is reachable with the key a customer's browser already holds, so it runs on a
 // laptop with no Supabase management token — which is the state this project has been in since the
@@ -34,7 +39,7 @@ import { readFileSync } from "node:fs";
 const DEFAULT_SITE = "https://dueweave.pages.dev";
 
 function parseArgs(argv) {
-  const options = { site: DEFAULT_SITE, identity: "", requestConfirmation: false, requestRecovery: false };
+  const options = { site: DEFAULT_SITE, identity: "", requestConfirmation: false, requestRecovery: false, verifyRecovery: false };
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
     if (token === "--request-confirmation") {
@@ -45,8 +50,12 @@ function parseArgs(argv) {
       options.requestRecovery = true;
       continue;
     }
+    if (token === "--verify-recovery") {
+      options.verifyRecovery = true;
+      continue;
+    }
     if (token !== "--site" && token !== "--identity") {
-      console.error(`Unrecognised argument "${token}". Expected --site <origin>, --identity <file>, --request-confirmation or --request-recovery.`);
+      console.error(`Unrecognised argument "${token}". Expected --site <origin>, --identity <file>, --request-confirmation, --request-recovery or --verify-recovery.`);
       process.exit(2);
     }
     const value = argv[index + 1];
@@ -84,6 +93,35 @@ async function readJson(response) {
   } catch {
     return null;
   }
+}
+
+/** One password grant, reported under whichever prefix asked for it. The credential is read into the
+ *  request and never echoed; only the status and the refusal text come back. */
+async function passwordGrant(email, password, prefix) {
+  const response = await request(`${api}/auth/v1/token?grant_type=password`, {
+    method: "POST",
+    headers: { ...publicHeaders, "content-type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  }).catch((error) => {
+    problem(`${prefix} ${email} could not be probed (${error.message})`);
+    return null;
+  });
+  if (!response) return null;
+  return { response, body: await readJson(response) };
+}
+
+/** The identity file is untracked scratch holding credential values, so an unreadable one is a
+ *  finding to report, not a crash: the caller says which half it could not run. */
+function readIdentity(file) {
+  try {
+    return JSON.parse(readFileSync(file, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function messageOf(body) {
+  return body?.msg ?? body?.error_description ?? body?.error ?? "";
 }
 
 function longestKey(chunk) {
@@ -169,33 +207,50 @@ if (settingsResponse) {
 // The disposable QA identity's confirmation state, read the way a customer's sign-in is read.
 let qaEmail = "";
 if (options.identity) {
-  let identity = null;
-  try {
-    identity = JSON.parse(readFileSync(options.identity, "utf8"));
-  } catch {
-    identity = null;
-  }
+  const identity = readIdentity(options.identity);
   if (!identity || !identity.email || !identity.password) {
     report(`GRANT  skipped: no readable identity at ${options.identity}`);
   } else {
     qaEmail = identity.email;
-    const grant = await request(`${api}/auth/v1/token?grant_type=password`, {
-      method: "POST",
-      headers: { ...publicHeaders, "content-type": "application/json" },
-      body: JSON.stringify({ email: identity.email, password: identity.password }),
-    }).catch((error) => {
-      problem(`GRANT ${identity.email} could not be probed (${error.message})`);
-      return null;
-    });
-    if (grant) {
-      const body = await readJson(grant);
-      const refused = body?.msg ?? body?.error_description ?? body?.error ?? "";
-      if (grant.status === 200) report(`GRANT  ${identity.email} HTTP 200 — a session was issued, so the emailed confirmation has been used`);
-      else report(`GRANT  ${identity.email} HTTP ${grant.status} — sign-in refused${refused ? ` ("${refused}")` : ""}, so confirmation is still required`);
+    if (options.verifyRecovery) {
+      // A reset is only proven by what the two credentials do afterwards: the one the customer signed
+      // in with has to stop working and the one the delivered link installs has to start. The password
+      // values themselves never reach the report, and the refusal text is kept because it tells an
+      // unused link ("Email not confirmed") apart from a reset that never landed.
+      if (!identity.recoveryNewPassword) {
+        report("NEWPW  skipped: --verify-recovery needs a recoveryNewPassword in the identity file, which holds the password the delivered link installs");
+      } else {
+        const old = await passwordGrant(identity.email, identity.password, "OLDPW");
+        if (old) {
+          const refused = messageOf(old.body);
+          if (old.response.status === 200) {
+            problem(`OLDPW ${identity.email} HTTP 200 — the pre-recovery password still signs in, so the reset was never completed`);
+          } else {
+            report(`OLDPW  ${identity.email} HTTP ${old.response.status} — the pre-recovery password no longer signs in${refused ? ` ("${refused}")` : ""}`);
+          }
+        }
+        const recovered = await passwordGrant(identity.email, identity.recoveryNewPassword, "NEWPW");
+        if (recovered) {
+          const refused = messageOf(recovered.body);
+          if (recovered.response.status === 200) {
+            report(`NEWPW  ${identity.email} HTTP 200 — the recovery password signs in, so the reset landed and the address is confirmed`);
+          } else {
+            problem(`NEWPW ${identity.email} HTTP ${recovered.response.status} — the recovery password is refused${refused ? ` ("${refused}")` : ""}, so the delivered link has not been used`);
+          }
+        }
+      }
+    } else {
+      const grant = await passwordGrant(identity.email, identity.password, "GRANT");
+      if (grant) {
+        const refused = messageOf(grant.body);
+        if (grant.response.status === 200) report(`GRANT  ${identity.email} HTTP 200 — a session was issued, so the emailed confirmation has been used`);
+        else report(`GRANT  ${identity.email} HTTP ${grant.response.status} — sign-in refused${refused ? ` ("${refused}")` : ""}, so confirmation is still required`);
+      }
     }
   }
 } else {
   report("GRANT  skipped: pass --identity <file> to read the disposable QA identity's confirmation state");
+  if (options.verifyRecovery) report("NEWPW  skipped: --verify-recovery needs --identity <file> so it knows which account to read");
 }
 
 // The erasure function's unauthenticated boundary: the CORS repair and its own session check, which
