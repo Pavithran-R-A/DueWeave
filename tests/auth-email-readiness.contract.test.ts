@@ -123,3 +123,29 @@ describe("every email DueWeave asks for states where its link lands", () => {
     expect(authHook).toContain("redirectTo: `${window.location.origin}/auth/update-password`");
   });
 });
+
+// One launch step cannot be re-ordered: a reset link delivered before the release flags flip has to
+// stay completable in the build production serves while they are off, because that link is the only
+// recovery a customer of the paused build can ever hold. Measured 2026-10-15 against
+// https://dueweave.pages.dev — `/auth/update-password` with no session renders "This recovery link
+// is not active." beside the flags-off notice, and `onSubmit` dispatches to `updatePassword` without
+// consulting `authEmailEnabled`. The flag is allowed to refuse a *request* and to hide the buttons; it
+// must never gate consuming a session the link already delivered.
+function emailFlagGuards(source: string) {
+  return [...source.matchAll(/mode === "(\w+)" && !authEmailEnabled/g)].map((match) => match[1] ?? "");
+}
+
+describe("a delivered reset link stays completable in the flags-off build", () => {
+  it("guards only the reset request with the email flag", () => {
+    expect(emailFlagGuards(auth), "the email flag now gates a submit other than the forgot request").toEqual(["forgot"]);
+  });
+
+  it("names an update-mode guard when one exists, so the pin above is not blind", () => {
+    const mutated = 'if (mode === "update" && !authEmailEnabled) return;\nif (mode === "forgot" && !authEmailEnabled) return;';
+    expect(emailFlagGuards(mutated)).toEqual(["update", "forgot"]);
+  });
+
+  it("wires the update submit to the provider call rather than to a flag test", () => {
+    expect(auth).toMatch(/mode === "forgot"\s*\?\s*await resetPassword\(email\)\s*:\s*await updatePassword\(password\)/);
+  });
+});

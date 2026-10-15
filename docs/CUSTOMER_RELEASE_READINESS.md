@@ -101,6 +101,21 @@ Any later SHA must earn its own CI and deployment verification.
    account" the moment the operator instrument authenticates successfully, and is also why the unscoped
    census moved `sessions` 17 → 21 across 2026-10-15 while no customer did anything. Seventeen census
    contract cases, and the unit suite at this head is `47 files / 678 tests`.
+   **That "completion is not flag-gated" claim is now measured on the deployed build and pinned in CI
+   (2026-10-15).** Loading `https://dueweave.pages.dev/auth/update-password` with no session — the flags-off
+   `505ff51` artifact, credential-free — renders `ACCOUNT RECOVERY` / "This recovery link is not active.",
+   zero `input[type=password]` and no "Save new password" control, with the flags-off status line
+   "Password recovery emails are temporarily unavailable. No reset request can be sent right now." and a
+   working "Back to sign in". So the paused build refuses an *undelivered* request while keeping the route
+   that consumes a delivered link; a link mailed before the flags flip therefore stays completable, and the
+   flag flip is not a precondition for this gate's remaining half. `tests/auth-email-readiness.contract.test.ts`
+   gained three cases that hold that ordering open at every head: the email flag may guard exactly one
+   submit — `mode === "forgot"` — the update submit dispatches to `updatePassword(password)` rather than to
+   a flag test, and the guard scan is proven not blind by feeding it a source where `mode === "update"` *is*
+   gated. Verified rather than asserted: run against the real file the scan returns `["forgot"]`, and against
+   the same file with an update-mode guard injected it returns `["forgot","update"]`, which is the shape the
+   pin refuses. The file goes `15 → 18` cases and the unit suite `49 files / 722 tests`, `lint` exit 0,
+   `tsc` exit 0, `verify:secrets` `Scanned 297 files for 11 credential shapes` clean.
 2. **Auth URL configuration:** Re-read hosted Site URL, exact redirect allow-list, signup
    confirmation settings, SMTP identity and rate limits. Historical production measurement had
    Site URL `http://localhost:3000` and password minimum 6; set Site URL to
