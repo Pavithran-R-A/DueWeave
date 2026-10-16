@@ -17,8 +17,8 @@ Any later SHA must earn its own CI and deployment verification.
 | Public HTTPS and anonymous auth-page rendering | Cloudflare Pages Git deployment and separate real-Chromium public-route smoke | Verified for unauthenticated screens |
 | Mobile login form, signup form validation, forgot-password navigation, route guards, favicon and manifest | `e2e-live/public-release.spec.ts` on `https://dueweave.pages.dev`, no data created | Verified for tested paths, not signup delivery |
 | Database authorization, tenant separation and anonymous isolation | Hosted Phase 3B two-account isolation matrix; 13/13 public tables RLS-enabled; anon/PUBLIC routine EXECUTE zero | Verified for measured hosted matrix |
-| Monetary dates, receivable/promise/payment history, exports, Founder refusal behavior and customer journeys | Vitest, pgTAP, DB/live, and Playwright local-stack CI gates; consult exact-head run, not earlier counts. **Amended 2026-10-14:** the advertised free-tier journey was then executed signed-in on `https://dueweave.pages.dev` as a real confirmed customer — onboarding, adding a client, promising money, recording a payment, following up and exporting — and each step was read back from `ugzdqcytouwfdlcjujqv` through `scripts/hosted-db-census.mjs --owner <qa-account>`, which answers 5 activities / 1 client / 1 promise / 1 promise event / 1 payment / 1 receivable / 1 entitlement / 1 profile and 0 analytics or Founder rows; Founder stays refused on production, and the eight-character password minimum was proved on the deployed build including a rejected seven-character attempt | Hosted browser acceptance executed for the single-account free-tier journey; cross-tenant isolation and account erasure **on production**, and the large-data export, are still open |
-| User-owned account erasure with history | Production migration 25 and transaction-rollback database acceptance. **Amended 2026-10-12:** CI's `Browser release smoke` executes the destructive path end to end at every head — `e2e/stage9-release-journey.spec.ts:505` opens the sheet, requires the exact phrase, clicks delete through the served `delete-account` function (`.github/workflows/ci.yml:160`), lands on `/auth` and is then refused sign-in with the old credentials (`✓ 80 … (1.6s)` in run `38253358122`) — which is a real cross-origin browser erasure with real Auth removal, against the **local** stack rather than production | Browser side executed on the local stack; the same run against `ugzdqcytouwfdlcjujqv` with a before/after row census is still open |
+| Monetary dates, receivable/promise/payment history, exports, Founder refusal behavior and customer journeys | Vitest, pgTAP, DB/live, and Playwright local-stack CI gates; consult exact-head run, not earlier counts. **Amended 2026-10-14:** the advertised free-tier journey was then executed signed-in on `https://dueweave.pages.dev` as a real confirmed customer — onboarding, adding a client, promising money, recording a payment, following up and exporting — and each step was read back from `ugzdqcytouwfdlcjujqv` through `scripts/hosted-db-census.mjs --owner <qa-account>`, which answers 5 activities / 1 client / 1 promise / 1 promise event / 1 payment / 1 receivable / 1 entitlement / 1 profile and 0 analytics or Founder rows; Founder stays refused on production, and the eight-character password minimum was proved on the deployed build including a rejected seven-character attempt. **Amended 2026-10-16:** the two hosted gaps this row named are closed — production cross-tenant isolation was executed as 47 declined probes with 0 findings (`scripts/hosted-tenant-isolation.mjs`, `prod-census/isolation-1057.log`, gate 3), and one confirmed signed-in account was erased on production and proved by before/after census (`scripts/hosted-account-erasure.mjs`, gate 4) | Hosted browser acceptance executed for the single-account free-tier journey; production cross-tenant isolation and production account erasure are now measured (2026-10-16); the large-data export is still open |
+| User-owned account erasure with history | Production migration 25 and transaction-rollback database acceptance. **Amended 2026-10-12:** CI's `Browser release smoke` executes the destructive path end to end at every head — `e2e/stage9-release-journey.spec.ts:505` opens the sheet, requires the exact phrase, clicks delete through the served `delete-account` function (`.github/workflows/ci.yml:160`), lands on `/auth` and is then refused sign-in with the old credentials (`✓ 80 … (1.6s)` in run `38253358122`) — which is a real cross-origin browser erasure with real Auth removal, against the **local** stack rather than production. **Amended 2026-10-16:** the same removal was executed against `ugzdqcytouwfdlcjujqv` by `scripts/hosted-account-erasure.mjs` — a confirmed, signed-in QA account erased through the served function with its own bearer and the exact phrase, judged by a census read before and after (instrument: `accounts=2 → accounts=1`, `FUNCTION … HTTP 200 status=deleted`, `own-rows none · auth-own none`, `GRANT … HTTP 400 — it no longer signs in`, exit 0; independent frozen census: `DONE 10/10 reads answered`, no `account-state` row, `rows_for_owner` 0 in every auth table, October 5 orphans preserved, QA-A's ledger unmoved). Its **first attempt answered a platform `503` and was reported as `erasure NOT proven — 12 finding(s)` with every count unchanged** rather than retried into a guess (gate 4 records the classification). The deployed sheet's guards were separately walked in headed Chromium on production — 20 checks, 0 failed, `calls=0` reaching the function | Production erasure proven by before/after census for one confirmed signed-in account (2026-10-16); the destructive submit clicked through the deployed UI on production is still open and deferred to the QA-A cleanup run, for the reason stated in gate 4 |
 | Real hosted frontend source and Supabase config | Pages project production branch `release/consumer-live`, build `pnpm build`, output `dist`, active Supabase URL/publishable-key envs. **Amended 2026-10-14 at the released tip `505ff51`:** `node scripts/verify-deployed-parity.mjs --dist dist-paused --url https://dueweave.pages.dev` answers exit 0 — a flags-off build of this head reproduces the served entry `assets/index-Bv2LIPpN.js` and the lazily-loaded `assets/Auth-BIHs1b_G.js`, all 20 built files match, and both host configurations hold by effect (`_headers` with 80 live declarations honoured, `_redirects` answering `/parity-probe` with HTTP 200). The served Auth chunk is the closed-flag artifact: the registration affordance is absent from its bytes and "New registrations are temporarily paused" is present in them, so what production holds closed is proved at build time rather than inferred from a runtime conditional. **Re-measured 2026-10-15 with the tree at `51c7689` plus this instrument repair, and the exactness is checkable rather than assumed:** `git diff --name-only 505ff51 HEAD` moves no file under `client/`, `vite.config.ts`, `index.html` or `public/`, so the flags-off artifact in `dist-paused` is still the one this source line produces. The same command against `dist-paused` still answers exit 0 with all 20 files matching, but two ways this gate could lie were found by running it against the wrong directory. (1) Compared against a plain `dist`, eleven chunks now read `MISS … the file is not served by the deployed site` where the instrument used to report "495294 local bytes differ from 1222 served bytes" — Cloudflare Pages answers a path it has no file for with the SPA entry (`_redirects`: `/* /index.html 200`), so an artifact absent from the deployment still returns HTTP 200 with the fallback's 1222 bytes, and the old wording described that as a content change. Production holds the flags-off artifact, so `dist-paused` is the directory that can prove parity, and the eleven "mismatches" were my own wrong input, not a moved deployment: the served entry is still `assets/index-Bv2LIPpN.js` and the served Auth chunk still `assets/Auth-BIHs1b_G.js`. (2) The per-file digests printed are now digests of the bytes the verdict was computed on, so a pass no longer reads `SAME icon.svg local=15c80b908ebf deployed=0f0c1a24583a` — two different numbers under a SAME label, which made a correct verdict look broken — and a checkout-copied static that differs only by carriage returns says so in words. Both repairs were observed RED on the written line before going green; `tests/deployed-artifact-parity.contract.test.ts` carries 15 cases now | Exact-head deployed parity and served flag state verified on production, with the parity instrument re-verified against the fallback Pages actually serves |
 | Full ledger and downloadable archive past PostgREST 1,000-row default limit | Page-by-page queries with stable order, unit tests for 1,201 rows and errors | Code+unit gated; full live large-data export outstanding |
 | Password and Auth network errors do not strand the form | Guarded `try/catch/finally` and friendly error responses. **Amended 2026-10-14:** the adverse browser-network simulation was executed against the deployed build in real Chromium with a confirmed customer session, with every REST read routed through an aborting interceptor. A cold load whose profile reads fail answers honestly after the REST client's own GET backoff (attempts measured at 0.26 s, 1.28 s, 3.31 s and 7.34 s, each `net::ERR_FAILED`) with "Couldn't load this view / Your private ledger remains protected. / We could not refresh this screen. Check your connection and try again…" and a `Try again` button, and no technical detail; retrying against a still-failing read returns that same screen with no blank or detached frame in between; retrying after the connection returns reproduces the online money brief exactly; and a client save attempted with the browser offline refuses in 581 ms with "Could not add client — We could not reach DueWeave. Check your connection and try again.", keeps the typed name on screen, re-enables Save, and leaves the hosted row census byte-identical to the one taken before the run. The wait before the error is the library's documented retry (`@supabase/postgrest-js` 2.112.3: 3 attempts, GET only, 1 s/2 s/4 s), not an application strand — money writes are POST RPCs and are never retried, so a flaky network cannot double-apply one | Verified on deployed production |
@@ -387,7 +387,7 @@ Any later SHA must earn its own CI and deployment verification.
    `401 UNAUTHORIZED_INVALID_JWT_FORMAT` and a missing bearer returns the function's own
    `401 Sign in before deleting your account.` The preflight half of this gate is therefore measured;
    the complete Auth-account removal for one real signed-in customer, with its before/after row
-   census, is still open. That removal is **not** missing a mechanism: CI already runs it on the local
+   census, **was still open at that head and is closed below**. That removal is **not** missing a mechanism: CI already runs it on the local
    stack — `e2e/stage9-release-journey.spec.ts:505` deletes through the served function and proves the
    old credentials are then refused (slot 80 of `Running 80 tests`, run `38253358122`) — so what this
    gate lacks is the identical run against `ugzdqcytouwfdlcjujqv`, which needs a confirmed hosted
@@ -426,15 +426,102 @@ Any later SHA must earn its own CI and deployment verification.
    Mutation-verified rather than asserted: deleting the absence record from the snapshot fails 5 cases,
    neutering the auth collateral rule fails 1, neutering the identity-file guard fails 1. Local gates at
    `55b97d4`: unit `49 files / 718 tests`, `lint` exit 0, `tsc` exit 0, `verify:secrets` `Scanned 297
-   files for 11 credential shapes` clean. **The signed-in half is still open** — it needs a confirmed QA
-   session, because erasing an account that never completed confirmation proves a state no customer is ever
-   in, and until that run lands this gate's verdict is unchanged. Neither repair head reaches the customer
+   files for 11 credential shapes` clean. **The signed-in half was open at that head** — it needed a
+   confirmed QA session, because erasing an account that never completed confirmation proves a state no
+   customer is ever in. It has since been executed; see the run below. Neither repair head reaches the customer
    bundle: `git diff --name-only 505ff51..HEAD` matches zero files under `client/`, `vite.config.ts`,
    `index.html`, `.env*` or `wrangler*`, and the served entry is still `assets/index-Bv2LIPpN.js`, so
    production is running the same flags-off `505ff51` artifact this record has been describing. Re-measured
    at the repair tip `5bd3064` (10:20Z): the same command exits 0 with all 20 built files `SAME` and both
    configuration effects honoured (`_headers` 80 live declarations, `_redirects` `/parity-probe` HTTP 200),
    so the exact-head parity claim moved forward with the branch instead of being inherited from `505ff51`.
+   **Executed against `ugzdqcytouwfdlcjujqv` on 2026-10-16: one real, confirmed, signed-in customer was
+   erased on production and the census proves it.** The account was created through the public signup API
+   and confirmed through a real mailbox (gate 1 and 2), so the state erased is the state a customer is
+   actually in. Every line below is quoted from the log named in front of it.
+   *`11:15Z`, first attempt — the platform 503, and the instrument refusing to call it a deletion*
+   (`prod-census/erasure-b-1115.log`, exit 1): `BEFORE accounts=2 confirmed=2 unconfirmed=0 own-rows
+   entitlements=1 profiles=1 · auth-own identities=1 refresh_tokens=9 sessions=9`, then
+   `FUNCTION delete-account HTTP 503 status=unreadable message="Service is temporarily unavailable"`.
+   The after census read `accounts=2 confirmed=2 … entitlements=1 profiles=1 … identities=1
+   refresh_tokens=9 sessions=9` — byte-identical to before — and `GRANT the erased credential answered
+   HTTP 200 — it still signs in`, giving
+   `DONE erasure NOT proven — 12 finding(s) against the census taken before it`. This is the behaviour the
+   four fail-open repairs above were made for: an unreadable reply produced findings rather than a clean
+   delta, and the run refused to licence a second deletion off a first one it could not see. The 503 was
+   then *classified* rather than retried blindly into an irreversible action: `supabase/functions/delete-account/index.ts`
+   emits `204/400/401/403/405/500/501/200` and has no 503 path at all, so the code cannot have produced it
+   and it is platform-level. The differential was measured twice — at `11:18Z` before the retry, and
+   re-measured reproducibly at `11:34:26Z` (`prod-census/function-surface-1134.log`) with a live session:
+   wrong phrase `HTTP 400 in 440 ms` carrying the function's own `"Type the confirmation phrase exactly as
+   it is shown."`, empty body `HTTP 400 in 199 ms` with `"The deletion request must carry only a
+   confirmation."`, `GET` `405`, no bearer `401`, `OPTIONS` `204` with
+   `access-control-allow-origin=https://dueweave.pages.dev`, and a non-existent function path `404
+   NOT_FOUND`. The deployed code answers its own pre-purge path in under half a second, so the retry was
+   aimed at a cold start, not at a defect — and no source change was warranted.
+   *`11:20Z`, the run that closed the gate* (`prod-census/erasure-b-1120-retry.log`,
+   exit 0):
+   `BEFORE accounts=2 confirmed=2 unconfirmed=0 own-rows entitlements=1 profiles=1 · auth-own identities=1
+   refresh_tokens=12 sessions=12` → `FUNCTION delete-account HTTP 200 status=deleted` →
+   `AFTER accounts=1 confirmed=1 unconfirmed=0 own-rows none · auth-own none` →
+   `GRANT the erased credential answered HTTP 400 — it no longer signs in` →
+   `DONE erasure proven: the account, its records and its auth rows are gone, every other count unmoved,
+   and the credential no longer signs in`. The auth-owned counts read 9 a minute earlier and 12 here
+   because each sign-in mints a session and a refresh token; the rules judge before-against-after *inside*
+   one run, which is why they were written that way.
+   *`11:21Z`, the same proof from the independent frozen read-only census* (`prod-census/census-b-after-1121.log`,
+   `DONE 10/10 reads answered`, taken by `hosted-db-census.mjs` rather than by the erasure instrument, so
+   no judgement made by the tool that performed the deletion is the only evidence for it):
+   `users_total 1 / confirmed 1 / unconfirmed 0`; `account-state` answers **no row** for the erased uuid;
+   `owner-census` is 0 in all twelve public tables; the whole-table ledger reads
+   `activities 8, clients 4, receivables 3, promise_events 2, promises 2, payments 1, entitlements 1,
+   profiles 1, founder_offer_config 1, analytics_events 0, founder_admins 0, founder_audit_events 0,
+   purchase_claims 0` against the `…entitlements 2, profiles 2…` taken before it, so the only two tables
+   that moved shed exactly the one row each the erased account owned and **QA-A's ledger is untouched**;
+   and the October 5 orphans are preserved — `identities 3` with 2 naming no account (was 4 total / 2
+   orphaned), `sessions 34` with 11 orphans (was 42), `refresh_tokens 35` with 11 (was 43),
+   `one_time_tokens 1` with 0. `rows_for_owner` is 0 in every auth table, which is the residue half of
+   migration 25's contract measured on production rather than asserted from its SQL.
+   *The deployed customer UI's deletion path, proved non-destructively on production* (headed Chromium,
+   `11:24:35Z`–`11:27:27Z`, `prod-census/ui-erasure-guard-1129.log` — **20 checks, 0 failed**, exit 0,
+   screenshot `prod-census/ui-delete-sheet-unlocked.png`). Run as the still-signed-in QA-A against
+   `https://dueweave.pages.dev`, i.e. through the served `assets/index-Bv2LIPpN.js` and its lazy
+   `assets/Home-BVRrDT29.js`: sign-in reaches the app, `More` offers the destructive row, the sheet opens,
+   the archive download is offered inside it, `the scope names the signed-in account —
+   dueweave+releaseqa-20261012@gmail.com`, `the destructive button starts disabled`, `lowercase does not
+   unlock it`, `a near miss does not unlock it`, `clearing re-locks it`, `the exact phrase unlocks it`,
+   `Keep my account closes the sheet`, `no request reached delete-account during the sheet journey —
+   calls=0`, `no console errors during the journey`, and the browser's own cross-origin `POST` with a
+   wrong phrase is refused by the function with `HTTP 400 "Type the confirmation phrase exactly as it is
+   shown."` using the app's own 46-character publishable key and its `x-client-info`.
+   Two assertions in the first draft of that driver came back FAIL and **both were the probe's wrong
+   assumptions, not product defects** (`prod-census/ui-erasure-guard-1127.log` keeps them as measured):
+   it expected page JavaScript to read `Access-Control-Allow-Origin` from the cross-origin reply — the
+   Fetch specification never exposes that header to a cross-origin script, so `ACAO as seen by JS=null` is
+   the *correct* observation and a readable body is the accepted-origin evidence; and it expected Playwright
+   to surface the CORS preflight as a request event, which it does not (`NOTE … the method(s) Playwright
+   surfaced on the endpoint: POST`). The preflight proof therefore stays where it is genuinely asserted on
+   production — `e2e-live/public-release.spec.ts:50`, run by `Live production public smoke` on every push.
+   **What this gate still does not claim, and why:** the destructive submit *clicked through the deployed
+   browser UI* against `ugzdqcytouwfdlcjujqv` has not been run. It needs a sacrificial signed-in,
+   confirmed account and QA-B was the only one — it was spent on the census-carrying instrument above,
+   which judges the removal by the numbers rather than by a screenshot. QA-A is deliberately **not** erased
+   yet: CL-6 still needs a signed-in customer, and its 8 activities / 4 clients / 3 receivables / 2 promises
+   / 2 promise events / 1 payment are exactly the rows that make the ledger cascade visible in the cleanup
+   run that finishes this. Erasing both QA accounts also ends the *repeatability* of the hosted isolation
+   gate — `scripts/hosted-tenant-isolation.mjs` needs two signed-in accounts, and re-creating a pair needs
+   public signup plus a mailbox confirmation, both still gated closed; the matrix currently standing is the
+   one executed at `10:57Z` (`prod-census/isolation-1057.log`, `DONE 47 probe(s) declined as expected, 0
+   finding(s)`), taken while both accounts existed. The guard was re-measured on this head at `11:33:34Z`
+   (`prod-census/erasure-guard-1133.log`): `REFUSED dueweave+releaseqa-b-20261014@gmail.com was not erased.
+   Deletion cannot be undone, so pass --confirm-erase when you mean it.`, exit 1, no credential byte in the
+   file. **Local gates carried by this record:** `pnpm test:unit` `49 files / 731 tests passed (731)`
+   exit 0 and `pnpm verify:secrets` `Scanned 297 files for 11 credential shapes` clean, run against the
+   tree these paragraphs land in (no source file changed for them, which is why they are carried rather
+   than re-earned). **CI at the head that carries this record (`666a220`):** all four workflows
+   succeeded at attempt 1
+   — `CodeQL security review` `38891303235`, `Live production public smoke` `38891303238`, `CI`
+   `38891303255`, `Complete customer-browser regression` `38891303263`.
 5. **Founder monetization:** Production readiness deliberately reports `false`; no actual live
    UPI destination, approved support/refund/disclosures or reviewer allowlist. Do not collect or
    represent real Founder payments as enabled. Finish operator decisions and perform refund/manual
