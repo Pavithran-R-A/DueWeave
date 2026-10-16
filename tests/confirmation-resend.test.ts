@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { RESEND_REQUESTED_COPY, interpretResendResponse, interpretSignInResponse } from "@/lib/auth-outcome";
+import { GENERIC_AUTH_FAILURE, RESEND_REQUESTED_COPY, friendlyAuthError, interpretResendResponse, interpretSignInResponse, interpretSignUpResponse } from "@/lib/auth-outcome";
 
 // A visitor who registers and gets no email has today one route: sign up again, which the
 // server answers with "already registered". GoTrue exposes `/resend` for exactly this, and the
@@ -59,5 +59,54 @@ describe("signing in to an unconfirmed account is a place, not an error", () => 
 
   it("refuses to report success when the server answered with neither a session nor a reason", () => {
     expect(interpretSignInResponse({ data: { session: null } }).status).toBe("error");
+  });
+});
+
+// Every email request on this release line is throttled per address, and the throttled customer is
+// the one who is about to give up: the copy has to say *wait*, never *try again*, because each retry
+// pushes the window further out. The wording that carries that sentence is not stable — the client
+// library builds the message from whichever of `msg`/`message`/`error_description` the server filled
+// (`node_modules/@supabase/auth-js/dist/module/lib/fetch.js` `_getErrorMessage`) and this repository
+// has never captured a rate-window body from a real server: measured 2026-10-16T12:21Z against
+// `ugzdqcytouwfdlcjujqv`, two rapid `/auth/v1/recover` requests for an address with no account both
+// answered `HTTP 200 {}` (`prod-census/recover-shape-1220.log`), so the window is per-account and an
+// unknown address cannot be used to read it. What the reply does carry, in the same wrapper, is its
+// HTTP status (`AuthApiError.status`), so that is the signal the reading has to key on — with the
+// wording kept as the secondary route for a refusal that arrives without one.
+describe("a rate window is read by its status, not only by a sentence nobody has captured", () => {
+  const WINDOW_SENTENCE = "For security purposes, you can only request this after 55 seconds.";
+
+  it("tells a throttled confirmation resend to wait even when its sentence names no rate limit", () => {
+    const outcome = interpretResendResponse({ error: { message: WINDOW_SENTENCE, status: 429 } });
+    expect(outcome.status).toBe("error");
+    expect(outcome.status === "error" && outcome.error).toContain("wait");
+    expect(outcome.status === "error" && outcome.error).not.toBe(GENERIC_AUTH_FAILURE);
+  });
+
+  it("tells a throttled sign-in to wait rather than to try again immediately", () => {
+    const outcome = interpretSignInResponse({ error: { message: "Too many requests", status: 429 }, data: { session: null } });
+    expect(outcome.status).toBe("error");
+    expect(outcome.status === "error" && outcome.error).toContain("wait");
+  });
+
+  it("tells a throttled sign-up to wait, and does not mistake it for an account that needs confirming", () => {
+    const outcome = interpretSignUpResponse({ error: { message: WINDOW_SENTENCE, status: 429 } });
+    expect(outcome.status).toBe("error");
+    expect(outcome.status === "error" && outcome.error).toContain("wait");
+  });
+
+  it("keeps the same reading on the recovery request that the settings screen and the forgot form both use", () => {
+    expect(friendlyAuthError(WINDOW_SENTENCE, 429)).toContain("wait");
+    expect(friendlyAuthError(WINDOW_SENTENCE, 429)).not.toContain("try again");
+  });
+
+  it("does not let a status rewrite a refusal whose own sentence the screen already answers correctly", () => {
+    expect(friendlyAuthError("Invalid login credentials", 400))
+      .toBe("That email and password combination does not match an account.");
+  });
+
+  it("still reads the wording alone when a reply arrives without a status", () => {
+    expect(interpretResendResponse({ error: { message: "Email rate limit exceeded" } }).status).toBe("error");
+    expect(interpretSignInResponse({ error: { message: "Email rate limit exceeded" }, data: { session: null } }).status).toBe("error");
   });
 });

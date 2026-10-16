@@ -75,19 +75,19 @@ export function useSupabaseAuth() {
 
   const signOut = useCallback(async (): Promise<AuthResult> => {
     const { error } = await supabase.auth.signOut();
-    return error ? { error: friendlyAuthError(error.message) } : {};
+    return error ? { error: friendlyAuthError(error.message, error.status) } : {};
   }, []);
 
   const resetPassword = useCallback(async (email: string): Promise<AuthResult> => {
     const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
       redirectTo: `${window.location.origin}/auth/update-password`,
     });
-    return error ? { error: friendlyAuthError(error.message) } : {};
+    return error ? { error: friendlyAuthError(error.message, error.status) } : {};
   }, []);
 
   const updatePassword = useCallback(async (password: string): Promise<AuthResult> => {
     const { error } = await supabase.auth.updateUser({ password });
-    return error ? { error: friendlyAuthError(error.message) } : {};
+    return error ? { error: friendlyAuthError(error.message, error.status) } : {};
   }, []);
 
   return { user, session, loading, isAuthenticated: Boolean(user), signIn, signUp, signOut, resetPassword, updatePassword, resendConfirmation };

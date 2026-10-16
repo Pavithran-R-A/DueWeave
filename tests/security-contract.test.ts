@@ -95,7 +95,7 @@ describe("Stage 2 Supabase security contract", () => {
     expect(authHook).toMatch(/signOut\(/);
     expect(authHook).toMatch(/resetPasswordForEmail/);
     expect(authHook).toMatch(/updateUser\(\{ password \}\)/);
-    expect(authHook).toMatch(/friendlyAuthError\(error\.message\)/);
+    expect(authHook).toMatch(/friendlyAuthError\(\s*error\.message/);
     expect(authOutcome).toMatch(/We could not complete that request\. Please try again\./);
     expect(authPage).toMatch(/Forgot password\?/);
     expect(authPage).toMatch(/Create an account/);

@@ -17,14 +17,32 @@ export type AuthFlowOutcome = { status: "session" } | { status: "confirmation-re
 
 export const GENERIC_AUTH_FAILURE = "We could not complete that request. Please try again.";
 
+// A throttled request is not a failed one, and the difference is actionable: every retry inside the
+// window pushes its end further out. So the answer has to name the wait, and must never read as an
+// invitation to send the same request again now.
+export const RATE_WINDOW_COPY = "Please wait a moment before trying again.";
+
+/** The part of an auth refusal the screen has to decide from: its sentence, and the status it came with. */
+export type AuthErrorReply = { message: string; status?: number };
+
+// The sentence a rate window is written in is not stable — the client library builds it from whichever
+// of `msg`/`message`/`error_description` the server filled in — while HTTP 429 is what the reply is
+// actually carrying. So the status decides, and the wording is kept for a refusal that arrives without one.
+function isRateWindow(error: AuthErrorReply) {
+  return error.status === 429 || error.message.toLowerCase().includes("rate limit");
+}
+
 /** The part of a sign-up reply the screen has to decide from: a refusal, a session, a user, or nothing. */
 export type SignUpResponse = {
-  error?: { message: string } | null;
+  error?: AuthErrorReply | null;
   data?: { session?: unknown | null; user?: unknown | null } | null;
 };
 
-export function friendlyAuthError(message: string) {
+export function friendlyAuthError(message: string, status?: number) {
   const normalized = message.toLowerCase();
+  if (isRateWindow({ message, status })) {
+    return RATE_WINDOW_COPY;
+  }
   if (normalized.includes("invalid login") || normalized.includes("invalid credentials")) {
     return "That email and password combination does not match an account.";
   }
@@ -33,9 +51,6 @@ export function friendlyAuthError(message: string) {
   }
   if (normalized.includes("password should") || normalized.includes("password must")) {
     return `Choose a password with at least ${PASSWORD_MIN_LENGTH} characters.`;
-  }
-  if (normalized.includes("rate limit")) {
-    return "Please wait a moment before trying again.";
   }
   if (normalized.includes("network") || normalized.includes("fetch")) {
     return "We could not reach DueWeave. Check your connection and try again.";
@@ -46,14 +61,14 @@ export function friendlyAuthError(message: string) {
 // Read once, decided once: an account that exists is not the same news as a ledger
 // that is open, and neither is the same as a refusal.
 export function interpretSignUpResponse(response: SignUpResponse): AuthFlowOutcome {
-  if (response.error) return { status: "error", error: friendlyAuthError(response.error.message) };
+  if (response.error) return { status: "error", error: friendlyAuthError(response.error.message, response.error.status) };
   if (response.data?.session) return { status: "session" };
   if (response.data?.user) return { status: "confirmation-required" };
   return { status: "error", error: GENERIC_AUTH_FAILURE };
 }
 
 export type SignInResponse = {
-  error?: { message: string } | null;
+  error?: AuthErrorReply | null;
   data?: { session?: unknown | null } | null;
 };
 
@@ -67,13 +82,13 @@ const UNCONFIRMED_ADDRESS = /email not confirmed|confirm your email|must be conf
 export function interpretSignInResponse(response: SignInResponse): AuthFlowOutcome {
   if (response.error) {
     if (UNCONFIRMED_ADDRESS.test(response.error.message.toLowerCase())) return { status: "confirmation-required" };
-    return { status: "error", error: friendlyAuthError(response.error.message) };
+    return { status: "error", error: friendlyAuthError(response.error.message, response.error.status) };
   }
   if (response.data?.session) return { status: "session" };
   return { status: "error", error: GENERIC_AUTH_FAILURE };
 }
 
-export type ResendResponse = { error?: { message: string } | null; data?: unknown };
+export type ResendResponse = { error?: AuthErrorReply | null; data?: unknown };
 
 /** Two endings, because the server can only ever accept or refuse the request itself. */
 export type ResendOutcome = { status: "requested" } | { status: "error"; error: string };
@@ -88,6 +103,6 @@ export const RESEND_RATE_LIMITED_COPY = "A link was asked for very recently. Ple
 // whether or not anything will ever be sent — so only a refusal is a refusal.
 export function interpretResendResponse(response: ResendResponse): ResendOutcome {
   if (!response.error) return { status: "requested" };
-  if (response.error.message.toLowerCase().includes("rate limit")) return { status: "error", error: RESEND_RATE_LIMITED_COPY };
-  return { status: "error", error: friendlyAuthError(response.error.message) };
+  if (isRateWindow(response.error)) return { status: "error", error: RESEND_RATE_LIMITED_COPY };
+  return { status: "error", error: friendlyAuthError(response.error.message, response.error.status) };
 }
