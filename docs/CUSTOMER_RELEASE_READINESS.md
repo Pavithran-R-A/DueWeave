@@ -303,6 +303,80 @@ Any later SHA must earn its own CI and deployment verification.
    `C:` later freed to 5.6 GB (99% used, 10:45Z), but the local stack was deliberately not started for a
    replay: this machine's Docker host is shared with the CI's Supabase project, and the green CI verdict at
    the exact head is the stronger evidence.
+   **QA-B's recovery was completed on the deployed site, which is what this gate queued behind
+   (2026-10-16).** The link was consumed once in the controlled browser and the new password set from the
+   locally stored `recoveryNewPassword`; `pnpm verify:hosted:auth` at `10:02Z`
+   (`prod-census/qab-recovery-proof-1002.log`) answers the pair this gate asks for — `OLDPW
+   dueweave+releaseqa-b-20261014@gmail.com HTTP 400 — the pre-recovery password no longer signs in` and
+   `NEWPW … HTTP 200 — the recovery password signs in, so the reset landed and the address is confirmed` —
+   beside `disable_signup=false mailer_autoconfirm=false external.email=true` and the same
+   `delete-account` preflight/`401` pair. New-works / old-fails is the proof the rotation took effect
+   rather than that a grant succeeded; QA-A was left unchanged and no run printed a password, token or link.
+   **Production isolation was then executed, and four runs were needed before its refusals meant what
+   they claimed (2026-10-16).** Each run was redirected to an operator-side log under `prod-census/`
+   (`*.log` is gitignored, so those files live on this laptop and are quoted rather than committed); every
+   credential was read from the served bundle or the local identity files and none was printed.
+   *Run 1* (`isolation-1006.log`) declined 36 and printed **4 findings**, and each one was a defect in the
+   instrument rather than a boundary that broke: `update_receivable_details … never reached a row-security
+   policy: HTTP 404 PGRST202 Could not find the function public.update_receivable_details(p_amount_due_paise,
+   p_due_date, p_invoice_ref, p_label, p_notes, p_receivable_id)` — the attack named six arguments while the
+   deployed function declares five (`20261004170000_current_arc2_ledger_required_blank_class.sql:148`), so
+   PostgREST answered from the schema cache and no policy ran; `get_founder_offer as a customer: the Founder
+   payment gate opened` — the judgement read *answered at all* as the gate, while that projection is granted
+   to `authenticated` by design and the purchase page calls it, so the gate is
+   `founder_offer_payment_ready()` (`20260928090000_current_stage8_readiness_parity.sql:175`) and the offer's
+   own status fields decide it; `forged bearer read clients … HTTP 401 PGRST301 Expected 3 parts in JWT; got
+   1` — a one-part string only proves PostgREST counts dots, so the probe now sends a structurally valid JWS
+   claiming the victim's `sub`, and a gateway refusal of it is reported as the authentication refusal it is,
+   never as evidence about a row policy; and `the victim's real ledger moved during the probes: activities 5
+   -> 6` — creating the sacrificial receivable and promise writes the victim's own activity rows
+   (`20261004170000…:142`, `20260815100000…:547`), so the protected window now starts after setup rather than
+   before it.
+   *Run 2* (`isolation-1018.log`) declined 42 with **1 finding**: `SETUP the victim could not create a
+   sacrificial promise (HTTP 400 P0001)`. Read off the deployed body rather than guessed, the cause was two
+   rules `create_promise` enforces *before* its owner-scoped guard — `p_source` in
+   `('WHATSAPP','CALL','EMAIL','MEETING','OTHER')` (`20260815100000…:446`) and `p_made_on` no later than
+   `public.current_business_date()` (`:469`, which is `timezone('Asia/Kolkata', now())::date` per
+   `20260815090000…:67`) — and both answer the same `HTTP 400 P0001` as the guard at `:477`. The payload
+   carried `p_source: "verbal"` and `p_made_on: "2099-12-01"`, so the promise row never existed, the
+   `cancel_promise` attack silently left the run, and the 42 green lines said nothing about it. Repaired
+   test-first: the contract stand-in now models each pre-guard rule of both money functions, four cases were
+   watched to fail on exactly that shape, the payloads were corrected, and every refusal the report prints
+   now carries the message the function raised — `REFUSED create_promise on the victim's receivable HTTP 400
+   P0001 — "Receivable is not available for this account"` — so a payload complaint can never again be filed
+   as a boundary refusal. The payment attack was dated the same way and the reason differs: `record_payment`'s
+   own future-date rule runs at `:610`, *after* the guard at `:583`, so its earlier payload did reach the
+   boundary; measured, not assumed.
+   *Run 3* (`isolation-1041.log`) declined **0** and found `SETUP the victim could not create a sacrificial
+   receivable (HTTP 400 P0001)`. A read-only census answered why: the account held 4 clients (1 real, 3
+   probe) and 3 active receivables, so `enforce_free_receivable_limit`
+   (`20260812150500_secure_foundation.sql:238-263`, trigger `receivables_free_limit` at `:348`) raised
+   `Free plan allows up to 3 active receivables`. That is the instrument refusing itself: every run minted a
+   fresh sacrificial client and receivable, and its own residue ate the free tier's headroom, so a gate that
+   only closes twice is not a gate. Setup now reads the victim's own rows first and reuses what already
+   carries `PROBE_NAME` — an unarchived client, an `OPEN`/`PARTIALLY_PAID` receivable under it, an `ACTIVE`
+   promise on that receivable — creating only what is missing and saying which in the report.
+   *Run 4* (`isolation-1057.log`) is the clean gate: `SETUP reused client 890fbe14-44b2-4c03-8df2-5ced84cd0051,
+   reused receivable 06f7fa0c-c578-42f8-9a68-697c93021b4f, created promise 5875a12f-3726-4736-a03d-c4decd692f72`
+   → **`DONE 47 probe(s) declined as expected, 0 finding(s)`**, with `OWN … ledger reads identical after
+   every probe, sacrificial rows included`. What that run shows about `ugzdqcytouwfdlcjujqv` today: the
+   attacker read none of the victim's 4 clients, 3 receivables, 1 promise, 1 payment and 7 activity rows and
+   listed 0 of them; `profiles` and `entitlements` returned nothing for the victim's user id;
+   `founder_admins` answered `403 42501`; the cross-tenant `PATCH`, `DELETE` and the insert with a spoofed
+   `owner_id` each answered `403 42501` **and** the owner read its row back unchanged; all eight RPC attacks
+   were refused by the ownership guard's own words (`"Receivable is not available for this account"`,
+   `"Receivable is not available to snooze"`, `"That receivable is not available in this private ledger"` at
+   `500 P0002`, `"That client is not available in this private ledger"` at `500 P0002`, `"Client is not
+   available for this account"`, `"Promise is not available for this account"`); the Founder projection read
+   `CLOSED … held shut by payment_destination_status=PLACEHOLDER, support_contact_status=PENDING,
+   refund_policy_status=PENDING_APPROVAL, disclosures_status=PENDING` and both Founder review RPCs refused
+   the customer session; every anonymous read answered `401`/`400` with nothing exposed, and the forged
+   bearer was declined at the token check. **Local gates carried with this repair:** unit `49 files / 731
+   tests` (this file `18 passed (18)`, the re-runnability case seen RED first as `a re-run was stopped by the
+   plan's cap instead of a policy`), `lint` exit 0, `tsc --noEmit` exit 0, `verify:secrets` `Scanned 297
+   files for 11 credential shapes` clean. **Its limits, stated:** it is a laptop-and-operator command, never
+   a CI step, because it writes sacrificial rows to production; it judges one tenant pair on the free tier,
+   and the reused probe rows persist until the QA erasure removes them.
 4. **Account-deletion runtime:** Redeploy the updated `delete-account` source after exact-head
    gates. Test browser CORS preflight (including `apikey` and `x-client-info`) and the complete
    Auth-account removal, not just a transaction-scoped SQL simulation.

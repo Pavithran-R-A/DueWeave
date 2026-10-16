@@ -28,6 +28,7 @@
 //     because it writes rows to production and needs two confirmed accounts.
 import { pathToFileURL } from "node:url";
 import { readFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 
 const DEFAULT_SITE = "https://dueweave.pages.dev";
@@ -35,12 +36,63 @@ const DEFAULT_SITE = "https://dueweave.pages.dev";
 /** The tables holding a customer's money ledger, in the order an operator reads them. */
 export const LEDGER_TABLES = ["clients", "receivables", "promises", "payments", "activities"];
 
-const PROBE_NAME = "DueWeave isolation probe (safe to delete)";
+export const PROBE_NAME = "DueWeave isolation probe (safe to delete)";
+/** ₹1000 in paise: large enough that a 1-paise attack payment and a full-value promise both fit
+ *  inside the outstanding balance the function checks after it proves the row belongs to the caller. */
+const PROBE_AMOUNT_PAISE = 100_000;
 const HIJACK_NAME = "HIJACKED BY A CROSS-TENANT WRITE";
 
 /** PostgREST's own codes: the request never reached a row-security policy, so it cannot be evidence
  *  that one refused it. Measured on this project's live API across the Stage 4 and Stage 8 work. */
 const PRE_POLICY_CODES = new Set(["PGRST100", "PGRST102", "PGRST201", "PGRST202", "PGRST203", "PGRST204", "PGRST300", "PGRST301", "PGRST303", "PGRST900", "PGRST901"]);
+
+/** The status-level terms of `public.founder_offer_payment_ready()`
+ *  (`supabase/migrations/20260928090000_current_stage8_readiness_parity.sql:175`), which is the single
+ *  conjunction that lets a customer pay. The value-shape terms (VPA format, payee length, refund text
+ *  length) are deliberately not re-implemented here: reading them would mean printing the stored
+ *  payment destination, and one unmet status term is enough to keep the gate shut. */
+const FOUNDER_GATE_FIELDS = ["enabled", "payment_destination_status", "support_contact_status", "refund_policy_status", "disclosures_status", "amount_paise"];
+
+/** Which readiness terms the offer projection fails, each one holding a payment back. Empty means a
+ *  customer was shown an offer that can take a payment, i.e. the Founder gate standing open. */
+function founderGateBlockers(row) {
+  const blockers = [];
+  if (row.enabled !== true) blockers.push(`enabled=${row.enabled ?? "absent"}`);
+  if (row.payment_destination_status !== "LIVE") blockers.push(`payment_destination_status=${row.payment_destination_status ?? "absent"}`);
+  if (row.support_contact_status !== "CONFIGURED") blockers.push(`support_contact_status=${row.support_contact_status ?? "absent"}`);
+  if (row.refund_policy_status !== "APPROVED") blockers.push(`refund_policy_status=${row.refund_policy_status ?? "absent"}`);
+  if (row.disclosures_status !== "APPROVED") blockers.push(`disclosures_status=${row.disclosures_status ?? "absent"}`);
+  if (row.amount_paise !== 49900) blockers.push(`amount_paise=${row.amount_paise ?? "absent"}`);
+  return blockers;
+}
+
+/** A structurally valid JWS the project key could not have signed, claiming to be the victim. A
+ *  one-part string would only prove that PostgREST counts dots, not that a forged session is declined. */
+function forgedJwt(subject) {
+  const encode = (value) => Buffer.from(JSON.stringify(value)).toString("base64url");
+  const issued = Math.floor(Date.now() / 1000);
+  return `${encode({ alg: "HS256", typ: "JWT" })}.${encode({ role: "authenticated", iss: "dueweave-isolation-probe", sub: subject, iat: issued, exp: issued + 3600 })}.${"A".repeat(43)}`;
+}
+
+/** The vocabularies the two money writes accept are checked before either function looks at a row
+ *  (`20260815100000_current_stage5_promise_chronology.sql:446` for `p_source`,
+ *  `20260815090000_current_stage5_lifecycle_correctness.sql:561` for `p_method`); both upper-case the
+ *  argument first, so the probe values below are drawn from the declared lists. */
+const PROBE_SOURCE = "CALL";
+const PROBE_METHOD = "cash";
+
+/**
+ * The ledger's own today: `public.current_business_date()` is `timezone('Asia/Kolkata', now())::date`
+ * (`20260815090000_current_stage5_lifecycle_correctness.sql:67`), and `create_promise` refuses a row
+ * dated as made after it (`:469`). A probe that carried a far-future `p_made_on` was answered by that
+ * rule, not by the guard it was aimed at, so the date has to be the business date the server compares
+ * against rather than the day the operator's machine happens to think it is.
+ */
+function businessDate(now = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(now);
+  const field = (type) => parts.find((part) => part.type === type)?.value ?? "";
+  return `${field("year")}-${field("month")}-${field("day")}`;
+}
 
 function parseArgs(argv) {
   const options = { site: DEFAULT_SITE, victim: "", attacker: "", dryRun: false };
@@ -154,9 +206,18 @@ export async function runIsolationProbes({ api, key, victim, attacker, log = () 
     return [...keys].filter((key) => JSON.stringify(before[key]) !== JSON.stringify(after[key]));
   }
   /** Record one probe. `refused` is the outcome the gate requires; a pre-policy rejection is called
-   *  out as inconclusive instead of quietly counting, because "it would not parse" is not "it was blocked". */
-  const verdict = (probe, outcome, outcomeText) => {
+   *  out as inconclusive instead of quietly counting, because "it would not parse" is not "it was blocked".
+   *  `authDeclined` names the one probe whose whole question is authentication rather than a row policy:
+   *  a gateway that answers `PGRST301` and exposes nothing has declined the forged token, which is the
+   *  refusal that probe is asking for — and it is reported as such, never as proof about RLS. */
+  const verdict = (probe, outcome, outcomeText, { authDeclined = false } = {}) => {
     const code = codeOf(outcome?.payload);
+    const exposed = rowsOf(outcome?.payload).length;
+    if (authDeclined && (outcome?.status === 401 || outcome?.status === 403) && exposed === 0) {
+      declinedCount += 1;
+      report(`REFUSED    ${probe}  HTTP ${outcome.status}${code ? ` ${code}` : ""}, declined by authentication${outcomeText ? `, ${outcomeText}` : ""} — this probe tests the token check, not a row policy`);
+      return true;
+    }
     if (PRE_POLICY_CODES.has(code)) {
       problem(`${probe} never reached a row-security policy: HTTP ${outcome.status} ${code} ${outcome?.payload?.message ?? ""}`.trim());
       return false;
@@ -184,32 +245,77 @@ export async function runIsolationProbes({ api, key, victim, attacker, log = () 
     inventory[table] = idsOf(asOwner?.payload);
     report(`OWN        ${table} ${inventory[table].length} row(s) belong to ${victimSession.email}`);
   }
-  const beforeCounts = Object.fromEntries(LEDGER_TABLES.map((table) => [table, inventory[table].length]));
 
-  const probeClient = await call(victimSession, "POST", "rpc/create_client", {
-    body: { p_name: PROBE_NAME, p_company: "", p_phone: "", p_email: "", p_notes: "Created by scripts/hosted-tenant-isolation.mjs; removed by the QA account erasure." },
-    prefer: "return=representation",
-  });
-  const probeClientId = idsOf(probeClient?.payload)[0];
+  // Setup looks for the rows an earlier run left behind before it creates any. The QA accounts are on
+  // the free tier and `enforce_free_receivable_limit` (`20260812150500_secure_foundation.sql:258`)
+  // refuses a fourth active receivable, so a run that minted a fresh sacrificial client and receivable
+  // every time was starved by its own residue: the third run on 2026-10-16 was answered
+  // `HTTP 400 P0001` at setup and zero probes ran. An acceptance gate that only closes twice is not a
+  // gate. The sacrificial rows carry `PROBE_NAME`, which is what makes them findable, and the QA
+  // account erasure still removes them once the release record is written.
+  const ownRows = async (table, select) => {
+    const outcome = await call(victimSession, "GET", table, { query: `?select=${select}&order=id.asc&limit=500` });
+    return rowsOf(outcome?.payload);
+  };
+
+  const foundClient = (await ownRows("clients", "id,name,archived_at")).find((row) => row.name === PROBE_NAME && !row.archived_at);
+  const createdClient = foundClient
+    ? null
+    : await call(victimSession, "POST", "rpc/create_client", {
+        body: { p_name: PROBE_NAME, p_company: "", p_phone: "", p_email: "", p_notes: "Created by scripts/hosted-tenant-isolation.mjs; removed by the QA account erasure." },
+        prefer: "return=representation",
+      });
+  const probeClientId = foundClient?.id ?? idsOf(createdClient?.payload)[0];
   if (!probeClientId) {
-    problem(`SETUP the victim could not create a sacrificial client (HTTP ${probeClient?.status ?? "no response"} ${codeOf(probeClient?.payload)}), so no destructive probe ran`);
+    problem(`SETUP the victim could not create a sacrificial client (HTTP ${createdClient?.status ?? "no response"} ${codeOf(createdClient?.payload)}: ${createdClient?.payload?.message ?? "no message"}), so no destructive probe ran`);
     return { findings, lines, declined: declinedCount };
   }
-  const probeReceivable = await call(victimSession, "POST", "rpc/create_receivable", {
-    body: { p_client_id: probeClientId, p_label: PROBE_NAME, p_invoice_ref: "", p_amount_due_paise: 100000, p_due_date: "2099-12-31", p_notes: "isolation probe" },
-    prefer: "return=representation",
-  });
-  const probeReceivableId = idsOf(probeReceivable?.payload)[0];
+
+  const foundReceivable = (await ownRows("receivables", "id,label,status,client_id,outstanding_paise")).find(
+    (row) => row.label === PROBE_NAME && row.client_id === probeClientId && (row.status === "OPEN" || row.status === "PARTIALLY_PAID"),
+  );
+  const probeAmountPaise = Number(foundReceivable?.outstanding_paise) || PROBE_AMOUNT_PAISE;
+  const createdReceivable = foundReceivable
+    ? null
+    : await call(victimSession, "POST", "rpc/create_receivable", {
+        body: { p_client_id: probeClientId, p_label: PROBE_NAME, p_invoice_ref: "", p_amount_due_paise: PROBE_AMOUNT_PAISE, p_due_date: "2099-12-31", p_notes: "isolation probe" },
+        prefer: "return=representation",
+      });
+  const probeReceivableId = foundReceivable?.id ?? idsOf(createdReceivable?.payload)[0];
   if (!probeReceivableId) {
-    problem(`SETUP the victim could not create a sacrificial receivable (HTTP ${probeReceivable?.status ?? "no response"} ${codeOf(probeReceivable?.payload)}), so no destructive probe ran`);
+    problem(`SETUP the victim could not create a sacrificial receivable (HTTP ${createdReceivable?.status ?? "no response"} ${codeOf(createdReceivable?.payload)}: ${createdReceivable?.payload?.message ?? "no message"}), so no destructive probe ran`);
     return { findings, lines, declined: declinedCount };
   }
-  const probePromise = await call(victimSession, "POST", "rpc/create_promise", {
-    body: { p_receivable_id: probeReceivableId, p_promised_amount_paise: 100000, p_made_on: "2099-12-01", p_promised_date: "2099-12-31", p_source: "verbal", p_note: "isolation probe", p_request_id: `isolation-probe-${Date.now()}` },
-    prefer: "return=representation",
-  });
-  const probePromiseId = idsOf(probePromise?.payload)[0];
-  report(`SETUP      sacrificial client ${probeClientId}, receivable ${probeReceivableId}${probePromiseId ? `, promise ${probePromiseId}` : `, no promise row (HTTP ${probePromise?.status} ${codeOf(probePromise?.payload)})`}`);
+  // `create_promise(uuid, bigint, date, date, text, text, uuid)` and
+  // `record_payment(uuid, bigint, date, text, text, uuid, text)` cast `p_request_id` before they look
+  // at the row, so a human-readable label is refused as `22P02` and the sacrificial promise never
+  // exists — which drops the `cancel_promise` attack out of the run while the rest still prints green.
+  // `p_source` has to be one of the checked vocabulary and `p_made_on` no later than the business day,
+  // because both rules run before the owner-scoped guard and a payload complaint answers the same
+  // `HTTP 400 P0001` that the boundary does.
+  const foundPromise = (await ownRows("promises", "id,receivable_id,status")).find((row) => row.receivable_id === probeReceivableId && row.status === "ACTIVE");
+  const madeOn = businessDate();
+  const createdPromise = foundPromise
+    ? null
+    : await call(victimSession, "POST", "rpc/create_promise", {
+        body: { p_receivable_id: probeReceivableId, p_promised_amount_paise: probeAmountPaise, p_made_on: madeOn, p_promised_date: "2099-12-31", p_source: PROBE_SOURCE, p_note: "isolation probe", p_request_id: randomUUID() },
+        prefer: "return=representation",
+      });
+  const probePromiseId = foundPromise?.id ?? idsOf(createdPromise?.payload)[0];
+  const origins = [`${foundClient ? "reused" : "created"} client ${probeClientId}`, `${foundReceivable ? "reused" : "created"} receivable ${probeReceivableId}`];
+  report(`SETUP      ${origins.join(", ")}, ${foundPromise ? `reused promise ${foundPromise.id}` : probePromiseId ? `created promise ${probePromiseId}` : `no promise row (HTTP ${createdPromise?.status} ${codeOf(createdPromise?.payload)} ${createdPromise?.payload?.message ?? "no message"})`}`);
+  if (!probePromiseId) problem(`SETUP the victim could not create a sacrificial promise (HTTP ${createdPromise?.status} ${codeOf(createdPromise?.payload)}: ${createdPromise?.payload?.message ?? "no message"}), so the cancel-promise attack was not attempted`);
+
+  // The protected window starts here. Creating the sacrificial receivable and promise writes the
+  // victim's own ledger activity rows (`20261004170000_current_arc2_ledger_required_blank_class.sql:142`
+  // and `20260815100000_current_stage5_promise_chronology.sql:547`), so a baseline taken before them
+  // reads the instrument's setup as an attack on the victim's ledger — a finding with nothing behind it
+  // except a count of the rows this run was obliged to create.
+  const protectedIds = {};
+  for (const table of LEDGER_TABLES) {
+    const asOwner = await call(victimSession, "GET", table, { query: `?select=id&order=id.asc&limit=500` });
+    protectedIds[table] = new Set(idsOf(asOwner?.payload));
+  }
 
   for (const table of LEDGER_TABLES) {
     for (const id of inventory[table]) {
@@ -261,20 +367,36 @@ export async function runIsolationProbes({ api, key, victim, attacker, log = () 
   // evidence for a write: a function declared to return nothing answers an applied call with the same
   // empty body as a refused one, and the mutate-in-place attacks move no row count, so the recount
   // that guards the victim's ledger at the end of this run is blind to them too.
+  // Each entry is `attack` (one account aimed at a row the other owns), `admin` (a Founder reviewer
+  // surface that a customer must not reach) or `offer` (the customer-facing Founder projection, which
+  // is granted to `authenticated` by design and is judged by what it says about payment readiness).
   const rpcAttacks = [
-    ["record_payment on the victim's receivable", "rpc/record_payment", { p_receivable_id: probeReceivableId, p_amount_paise: 1, p_paid_on: "2099-12-01", p_method: "cash", p_reference: "isolation probe", p_request_id: `isolation-payment-${Date.now()}` }, false, { table: "receivables", id: probeReceivableId }],
-    ["create_promise on the victim's receivable", "rpc/create_promise", { p_receivable_id: probeReceivableId, p_promised_amount_paise: 1, p_made_on: "2099-12-01", p_promised_date: "2099-12-31", p_source: "verbal", p_note: "isolation probe", p_request_id: `isolation-promise-${Date.now()}` }, false, { table: "receivables", id: probeReceivableId }],
-    ["cancel_receivable on the victim's receivable", "rpc/cancel_receivable", { p_receivable_id: probeReceivableId, p_reason: "isolation probe" }, false, { table: "receivables", id: probeReceivableId }],
-    ["snooze_receivable on the victim's receivable", "rpc/snooze_receivable", { p_receivable_id: probeReceivableId, p_until: "2099-12-31" }, false, { table: "receivables", id: probeReceivableId }],
-    ["update_receivable_details on the victim's receivable", "rpc/update_receivable_details", { p_receivable_id: probeReceivableId, p_label: HIJACK_NAME, p_invoice_ref: "", p_amount_due_paise: 1, p_due_date: "2099-12-31", p_notes: "" }, false, { table: "receivables", id: probeReceivableId }],
-    ["update_client on the victim's client", "rpc/update_client", { p_client_id: probeClientId, p_name: HIJACK_NAME, p_company: "", p_phone: "", p_email: "", p_notes: "" }, false, { table: "clients", id: probeClientId }],
-    ["create_receivable inside the victim's client", "rpc/create_receivable", { p_client_id: probeClientId, p_label: HIJACK_NAME, p_invoice_ref: "", p_amount_due_paise: 1, p_due_date: "2099-12-31", p_notes: "" }, false, { table: "clients", id: probeClientId }],
-    ...(probePromiseId ? [["cancel_promise on the victim's promise", "rpc/cancel_promise", { p_promise_id: probePromiseId, p_reason: "isolation probe" }, false, { table: "promises", id: probePromiseId }]] : []),
-    ["get_founder_offer as a customer", "rpc/get_founder_offer", {}, true, null],
-    ["list_pending_founder_claims as a customer", "rpc/list_pending_founder_claims", {}, true, null],
-    ["get_founder_funnel as a customer", "rpc/get_founder_funnel", {}, true, null],
+    // The money payloads are shaped so the owner-scoped guard is the only thing that can refuse them.
+    // `create_promise` checks its source vocabulary and its dates at `:446` and `:469`, *before* it
+    // reads the receivable, and the reply it raises there is the same `HTTP 400 P0001` the guard raises
+    // at `:479` — so a probe with `p_source: "verbal"` and `p_made_on: "2099-12-01"` printed a refusal
+    // that was really a complaint about its own argument. `record_payment` checks the future date at
+    // `:610`, after its lookup, so a future-dated payment does reach the guard; it is still dated
+    // today, because an attack whose only remaining obstacle would be the ledger's own arithmetic is a
+    // weaker test than one the guard alone stops. `snooze_receivable` runs the other way again (`:952`
+    // refuses a date before today), which is why one literal cannot serve all three.
+    ["record_payment on the victim's receivable", "rpc/record_payment", { p_receivable_id: probeReceivableId, p_amount_paise: 1, p_paid_on: madeOn, p_method: PROBE_METHOD, p_reference: "isolation probe", p_request_id: randomUUID() }, "attack", { table: "receivables", id: probeReceivableId }],
+    ["create_promise on the victim's receivable", "rpc/create_promise", { p_receivable_id: probeReceivableId, p_promised_amount_paise: 1, p_made_on: madeOn, p_promised_date: "2099-12-31", p_source: PROBE_SOURCE, p_note: "isolation probe", p_request_id: randomUUID() }, "attack", { table: "receivables", id: probeReceivableId }],
+    ["cancel_receivable on the victim's receivable", "rpc/cancel_receivable", { p_receivable_id: probeReceivableId, p_reason: "isolation probe" }, "attack", { table: "receivables", id: probeReceivableId }],
+    ["snooze_receivable on the victim's receivable", "rpc/snooze_receivable", { p_receivable_id: probeReceivableId, p_until: "2099-12-31" }, "attack", { table: "receivables", id: probeReceivableId }],
+    // The five names the deployed function declares
+    // (`20261004170000_current_arc2_ledger_required_blank_class.sql:148`): the amount and due date are
+    // settled by the payment history, so an edit RPC has no argument for them and PostgREST answers a
+    // call that sends them with a schema-cache miss rather than a policy refusal.
+    ["update_receivable_details on the victim's receivable", "rpc/update_receivable_details", { p_receivable_id: probeReceivableId, p_label: HIJACK_NAME, p_invoice_ref: "", p_notes: "" }, "attack", { table: "receivables", id: probeReceivableId }],
+    ["update_client on the victim's client", "rpc/update_client", { p_client_id: probeClientId, p_name: HIJACK_NAME, p_company: "", p_phone: "", p_email: "", p_notes: "" }, "attack", { table: "clients", id: probeClientId }],
+    ["create_receivable inside the victim's client", "rpc/create_receivable", { p_client_id: probeClientId, p_label: HIJACK_NAME, p_invoice_ref: "", p_amount_due_paise: 1, p_due_date: "2099-12-31", p_notes: "" }, "attack", { table: "clients", id: probeClientId }],
+    ...(probePromiseId ? [["cancel_promise on the victim's promise", "rpc/cancel_promise", { p_promise_id: probePromiseId, p_reason: "isolation probe" }, "attack", { table: "promises", id: probePromiseId }]] : []),
+    ["get_founder_offer as a customer", "rpc/get_founder_offer", {}, "offer", null],
+    ["list_pending_founder_claims as a customer", "rpc/list_pending_founder_claims", {}, "admin", null],
+    ["get_founder_funnel as a customer", "rpc/get_founder_funnel", {}, "admin", null],
   ];
-  for (const [probe, pathname, body, isFounderGate, target] of rpcAttacks) {
+  for (const [probe, pathname, body, kind, target] of rpcAttacks) {
     const before = target ? await ownerRow(target.table, target.id) : null;
     if (target && before === null) {
       problem(`${probe} was not attempted: the victim cannot read back its own ${target.table} ${target.id}, so this run has no way to tell whether the attack applied`);
@@ -293,12 +415,38 @@ export async function runIsolationProbes({ api, key, victim, attacker, log = () 
       }
     }
     const code = codeOf(outcome.payload);
+    if (kind === "offer") {
+      const row = rowsOf(outcome.payload)[0];
+      if (!row) {
+        if (PRE_POLICY_CODES.has(code)) {
+          problem(`${probe} never reached a row-security policy: HTTP ${outcome.status} ${code} ${outcome?.payload?.message ?? ""}`.trim());
+          continue;
+        }
+        declinedCount += 1;
+        report(`CLOSED     ${probe}  HTTP ${outcome.status}${code ? ` ${code}` : ""}, the customer was given no offer at all`);
+        continue;
+      }
+      const absent = FOUNDER_GATE_FIELDS.filter((field) => !(field in row));
+      if (absent.length > 0) {
+        problem(`${probe} cannot be judged: the projection the customer received carries none of ${absent.join(", ")}, so this run cannot read whether a payment is possible`);
+        continue;
+      }
+      const blockers = founderGateBlockers(row);
+      if (blockers.length > 0) {
+        declinedCount += 1;
+        report(`CLOSED     ${probe}  HTTP ${outcome.status}, held shut by ${blockers.join(", ")} — the offer is visible to a customer, no payment path is open`);
+      } else {
+        report(`OPEN       ${probe}  every readiness term of founder_offer_payment_ready() is satisfied for a customer session`);
+        problem(`${probe}: the Founder payment gate is fully configured, so a customer session can take a payment`);
+      }
+      continue;
+    }
     if (PRE_POLICY_CODES.has(code)) {
       problem(`${probe} never reached a row-security policy: HTTP ${outcome.status} ${code} ${outcome?.payload?.message ?? ""}`.trim());
       continue;
     }
     const blocked = outcome.status === 401 || outcome.status === 403 || rowsOf(outcome.payload).length === 0;
-    if (isFounderGate) {
+    if (kind === "admin") {
       if (blocked) {
         declinedCount += 1;
         report(`CLOSED     ${probe}  HTTP ${outcome.status}${code ? ` ${code}` : ""}, so the Founder payment gate stays shut for a customer session`);
@@ -310,7 +458,11 @@ export async function runIsolationProbes({ api, key, victim, attacker, log = () 
     }
     if (blocked) {
       declinedCount += 1;
-      report(`REFUSED    ${probe}  HTTP ${outcome.status}${code ? ` ${code}` : ""}`);
+      // The raised text is printed because the status cannot tell the two `HTTP 400 P0001` answers
+      // apart: the guard refusing a foreign row and a rule about the probe's own argument look
+      // identical from the client side, and only the message says which boundary answered.
+      const reason = typeof outcome.payload?.message === "string" ? outcome.payload.message : "";
+      report(`REFUSED    ${probe}  HTTP ${outcome.status}${code ? ` ${code}` : ""}${reason ? ` — "${reason}"` : ""}`);
     } else {
       report(`APPLIED    ${probe}  HTTP ${outcome.status} returned ${rowsOf(outcome.payload).length} row(s)`);
       problem(`${probe} was applied: HTTP ${outcome.status} returned ${rowsOf(outcome.payload).length} row(s)`);
@@ -328,17 +480,20 @@ export async function runIsolationProbes({ api, key, victim, attacker, log = () 
       problem(`anon read ${table}: the anonymous role exposed ${rowsOf(outcome?.payload).length} row(s) with no session at all`);
     }
   }
-  const forged = await call({ token: "not-a-real-session-token" }, "GET", "clients", { query: `?select=id&limit=5` });
-  verdict("forged bearer read clients", forged, "no session behind it");
+  const forged = await call({ token: forgedJwt(victimSession.userId) }, "GET", "clients", { query: `?select=id&limit=5` });
+  verdict("forged bearer read clients", forged, "the victim's own user id claimed inside it", { authDeclined: true });
 
   const changed = [];
   for (const table of LEDGER_TABLES) {
     const asOwner = await call(victimSession, "GET", table, { query: `?select=id&limit=500` });
-    const now = idsOf(asOwner?.payload).filter((id) => id !== probeClientId && id !== probeReceivableId && id !== probePromiseId);
-    if (now.length !== beforeCounts[table]) changed.push(`${table} ${beforeCounts[table]} -> ${now.length}`);
+    const now = new Set(idsOf(asOwner?.payload));
+    const lost = [...protectedIds[table]].filter((id) => !now.has(id));
+    const gained = [...now].filter((id) => !protectedIds[table].has(id));
+    if (lost.length > 0) changed.push(`${table} lost ${lost.length} row(s) the victim could read when probing began`);
+    if (gained.length > 0) changed.push(`${table} gained ${gained.length} row(s) during the probes`);
   }
-  if (changed.length > 0) problem(`the victim's real ledger moved during the probes: ${changed.join(", ")}`);
-  else report(`OWN        ${victimSession.email}'s real ledger reads identical after every probe`);
+  if (changed.length > 0) problem(`the victim's ledger moved during the probes: ${changed.join(", ")}`);
+  else report(`OWN        ${victimSession.email}'s ledger reads identical after every probe, sacrificial rows included`);
 
   return { findings, lines, declined: declinedCount };
 }
