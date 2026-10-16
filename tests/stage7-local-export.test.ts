@@ -80,6 +80,27 @@ function ownerIdsOf(table: string, ownerColumn: string, ownerId: string) {
 
 const HISTORY_GUARDS = ["activities_immutable", "payments_immutable", "promise_events_immutable", "promises_guard_history"];
 
+// A customer who has chased the same debts for years does not own three history
+// rows, they own thousands, and that is the only size at which a read that stops
+// early looks like a complete archive. Every row here belongs to the signed-up
+// fixture owner and cites that owner's own client and receivable, so the Stage 5
+// ownership trigger is satisfied rather than skipped.
+function seedBulkHistory(ownerId: string, clientId: string, receivableId: string, rows: number) {
+  if (!Number.isInteger(rows) || rows < 1) throw new Error("bulk history row count must be a positive integer");
+  for (const value of [ownerId, clientId, receivableId]) assertUuid(value, "bulk history id");
+  localAdmin(`insert into public.activities(owner_id, client_id, receivable_id, type, occurred_at, note, created_at, metadata)
+select '${ownerId}', '${clientId}', '${receivableId}', 'NOTE_ADDED',
+       timestamptz '2026-01-05 09:00:00+00' + (${rows} - g) * interval '1 minute',
+       'Reminder ' || g,
+       timestamptz '2026-01-05 09:00:00+00' + (${rows} - g) * interval '1 minute',
+       '{}'::jsonb
+from generate_series(1, ${rows}) g;
+insert into public.analytics_events(owner_id, event_name, occurred_at, metadata)
+select '${ownerId}', 'bulk_history_view_' || g,
+       timestamptz '2026-01-05 09:00:00+00' + (${rows} - g) * interval '1 minute', '{}'::jsonb
+from generate_series(1, ${rows}) g;`);
+}
+
 function historyGuardState() {
   return localAdmin(`select count(*) filter (where tgenabled = 'O') || '/' || count(*) from pg_trigger where tgname in (${HISTORY_GUARDS.map((name) => `'${name}'`).join(",")});`);
 }
@@ -391,6 +412,44 @@ describeLocalStack("Stage 7 data export against the live local database", { time
       expect(csv.endsWith("\r\n")).toBe(true);
       expect(csv.split("\r\n").filter((line) => line.length)).toHaveLength(1);
     }
+  });
+
+  // PostgREST answers a read with at most 1,000 rows and does not say that it
+  // stopped, so an archive built from one query reads as complete while everything
+  // past the 1,000th row is simply gone. No other case in this file gets that big:
+  // a small ledger passes a single-page read, and no screen shows the difference.
+  it("carries every row of a history longer than one request can return", async () => {
+    const BULK_ROWS = 1_201;
+    await signInAs("alpha");
+    seedBulkHistory(ownerIdA, seeded.noisy.id, seeded.open.id, BULK_ROWS);
+    const databaseActivities = ownerIdsOf("activities", "owner_id", ownerIdA);
+    const databaseAnalytics = ownerIdsOf("analytics_events", "owner_id", ownerIdA);
+    expect(databaseActivities.length, "the fixture did not outgrow one request").toBeGreaterThan(1_000);
+    expect(databaseAnalytics.length, "the fixture did not outgrow one request").toBeGreaterThan(1_000);
+    const unpaged = await supabase.from("activities").select("id").order("created_at", { ascending: true }).order("id", { ascending: true });
+    console.warn(`Stage 7 bulk history: database holds ${databaseActivities.length} activity rows; one un-paged read returned ${unpaged.data?.length ?? 0}`);
+
+    const snapshot = await exporter.read();
+    expect(snapshot.activities.map((row) => row.id).sort(), "the archive lost activity rows past the first page").toEqual(databaseActivities);
+    expect(snapshot.analyticsEvents.map((row) => row.id).sort(), "the archive lost analytics rows past the first page").toEqual(databaseAnalytics);
+
+    // The sheets a person can open in a spreadsheet have to carry them too, one
+    // line per row, or the paging proves nothing about the file they keep.
+    const activitiesCsv = csvFor("activities", snapshot);
+    const csvIds = activitiesCsv
+      .split("\r\n")
+      .map((line) => line.slice(0, 36))
+      .filter((field) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(field))
+      .sort();
+    expect(csvIds, "the activities sheet is shorter than the owner's activity history").toEqual(databaseActivities);
+    const bundle = JSON.parse(serializeExportBundle(buildExportBundle(snapshot, new Date().toISOString()))) as { activities: Array<{ id: string }>; analyticsEvents: Array<{ id: string }> };
+    expect(bundle.activities.map((row) => row.id).sort()).toEqual(databaseActivities);
+    expect(bundle.analyticsEvents.map((row) => row.id).sort()).toEqual(databaseAnalytics);
+
+    // Paging a big ledger is still a read: the last page must not be a re-write of
+    // the rows the earlier pages already carried.
+    expect(ownerIdsOf("activities", "owner_id", ownerIdA)).toEqual(databaseActivities);
+    expect(ownerIdsOf("analytics_events", "owner_id", ownerIdA)).toEqual(databaseAnalytics);
   });
 
   it("asks for a live session before it reads a single row", async () => {

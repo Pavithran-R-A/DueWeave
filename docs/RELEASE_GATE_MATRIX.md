@@ -170,7 +170,15 @@ turning the gate red) was measured the same day.
    shape CI will use. That gap is narrower than the env files look apart — the CLI skips the `SUPABASE_*`
    names it injects itself, so the runtime is configured by `ALLOWED_APP_ORIGIN` either way — but it is
    still a re-run this matrix has not seen. Neither claim is softened by the pass above, and the erasure
-   sheet has never been rendered in a browser.
+   sheet has never been rendered in a browser. **Retired on the CI half, by measurement rather than by
+   assumption (`2026-10-16T16:48Z`, run `38934362140` = `CI` at `ddb9340`, job `Database contracts`
+   `117085988587`):** that job ran the paired serve step and the battery on the same head —
+   `delete-account is served and ALLOWED_APP_ORIGIN reached the runtime (1507 ms,
+   supabase_edge_runtime_dueweave recreated by the serve)`, then
+   `✓ tests/arc3c-local-account-erasure.test.ts (22 tests) 5434ms`, inside
+   `Test Files 10 passed (10)` / `Tests 331 passed (331)`, with the `if: always()` stop step recorded
+   after it. So CI demonstrably can erase an account at this head; what remains of this caveat is the
+   *local* half, which is note 8.
 8. **An open finding against row U, with its mechanism read from the serve logs and the mtimes.** One
    execution of the battery under a script-started serve from the Windows checkout answered
    `Tests 9 failed | 13 passed (22)` with every `F.*` claim on HTTP **502** (some also
@@ -194,3 +202,57 @@ turning the gate red) was measured the same day.
    (`docker exec` ETIMEDOUT at 30 s) — the blocked-gate path, working as designed. Until that re-run
    happens on a responsive daemon, the 22/22 belongs to the stable serve only, and this row is
    **not** re-qualified by it.
+   **Fourth Windows-side capture, and the watcher is now shown to be inventing the writes.** On
+   `2026-10-16` the script-managed cycle was run again with the daemon responsive: `start` answered
+   `delete-account is served and ALLOWED_APP_ORIGIN reached the runtime (7026 ms,
+   supabase_edge_runtime_dueweave recreated by the serve)`, the battery answered
+   `Test Files 3 failed | 7 passed (10)` / `Tests 8 failed | 324 passed (332)`, and `stop` answered
+   `terminated the delete-account watcher (pid 25252)` → `delete-account no longer answers
+   (gateway-503) after 5082 ms`. Four of those failures are again the `F.*` claims on **502**
+   (`F.3`, `F.5`, `F.6`, `F.7`; the other four are limitation 9 and are not this mechanism). The serve
+   log for that window (17:03:44Z → 17:18:54Z) records **71** `File change detected` WRITE events —
+   **23** each for the function directory, `contract.ts` and `index.ts`, plus 2 for
+   `supabase/functions/.env` — **26** `Serving functions on…` re-setups and only **5** requests that
+   reached `serving the request`. The new fact is what happened after the suite finished (~17:07Z): the
+   identical three-file cycle kept firing at a fixed 60-second cadence (17:07:31, 17:08:31, 17:09:31 …
+   17:18:32Z) with **no test process running and no request in flight**, and the four watched paths
+   still report mtimes of 2026-10-11T16:52:26.205Z (directory and `index.ts`),
+   2026-10-06T08:04:30.756Z (`contract.ts`) and 2026-10-06T11:46:25.985Z (`.env`) — unchanged to the
+   millisecond across all 23 cycles. So the events cannot be writes, and they are not traffic-driven: a
+   Windows-side watcher on this tree reports a WRITE on the whole function directory every minute whether
+   the directory is touched or not, and every re-setup it triggers is a window in which Kong has no
+   upstream. That converts note 8's open question from *what wrote the files* to *why this host's
+   watcher is blind*, which is a Docker/Windows bind-mount question and not a repository one; the
+   remedy this matrix will accept is still the same — run the battery where the serve is stable, which is
+   what limitation 7's CI measurement now does, or on the WSL side of the tree.
+9. **Row N is green on CI and stalls on this host, and the difference is the PostgREST build, not the
+   repository.** The four non-502 failures in limitation 8's run are all the SQLSTATE **40001** path:
+   three in `tests/stage4-local-edit-workflows.test.ts` and one in
+   `tests/stage4-local-repository-edit.test.ts` (`rejects a write that carries a token the row has
+   outgrown`), each reported as `Test timed out in 5000ms`. It reproduces in isolation (that one file,
+   one test, `1 failed | 6 passed`) and survives a raised ceiling (`30032ms → Test timed out in
+   30000ms`), so it is a stall rather than slowness, while its siblings in the same file finish in
+   389–963 ms. Taken out of the test harness entirely, a plain `POST
+   /rest/v1/rpc/update_client` carrying an outgrown token against the loopback stack produced no
+   response at all — Kong's access log closed it as **499** after 25 s — while the *same* session,
+   seconds earlier, got `create_client` 200 in 422 ms and a matching-token `update_client` 200 in
+   137 ms, and a `P0002` refusal in the same suite returned HTTP 500 promptly. `pg_stat_activity`
+   shows the transaction reaching `idle in transaction (aborted)` within seconds and no database work
+   for the rest of the wait, so the server decides the write is refused immediately and never delivers
+   that refusal to the caller. The discriminator is the build: this host's `supabase_rest_dueweave`
+   was created `2026-10-06T10:12:45Z` from `public.ecr.aws/supabase/postgrest:v14.18`, whereas the job
+   in limitation 7 pulled `postgrest:v16.2` and ran both files green at the same SHA
+   (`✓ tests/stage4-local-edit-workflows.test.ts (14 tests) 676ms`,
+   `✓ tests/stage4-local-repository-edit.test.ts (7 tests) 752ms`). The local containers are stale
+   artifacts of an older CLI stack, kept running deliberately: the restored production snapshot lives in
+   the named volume `supabase_db_dueweave`, and a `docker start` preserves it where a full
+   stop/start cycle would not. `v16.2`, `v16.3` and `v16.4` are already in the local image store, so
+   the remedy is to recreate this stack on the pinned images when `C:` has room (1.9 G at this
+   measurement) — after which `pnpm test:live` can be re-run for a local 332.
+   **One consequence this records as unmeasured, not as fine:** production's PostgREST build was not
+   read. `GET https://ugzd…supabase.co/rest/v1/` without a key answers `401` with only
+   `Server: cloudflare`, and this line holds no key path that would let it ask with one. If hosted
+   PostgREST were 14.x, the conflict refusal `supabase/migrations/20260814170000_current_stage4_persistent_edits.sql:97-99`
+   exists to show a customer would never reach the screen — the save would hang instead. Reading the
+   `Server` header of an authenticated `GET /rest/v1/` on production is the one-request instrument that
+   closes this, and it is not yet run.
