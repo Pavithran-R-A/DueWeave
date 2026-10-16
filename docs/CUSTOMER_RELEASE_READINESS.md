@@ -608,7 +608,9 @@ Any later SHA must earn its own CI and deployment verification.
    first, and that has not been built or run. **Re-measured 2026-10-16:** this route is closed on this host
    — `docker ps` now hangs without answering (wedged daemon, no output in 120 s) and `df -h /c` reports 475
    G used of 476 G with 215 M free (100 %), so no scratch Postgres container and no local replay can be run
-   here; the restore rehearsal needs a host with working Docker and free disk. (b) Row data has never been
+   here; the restore rehearsal needs a host with working Docker and free disk. **Both conditions returned
+   later the same day, and the rehearsal was run — see the restore paragraph below, which is the end of item
+   (a) and the beginning of what it found.** (b) Row data has never been
    dumped: `--data` exists and is
    pinned by tests, but producing it writes real customer content to disk, so it stays an explicit
    operator decision. (c) Anti-abuse acceptance and load estimates are untouched by this instrument; the
@@ -627,6 +629,51 @@ Any later SHA must earn its own CI and deployment verification.
    error.status || 500, errorCode)`), keeping the wording only for replies that arrive without a status;
    six cases in `tests/confirmation-resend.test.ts`, watched RED first. Rate-limit *configuration* is
    still unread without the management credential, and no load estimate has been made.
+   **Item (a) is closed: a restore was executed on 2026-10-16 between `15:29Z` and `16:07Z`, and the run is
+   why the restore is now an instrument rather than a sentence.** A fresh structure dump taken by the backup
+   instrument, `~/.local/share/dueweave/backups/dueweave-hosted-schema-20261016T152904Z.sql`, is 140,710
+   bytes — the same size as the 2026-10-15 dump, so production's structure had not moved in between. The first
+   restore was hand-run into a `createdb` database inside `supabase_db_dueweave`, and it looked like a
+   success: **psql exited 0** while 26 errors went to stderr, and the database that came back held 13 tables,
+   51 functions and 21 triggers and **0 of the 15 row-level-security policies**, because every policy
+   references `auth.uid()` and a bare database has no `auth` schema. With `relrowsecurity` true on all 13
+   tables and no policy granting anyone anything, a runbook that reads the exit code would have declared a
+   recovered database that lets no tenant read any row. `scripts/hosted-db-restore-rehearsal.mjs`
+   (`pnpm verify:hosted:restore`) is that trap coded shut: it refuses a target missing `auth`, `extensions` or
+   `vault` before feeding a dump byte, refuses a target already holding public tables unless the operator says
+   they mean it, reads the *production* census over the session pooler, replays the dump with
+   `psql -q -v ON_ERROR_STOP=1 -f -` on stdin, treats any stderr as a failure, and then compares nine object
+   counts between the live project and the restored database. The credential keeps the backup instrument's
+   rules: read from the off-repo password file, handed over as `docker exec -e PGPASSWORD` — key without a
+   value, so no secret enters argv — and scrubbed from every printed byte.
+   **Executed, refusal:** `--container supabase_db_dueweave --database dueweave_restore` printed
+   `REFUSED … has no auth, extensions, vault schema` and exited 1. **Executed, recovery:** the same dump into
+   a fresh `public.ecr.aws/supabase/postgres:17.11.0.002` container — the image the local stack is built from,
+   so the Supabase roles already exist there — printed `RESTORED … with ON_ERROR_STOP=1 and nothing on
+   stderr`, then `PRODUCTION tables=13 views=0 functions=51 triggers=21 policies=15 indexes=36 sequences=0
+   rls_tables=13 constraints=93` and `RESTORED` with the same nine numbers and `MATCH`, exit 0. So the backup
+   this gate asks for has been proved to restore, structurally, onto a project-shaped database, and the
+   census pair the instrument prints is the evidence rather than an exit code.
+   **Two defects only the real run could find, because a recording stub replays fixtures and never parses
+   what it is handed.** The first attempt stopped at `fe_sendauth: no password supplied`: the instrument had
+   passed `PGPASSWORD` to the `docker` process it spawned, and `docker exec` gives the child the *container's*
+   environment, not the client's, so the variable was silently absent inside until the census call named
+   `-e PGPASSWORD`. The second stopped at `syntax error at or near
+   "'CENSUS_PROBE'"`: the census is built by joining counts with `||`, and the leading marker made the whole
+   argument an expression list with no `select`, which a stub that matches argv substrings accepts happily and
+   psql does not. Each was pinned by a contract case watched RED first — one asserts the pooler census carries
+   `-e` and `PGPASSWORD` and never `PGPASSWORD=`, the other asserts both census statements begin `select ` —
+   then fixed. `tests/hosted-db-restore-rehearsal.contract.test.ts` is 13 cases; `pnpm test:unit` is 50 files /
+   750 tests (49 / 737 at `3e63ac8`), and `pnpm check`, `pnpm lint` and `pnpm verify:secrets`
+   (`Scanned 297 files for 11 credential shapes. No privileged credential found.`) are green locally at this head.
+   **What this does not claim:** structure only — `--data` has still never been dumped, so no client name,
+   receivable, promise or payment row left the project and no row-level equivalence is being asserted. The
+   comparison is an object census, not the 152 grant statements inside the dump, which were preserved but not
+   compared. And it proves the dump replays onto a database provisioned like a Supabase project; replaying
+   onto a bare Postgres instance is precisely what the instrument now refuses, which is the finding, not a gap.
+   Teardown was scoped to what this rehearsal created: `DROP DATABASE dueweave_restore`, and both rehearsal
+   containers removed by name, leaving the other tenant's containers on this shared host untouched. The dumps
+   live outside the repository, so no broad `git add` can publish them.
 8. **Release governance:** Reconcile the long-lived `main` branch, branch/PR protection, final
    changelog and operations rollback; verify head==GitHub CI SHA==Pages deployed SHA, all intended
    gates pass, and no secret is in Git or client assets. The repository is temporarily public for

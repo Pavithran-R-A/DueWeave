@@ -21,6 +21,7 @@
     "verify:hosted:isolation": "node scripts/hosted-tenant-isolation.mjs",
     "verify:hosted:erasure": "node scripts/hosted-account-erasure.mjs",
     "verify:hosted:backup": "node scripts/hosted-db-backup.mjs",
+    "verify:hosted:restore": "node scripts/hosted-db-restore-rehearsal.mjs",
     "db:lint": "supabase db lint --local",
     "verify:db:local": "pnpm db:reset:local && pnpm verify:types && pnpm verify:migrations && pnpm test:db && pnpm db:lint",
     "verify:release:local": "pnpm verify:db:local && pnpm test:live && pnpm build && pnpm test:unit && pnpm lint && pnpm check && pnpm verify:secrets && pnpm audit --prod --audit-level=high",
