@@ -59,21 +59,30 @@ of the property that neither a laptop nor CI can prove.
 Rows A-T are the Stage 9 measurement of 2026-09-29 and are deliberately **not** rewritten here —
 that is what makes them usable as a baseline. The numbers in them that now describe an older tree are
 listed below, and a reviewer should read them with this pointer. Each figure is quoted from the run
-named in front of it, most recently CI at the measurement head `f037521` (observed 2026-10-17, six
-jobs `completed / success` on its own SHA; its four runs and their measured counts, and `6f5e919`'s
-before it, are in `docs/CUSTOMER_RELEASE_READINESS.md`):
+named in front of it, most recently CI at the promotion head `7c33fd1` (observed 2026-10-17, all four
+push workflows `completed / success` on its own SHA — `CI` `39049440581`, `Complete customer-browser
+regression` `39049440594`, `Live production public smoke` `39049440653`, `CodeQL security review`
+`39049440552`; its run ids are in `docs/CUSTOMER_RELEASE_READINESS.md`, and `f037521`'s, `6f5e919`'s and
+`96d9b03`'s before it are there too):
 
 - Row H says 23 migrations. The chain committed **24** before Phase 3B (which applied all 24 to the
   hosted project and measured parity), Arc 3C added a **25th**, and CL-39 adds a **26th**
   (`20261017090000_current_cl39_edit_conflict_errcode_reachable.sql`). CI's `Database contracts` job
   at that head prints **"Migrations on disk: 26. Applied in the local database: 26."** The hosted
-  project is at **25**: the 26th is not pushed, because this phase made no hosted write.
+  project is now at **26** as well: the 26th was pushed on 2026-10-17 by this workstream through
+  `supabase db push --skip-vault --yes` over the session pooler (exit `0`, 2,873 ms) after a `--dry-run`
+  that named only that file, and the hosted catalog re-read **26/26** afterwards — still forward-only,
+  with no applied row rewritten and no untracked SQL. The promotion's reads, timings and the
+  before/after stale-edit measurements are in "Migration 26 qualification and promotion against
+  production (2026-10-17)" in `docs/CONSUMER_LIVE_PROGRESS.md`.
 - Row J says `Files=8, Tests=364`. There are **10** pgTAP files on disk now, and the measured run is
   `Files=10, Tests=410 … Result: PASS` — the ninth being `arc3c_01_account_erasure.sql`, which plans
   41, and the tenth `stage4_02_edit_conflict_code.sql`, which plans 5 and printed
   `supabase/tests/stage4_02_edit_conflict_code.sql ... ok`.
 - Row D's unit counts are the Stage 9 series. At the CL-39 head `pnpm test:unit` measures
-  **50 files / 752 tests, 0 skipped** (exit 0, `Duration 7.93s`, measured locally on 2026-10-17, and
+  **52 files / 780 tests, 0 skipped** (exit 0, `Duration 12.24s`, re-measured locally on 2026-10-17 at the
+  promotion head `7c33fd1` — the two files and 28 tests the previous reading of `50 files / 752 tests` did
+  not count are the hosted stale-edit probe's contract cases, committed at that head; and
   re-measured locally at the recording head `6f5e919` the same day as **50 / 752** in `10.17s`), and
   the live manifest's **10th** file (`tests/arc3c-local-account-erasure.test.ts`) executes inside
   `pnpm test:live`, which CI at `2fb74ca` measures as **10 files / 332 tests** in `Duration 46.42s`,
@@ -358,6 +367,11 @@ turning the gate red) was measured the same day.
    re-measurement on this host's v14.18 container, which this note recorded as owed, was taken on
    2026-10-17 at `6f5e919` once the daemon came back: six stale or tokenless edit calls answered
    `HTTP 400` with `DW001` in 10-20 ms each, and the fresh-token control edit answered `HTTP 200` in
-   21 ms — the full reading is in the row-N bullet above.** CI cannot stand in for it: its
+   21 ms — the full reading is in the row-N bullet above.** **And on 2026-10-17 the same instrument ran
+   against production after migration 26 was pushed:** the four stale or tokenless edit calls that this
+   note recorded as unanswered-for-30-seconds on that project answered `HTTP 400 DW001` in 40-69 ms, the
+   two authorized fresh edits answered `HTTP 200` in 67 ms and 195 ms with the token moving, and the
+   account's ledger read the same rows afterwards — so the production half of this repair is measured on
+   production, not inferred from the local container. CI cannot stand in for it: its
    `postgrest:v16.2` answers `40001` in 676/752 ms, which
    is precisely why every CI head stayed green while customers hung.
