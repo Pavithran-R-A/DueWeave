@@ -59,8 +59,9 @@ of the property that neither a laptop nor CI can prove.
 Rows A-T are the Stage 9 measurement of 2026-09-29 and are deliberately **not** rewritten here —
 that is what makes them usable as a baseline. The numbers in them that now describe an older tree are
 listed below, and a reviewer should read them with this pointer. Each figure is quoted from the run
-named in front of it, most recently CI at `6f5e919` (the recording head of the CL-39 change, observed
-2026-10-17; its four runs and their measured counts are in `docs/CUSTOMER_RELEASE_READINESS.md`):
+named in front of it, most recently CI at the measurement head `f037521` (observed 2026-10-17, six
+jobs `completed / success` on its own SHA; its four runs and their measured counts, and `6f5e919`'s
+before it, are in `docs/CUSTOMER_RELEASE_READINESS.md`):
 
 - Row H says 23 migrations. The chain committed **24** before Phase 3B (which applied all 24 to the
   hosted project and measured parity), Arc 3C added a **25th**, and CL-39 adds a **26th**
