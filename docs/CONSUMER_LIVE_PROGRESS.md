@@ -944,7 +944,7 @@ Each row below keeps its original wording above and is amended, not erased.
 | B01 | "no frontend points at it, no SMTP, `site_url` is still localhost, and it has 0 accounts and 0 rows" | A frontend **does** point at it (`https://dueweave.pages.dev`, bundle fingerprinted to `ea70052`), an SMTP sender **has** been activated per the owner (delivery still unproven — that half of B04 is untouched), and the row count claim is the owner's 2026-10-11 measurement rather than this file's older read. B01's remaining distance is B04's mailbox proof, not infrastructure |
 | B02 | "none" | **Closed for the URL and TLS half**: a public HTTPS deployment with a real hostname exists and is the target of the browser smoke workflow. The domain decision (a brand domain instead of `*.pages.dev`) stays with the owner |
 | B04 | hosted `smtp_host/port/admin_email/user` all `null`, `smtp_pass` empty | Those were 2026-10-05 reads. The owner reports SMTP **activated** on 2026-10-11, so the "no sender configured" half is stale; what the readiness audit still holds is that **no confirmation or recovery message has been retrieved from a real mailbox**, and that the hosted `site_url` and redirect allow-list are unverified by this run. Delivery, not configuration, is what keeps B04 open. **Amended 2026-10-14:** a signup-confirmation message **has** since been retrieved from the real Gmail mailbox and its link used to confirm the QA identity, so only the recovery half of that sentence stands. The redirect half got harder, not easier: asked for a reset mail, `POST /auth/v1/recover?redirect_to=…` on this project answers **HTTP 200 for a destination on a domain it was never configured to allow** as readily as for `https://dueweave.pages.dev/auth/update-password`, so no status code from that endpoint can be read as allow-list evidence; which destination a delivered link carries is mailbox-only, and the hosted `Redirect URLs` setting itself needs one dashboard read (see gate 2 of `CUSTOMER_RELEASE_READINESS.md`) |
-| B08 | "the hosted catalog reads **24** rows … both during and after this phase" | Superseded by the owner's 2026-10-11 re-verification: the hosted chain is at **25/25**, forward-only, with no repair or history rewrite. The precision this row already carried still applies — `verify:migrations` and `verify:types` are loopback scripts; the hosted parity claim rests on the catalog read, not on running those scripts against production |
+| B08 | "the hosted catalog reads **24** rows … both during and after this phase" | Superseded by the owner's 2026-10-11 re-verification: the hosted chain is at **25/25**, forward-only, with no repair or history rewrite. The precision this row already carried still applies — `verify:migrations` and `verify:types` are loopback scripts; the hosted parity claim rests on the catalog read, not on running those scripts against production. **Re-read by this workstream on 2026-10-17** through `scripts/hosted-migration-qualification.mjs` (which reuses `scripts/hosted-db-census.mjs`'s credential path): `supabase_migrations.schema_migrations` still answers **25** rows (newest `20261006120000`, `20261017090000` absent), so the 26th migration is committed and qualified but not applied — see "Migration 26 qualification against production (2026-10-17)" |
 | B09 | "two are green on all three jobs **on the self-hosted runner**" | The self-hosted runner is no longer the executing environment: `9807db2` moved the consumer gates to GitHub-hosted `ubuntu-24.04`, and this branch now produces green runs there — four workflows at `ea70052`, listed below. The historical self-hosted greens stay true *for the heads that ran them* |
 | B17 | "it has **not** been pushed to the hosted project, whose catalog still reads 24, and no CI run has executed it" | Both halves are now false, and the row's status must move: the 25th migration **is** on the hosted project, the `delete-account` function **is** deployed (version 2, JWT verification on), and CI **does** execute the erasure gates — the browser battery that deletes a QA account end-to-end runs in `release-full-browser.yml`'s `Complete customer-browser regression` job against the locally-served function, and it is green at `ea70052`. **B17 is still NOT CLOSED**, for a narrower reason than before: the executed proof is against the loopback stack that CI brings up, while *on the production project* the journey has never been run by a real, confirmed, signed-in customer account, because neither the mailbox nor the admin API is reachable here (table above). The remaining distance is one hosted authenticated deletion plus its before/after row census, not a deploy. **(Amended again 2026-10-17: that deletion happened on 2026-10-16, on `ugzdqcytouwfdlcjujqv`, by a confirmed account signed in with its own credential, and two instruments read its before/after census — see the B17 row of "Remaining production blockers" and `docs/ACCOUNT_ERASURE_DESIGN.md`. What is left of B17 is the destructive submit clicked through the deployed UI, deferred to the QA-A cleanup, plus migration 26's hosted push.)** |
 | B18 | advisor counts 24 security WARN + 3 INFO; `password_min_length = 6` | Owner re-read on 2026-10-11: **25** `SECURITY DEFINER` warnings (the +1 is `delete_my_account()`) and the same 3 `rls_enabled_no_policy` INFO rows. (iv) stays open unless the owner has since raised the hosted floor to 8; this run could not read it. The classification discipline is unchanged — a warning count that tracks a deliberately-reviewed migration is not a new finding |
@@ -1292,6 +1292,73 @@ The proposal, in the order it should be decided:
 This section decides nothing by itself. It is here so that the phase which does create the
 resources starts from a measured target instead of a default.
 
+## Migration 26 qualification against production (2026-10-17)
+
+Everything the promotion of `20261017090000_current_cl39_edit_conflict_errcode_reachable.sql` needs
+before it can be written to the hosted project, except the write itself. Every read went to project
+`ugzdqcytouwfdlcjujqv` through `scripts/hosted-db-census.mjs`'s credential and query plumbing
+(`~/.config/dueweave/prod-db-password` + `supabase db query --db-url`, transaction pooler, database
+password rather than management token), which is why this was executable while Docker Desktop was
+down and while no scoped `SUPABASE_ACCESS_TOKEN` exists on this host. The reads are now one committed
+instrument — `scripts/hosted-migration-qualification.mjs`, run as `pnpm verify:hosted:qualify`, with
+`tests/hosted-migration-qualification.contract.test.ts` holding its safety properties — replacing the
+two scratch drivers the first pass used (`tmp/dw-qualify-26.mjs` for the catalog reads,
+`tmp/dw-qualify-26b.mjs` for the dry-run). No credential appears in any of them; every line printed
+is scrubbed.
+
+| Question the promotion depends on | What production answered |
+| --- | --- |
+| Is migration 26 already applied? | `supabase_migrations.schema_migrations` holds **25** rows, oldest version `20260812150500`, newest `20261006120000`, and `20261017090000` is **not** among them (`has_migration_26=false`). This re-reads the owner's 2026-10-11 `25/25` on 2026-10-17 and holds it, so nothing has been applied out of band. |
+| What definition is actually being replaced? | `pg_get_functiondef` of `public.update_client` — 1,760 characters, md5 `4563d2577760a1ff4c72d4f8b3888e14` — and `public.update_receivable_details` — 2,205 characters, md5 `75090b6ed5a5b273949f6ba5a86d7bea`. Both bodies raise the stale-edit conflict with `errcode = '40001'`, read **from production**, so the 125 s hang is deployed behaviour rather than an inference from the migration text. |
+| Privileges | Both routines are `SECURITY DEFINER`, owned by `postgres`, pinned to `search_path = 'public', 'auth', 'pg_temp'`. `has_function_privilege` answers `anon=false`, `authenticated=true`, `postgres=true`, `service_role=true` for each — the grant set migration 26 re-asserts, so its `grant`/`revoke` statements change nothing observable about reachability. |
+| Dependencies | Outward, `pg_depend` lists only `deptype n` rows for each routine (namespace `public`, `pg_language`, its own row type) — no table, extension or cast dependency that a redefinition could break. Inward, **0 dependents** each: no view, trigger, rule or other routine references them, so replacing the bodies cannot orphan anything. |
+| Effect on existing customer data | The three tables these write paths touch hold `clients` 4, `receivables` 3, `promises` 2 rows, and `rows_null_updated_at` is **0** on each, so no stored row is exposed to the `p_expected_updated_at is null` branch. The migration changes no column, constraint or policy — 8 statements: 2 `create or replace function`, 2 `grant`, 2 `revoke`, 2 `comment`. |
+| Is there a recovery point? | Yes, committed rather than promised: `supabase/rollback/20261017090000_revert_cl39_to_hosted_25_definition.sql` carries both routine bodies exactly as production held them at 25 migrations, captured from `pg_get_functiondef` on 2026-10-17 with the two md5s in its header. The claim is re-derivable rather than asserted — hashing each body as the file holds it, plus its terminating newline, answers `4563d2577760a1ff4c72d4f8b3888e14` (1,760 characters) and `75090b6ed5a5b273949f6ba5a86d7bea` (2,205 characters), the same digests the live catalog read produced, so the file restores those bytes and not a paraphrase of them. Both still raise the conflict with `errcode = '40001'`, which is the point: re-applying it is the forward-restore of migration 26. It is a definition-level restore, not a backup — `pg_dump` is not on this host's PATH and the stack was down, so the byte-level snapshot stays the CL-36 rehearsal's `docker exec pg_dump` path, and this file is what makes the promotion reversible without it. |
+| Dry-run against the right production project, without changing it | The CLI rejects a multi-statement string (`failed to execute query: error: cannot insert multiple commands into a prepared statement`), so `begin; …; rollback;` is not available through it. The replay therefore ran inside one `do $$ … $$;` block whose **last statement raises**, aborting the whole transaction. The mechanism was proved before it was trusted — a probe that creates a table and then raises inside the same block left `absent` behind (`mechanism_proved=true`) — and then the migration itself was replayed the same way: the block answered `dw-cl39 dry-run complete: deliberate rollback`, both definitions read back as md5 `4563d2577760a1ff4c72d4f8b3888e14` and `75090b6ed5a5b273949f6ba5a86d7bea` (`identical=true` for both), the probe table stayed `absent`, and the ledger still answered 25. **Production is byte-identical after the dry-run**, and history was not rewritten: no applied migration's row or file was touched, and no untracked SQL was applied. |
+| CI, database and the local serving build | The same chain the promotion would run: CI at `f037521` and `96d9b03` reports `Migrations on disk: 26. Applied in the local database: 26.`, pgTAP `Files=10, Tests=410 … Result: PASS` including `stage4_02_edit_conflict_code.sql ... ok`, the served battery `10 passed (10)` / `332 passed (332)`, browser `81 passed`, regression `185 passed / 8 skipped`, and the refusal answering `HTTP 400 DW001` in 10-20 ms on this host's own `postgrest:v14.18` at 26 migrations. Those counts are in `docs/CUSTOMER_RELEASE_READINESS.md` and `docs/RELEASE_GATE_MATRIX.md`; CI runs no hosted job, so none of it proves the hosted state — which is what this section's reads are for. |
+
+**Re-running the qualification as a committed instrument found two defects in itself, and both are now
+tested.** Making the pass reproducible meant moving the reads out of `tmp/` and behind
+`tests/hosted-migration-qualification.contract.test.ts`, which stubs the CLI and asserts the
+properties that make the instrument safe to point at a live project: every labelled read starts by
+asking for data and names no writing verb, the replay block contains each statement verbatim and ends
+in its own raise with no `commit` anywhere, it refuses any project ref other than
+`ugzdqcytouwfdlcjujqv`, it refuses to reach the CLI without the operator's password file, it prints
+neither the raw nor the percent-encoded credential, and it writes no restore file from answers it
+cannot fingerprint. Two of its cases were written against real production output and went RED first:
+
+- The first committed run exited `1` reporting `FAILED before-definition update_client: the answer
+  carries no definition to fingerprint` while the definition was sitting in the log above it. Cause:
+  `--output-format json` pretty-prints the array and then appends `A new version of Supabase CLI is
+  available: v2.121.0` to the same stdout, and the parser read from the opening bracket **to the end
+  of the text**. It now takes the balanced span that closes the value it started at, walking past
+  string contents (a routine body carries both brackets and escaped quotes), and keeps failing closed
+  when nothing parses.
+- The restore-file header pointed at `docs/CUSTOMER_LIVE_PROGRESS.md`, which is not a file in this
+  repo — a rollback pointer that does not resolve. A case now extracts the doc path the header names
+  and asserts it exists.
+
+With both repaired, `node scripts/hosted-migration-qualification.mjs` ran the whole qualification
+against production twice at exit `0` and reproduced every number in the table above from the committed
+instrument rather than from the scratch drivers: `VERDICT mechanism_proved=true`,
+`DRY-RUN statements=8 raised-rollback=true probe_absent_final=true definitions_identical=true`,
+`COMPARE … identical=true` for both routines at the same two digests, and
+`QUALIFIED migration=20261017090000 statements=8` — the ledger read still answering 25 rows. The
+restore file at `supabase/rollback/…` is now the instrument's own output; hashing the two definitions
+**as that file carries them** answers `4563d2577760a1ff4c72d4f8b3888e14` (1,760 characters) and
+`75090b6ed5a5b273949f6ba5a86d7bea` (2,205 characters), byte-identical to the live catalog's digests.
+One fidelity note the instrument's own wording carries: the replay re-executes the migration with `--`
+comment lines dropped, so the dry-run is semantically identical to the file and not byte-identical —
+`supabase db push` applies the file itself, comments and all.
+
+**What the promotion still needs, and only that:** a scoped `SUPABASE_ACCESS_TOKEN` (re-measured
+absent from the environment; the invalid local management PAT was not used and must not be), then
+`supabase db push` for the single forward migration, then re-reading
+`select count(*) from supabase_migrations.schema_migrations` on hosted to confirm **26**, then the
+stale-edit probe through the production API — old timestamp refused promptly with `DW001`, valid
+timestamp still writing, the four-row/three-row/two-row ledger unchanged, isolation intact, no
+125 s stall, and promises/payments regressed by nothing.
+
 ## Owner-only actions
 
 Deliberately not performed by this workstream, and not performable by any engineering pass:
@@ -1314,8 +1381,14 @@ Deliberately not performed by this workstream, and not performable by any engine
   migration that turns a stale edit into a readable refusal, so **until it is pushed, the hang this
   phase diagnosed is still what a real customer meets on production**: measured there, a stale-token
   edit stayed unanswered at 30 s and the edge gave `HTTP 504` at 125,140 ms, while the same refusal
-  raised with the private-use code answers in 76/128 ms. It needs a scoped `SUPABASE_ACCESS_TOKEN`
-  (the local management PAT is invalid and must not be reused) and `supabase db push`, followed by
+  raised with the private-use code answers in 76/128 ms. That hang is now confirmed from the hosted
+  catalog itself, not inferred: `pg_get_functiondef` on 2026-10-17 shows both production routines
+  still raising the conflict with `errcode = '40001'`. Everything the write needs except the write is
+  closed in "Migration 26 qualification against production (2026-10-17)" above — ledger, effective
+  definitions, privileges, dependencies, row counts, a committed forward-restore file and a dry-run
+  whose aborted transaction left production byte-identical. What remains is a scoped
+  `SUPABASE_ACCESS_TOKEN` (the local management PAT is invalid and must not be reused; none was
+  present on 2026-10-17 either) and `supabase db push`, followed by
   re-reading `select count(*) from supabase_migrations.schema_migrations` on the hosted project to
   confirm **26**, then `pnpm verify:types` against the hosted schema before the readiness record's
   latency claim can say "production".
@@ -1334,6 +1407,31 @@ Deliberately not performed by this workstream, and not performable by any engine
   engineering pass should infer from a reclaimable figure. The seven failures are classified file by
   file, with their CI control at the same head (`332 passed (332)`), in `docs/RELEASE_GATE_MATRIX.md`
   under the bullet that opens "The live battery re-run locally at 26 migrations".
+  A second pass the same day did the inventory that decision needs, read-only. A PowerShell sweep of
+  the profile (`%TEMP%\dw-disk-inventory.ps1`, then a narrower pass over `Temp`, `pnpm` and `.cache`)
+  puts `AppData\Local\Docker` at **30.77 GB**, all of it under `Docker\wsl`, where `docker_data.vhdx`
+  is allocated **30.645 GB virtual**; `AppData\Local\wsl` at 7.997 GB (the other live project's
+  `ext4.vhdx`, off-limits); `Programs` 12.08 GB, `Android` 7.57 GB, `ClipGauge` 7.12 GB,
+  `Documents\Qoder\2026-09-24` 7.29 GB, `pnpm` 3.91 GB (store 3.734 GB), `.cache\codex-runtimes`
+  2.10 GB, `Temp` 1.40 GB and `ms-playwright` 1.37 GB, against a 476 GB volume that was then reading
+  100 % used. The candidates this brief prefers first — DueWeave's own generated outputs — measure as
+  negligible: inside `project-ar1`, `node_modules` is 0.34 GB, `tmp` 0.09 GB, and the seven
+  report/probe/baseline directories are 0 GB each, so deleting them would have bought no space and
+  destroyed evidence. **The one deletion this pass made** was reproducible cache hygiene:
+  `pnpm store prune`, exit `0`, `Removed 814 files (26.1 MB)` and 4 unreferenced packages, store
+  `3.995 → 3.969 GB`, plus a stale registry entry pointing at a `Temp` qualification directory; no
+  project's data was touched. Nothing else was removed, and the reason is now measured rather than
+  assumed: free space rose on its own from 394 MB to **2.68 GB** during the pass (this host is
+  shared, so that rise is not attributable to the 26 MB reclaimed here), yet
+  `docker version` still answers `Error response from daemon: Docker Desktop is unable to start`
+  after both a direct launch and `docker desktop start` (which reports "Docker Desktop is already
+  running" while the engine keeps refusing), and Docker's own
+  `AppData\Local\Docker\log\host\com.docker.backend.exe.log` records the engine quitting with
+  `There is not enough space on the disk`. So `docker system df` cannot be re-read to name which of
+  the 232 volumes are reclaimable, the vhdx cannot be compacted without the engine or a WSL-level
+  decision, and the 10 GB target is unreachable by safe deletion on this host. The actionable list
+  for the owner is exactly one item wide: prune volumes/images inside the 30.645 GB
+  `docker_data.vhdx`, or move another application's data off `C:`.
 - Print or store any privileged credential: no service-role key, `sb_secret_*`, database password,
   SMTP credential, payment credential or registration token appears in this file, in any commit, or
   in any log produced by this workstream.
