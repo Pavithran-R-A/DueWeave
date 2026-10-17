@@ -227,7 +227,7 @@ test.describe("Stage 6 workspace setup validation", () => {
     await expect(page.getByLabel("Business or workspace name")).toHaveValue(tooLong);
     await expect(page.getByLabel("Your name")).toHaveValue(account.displayName);
     await expect(page).toHaveURL(/\/onboarding$/);
-    await expect(page.locator("body")).not.toContainText(/PGRST|postgrest|SQLSTATE|permission denied|23505|42501|40001|P0002/i);
+    await expect(page.locator("body")).not.toContainText(/PGRST|postgrest|SQLSTATE|permission denied|23505|42501|40001|DW001|P0002/i);
   });
 
   test("saves exactly once, then reads the stored names back from the server", async ({ browser }) => {
@@ -334,7 +334,7 @@ test.describe("Stage 6 routes that lead nowhere still lead somewhere honest", ()
       await expect(fresh).toHaveURL(/\/auth$/, { timeout: 15_000 });
       await expect(fresh.getByRole("heading", { name: "Your follow-ups, in one calm place." })).toBeVisible();
       await expect(fresh.getByLabel("Primary navigation")).toHaveCount(0);
-      await expect(fresh.locator("body")).not.toContainText(/PGRST|postgrest|SQLSTATE|permission denied|42501|40001/i);
+      await expect(fresh.locator("body")).not.toContainText(/PGRST|postgrest|SQLSTATE|permission denied|42501|40001|DW001/i);
     }
   });
 });

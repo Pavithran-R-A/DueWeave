@@ -246,7 +246,7 @@ through this path because the browser calls the function through the caller's ow
 ## Reproducing
 
 ```sh
-pnpm db:reset:local && pnpm verify:migrations   # 25 migrations, replayed from zero
+pnpm db:reset:local && pnpm verify:migrations   # 26 committed migrations, replayed from zero (the hosted project is at 25 until CL-39's is pushed)
 pnpm test:db                                   # pgTAP: 9 files / 364 assertions measured at 8 files on 2026-09-29
 pnpm test:live                                 # ten database suites incl. the abuse matrix and the erasure suite
 pnpm test:e2e:smoke                            # the two-account and credential-boundary journeys

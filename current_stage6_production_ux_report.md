@@ -103,7 +103,7 @@ More/settings shows the persisted workspace identity (your name, business/worksp
 
 - **Initial loading ≠ background refresh.** A slow first ledger read holds a skeleton; a slow profile read holds the *gate*, not the ledger; a post-save refresh keeps the workspace on screen with `aria-busy` rather than blanking it (`Home.refresh()` never unmounts the shell).
 - **Retry really reloads.** A forced read failure is recovered by *Try again* inside the same document (proved by a document identity marker, so it cannot pass by silently reloading the page), and the recovered figures are asserted. A mutation failure is also retryable and a retried payment books **once** (`keeps a typed payment through a lost connection and books it once on retry`), respecting Stage 5's idempotency.
-- **Sanitization.** No `raw`, `PGRST`, `SQLSTATE`, `42501`, `P0002`, `40001`, "policy"/"constraint" text reaches the UI; failures surface as a titled, described message in product words. Contract tests anchor this and were re-ported, not deleted (see §12).
+- **Sanitization.** No `raw`, `PGRST`, `SQLSTATE`, `42501`, `P0002`, `40001`, `DW001` (the conflict code since CL-39), "policy"/"constraint" text reaches the UI; failures surface as a titled, described message in product words. Contract tests anchor this and were re-ported, not deleted (see §12).
 - **The four empty states are four different sentences**: `Make the next conversation easier.` (nothing at all) → `Now add the amount you are waiting on.` + "One client is already saved." (clients only) → `Nothing needs your attention today.` (real ledger, nothing actionable — it does **not** say "Add your first receivable") → `No matches in this view.` (an empty filter is not an empty book).
 
 ---

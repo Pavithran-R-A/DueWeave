@@ -120,7 +120,7 @@ pnpm audit --prod --audit-level=high    # runtime dependency graph
 **Database verification** is the part that executes SQL, and it is the reason Docker is required:
 
 ```bash
-pnpm db:reset:local   # replay all 25 committed migrations onto a fresh Postgres
+pnpm db:reset:local   # replay all 26 committed migrations onto a fresh Postgres
 pnpm verify:types     # generated types must equal the live schema, byte for byte
 pnpm verify:migrations   # committed migration files must equal the applied set
 pnpm test:db          # pgTAP: policies, triggers, privileges, money and lifecycle invariants

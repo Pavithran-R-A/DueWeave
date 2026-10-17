@@ -84,7 +84,10 @@ const rawFailures: Array<{ label: string; error: RawError }> = [
   { label: "row security", error: { code: "42501", message: 'new row violates row-level security policy for table "clients"' } },
   { label: "missing function", error: { code: "PGRST202", message: 'Could not find the function public.create_client(p_name) in the schema cache' } },
   { label: "raise exception", error: { code: "P0002", message: 'raise_exception: the client name cannot be blank' } },
-  { label: "serialization", error: { code: "40001", message: "could not serialize access due to concurrent update" } },
+  // The edit conflict as the routines raise it since CL-39. The old shape — SQLSTATE 40001 —
+  // is deliberately absent: on the PostgREST build that serves the product (v14.18) a reply
+  // carrying it never arrived, so it is not a string this layer can be given to translate.
+  { label: "edit conflict", error: { code: "DW001", message: "This receivable changed in another session" } },
   { label: "expired token", error: { code: "PGRST301", message: "JWSError JWSInvalidSignature" } },
   { label: "network", error: { message: "Failed to fetch" } },
   { label: "internal", error: { code: "XX000", message: 'internal error: null value in column "owner_id" of relation "clients" violates not-null constraint' } },
@@ -102,7 +105,10 @@ const rawFailures: Array<{ label: string; error: RawError }> = [
 // Widened for the Stage 9 refusals: `not.toContain(message)` only proves the whole
 // sentence is absent, while a reader is equally leaked to by half of it. A product
 // never says "uuid", "permission denied" or "operator does not exist" to a user.
-const technicalLanguage = /PGRST|SQLSTATE|JWSError|JWT|row-level|not-null|check constraint|unique constraint|violates|relation "|public\.|raise_exception|schema cache|new row|duplicate key|permission denied|operator does not exist|invalid input syntax|uuid|\b2350[45]\b|\b23514\b|\b42501\b|\b40001\b|\bP0002\b|\b22P02\b|\b42883\b|owner_id|request_id/i;
+// `DW001` is listed because it is the code the edit routines now forward on a lost
+// conflict; `40001` stays listed because the engine can still raise it on a path this
+// repair did not touch, and either way it is a private code a customer must not read.
+const technicalLanguage = /PGRST|SQLSTATE|JWSError|JWT|row-level|not-null|check constraint|unique constraint|violates|relation "|public\.|raise_exception|schema cache|new row|duplicate key|permission denied|operator does not exist|invalid input syntax|uuid|\b2350[45]\b|\b23514\b|\b42501\b|\b40001\b|\bP0002\b|\b22P02\b|\b42883\b|\bDW001\b|owner_id|request_id/i;
 
 describe("Stage 6 user-facing error copy", () => {
   for (const failure of rawFailures) {
@@ -123,7 +129,7 @@ describe("Stage 6 user-facing error copy", () => {
   it("sends the known categories to a message the reader can act on", async () => {
     const cases: Array<[RawError, RegExp]> = [
       [{ message: "fetch failed" }, /could not reach dueweave/i],
-      [{ code: "40001", message: "could not serialize access due to concurrent update" }, /changed while you were editing/i],
+      [{ code: "DW001", message: "This receivable changed in another session" }, /changed while you were editing/i],
       [{ message: "JWT expired" }, /expired|sign in again/i],
       [{ message: "Free plan allows at most three active receivables" }, /free plan allows up to three/i],
       [{ code: "23505", message: 'duplicate key value violates unique constraint "clients_pkey"' }, /could not save that change/i],

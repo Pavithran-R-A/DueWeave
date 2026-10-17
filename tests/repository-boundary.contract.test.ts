@@ -192,7 +192,7 @@ describe("edit surface (Stage 4)", () => {
       const failure = catchBlock(handler);
       expect(failure).toMatch(/feedback\.error\(/);
       expect(failure, "a refused edit must keep the sheet open with its content").not.toContain("setSheet(null)");
-      expect(failure).not.toMatch(/raw|SQLSTATE|40001|P0002|policy|permission/i);
+      expect(failure).not.toMatch(/raw|SQLSTATE|40001|DW001|P0002|policy|permission/i);
     }
     expect(clientEdit).toMatch(/try \{[\s\S]*setSheet\(null\)/);
     expect(receivableEdit).toMatch(/try \{[\s\S]*setSheet\(null\)/);

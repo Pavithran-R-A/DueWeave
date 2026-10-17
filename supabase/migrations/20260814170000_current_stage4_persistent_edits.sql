@@ -46,9 +46,15 @@
 -- Both routines require p_expected_updated_at, the `updated_at` value the
 -- caller last read. The row is locked with FOR UPDATE, ownership is verified
 -- against auth.uid(), and the token is compared before anything is written. A
--- mismatch raises SQLSTATE 40001 (serialization_failure), which PostgREST
--- reports as a stable conflict code, so a second tab or a second device never
--- silently overwrites an edit to someone's money record. Silence was not an
+-- mismatch was raised as SQLSTATE 40001 (serialization_failure) on the reading
+-- that PostgREST would surface it as a stable conflict code. That reading did
+-- not survive measurement: on the PostgREST build that serves the product
+-- (v14.18) a refusal carrying 40001 never reached the caller at all, because
+-- class 40 is read as an instruction to re-run the transaction, so the request
+-- hung past the edge timeout instead of answering. CL-39 re-raises this same
+-- refusal with the private code DW001, which answers promptly and preserves the
+-- contract stated here: a second tab or a second device never silently
+-- overwrites an edit to someone's money record. Silence was not an
 -- option and neither was silent loss, so the client keeps its typed values and
 -- reloads. `updated_at` itself is advanced by the existing set_updated_at
 -- BEFORE UPDATE trigger — this file does not hand-write it, which is why the

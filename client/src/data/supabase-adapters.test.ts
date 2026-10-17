@@ -85,10 +85,21 @@ describe("Supabase domain adapters", () => {
   });
 
   it("names a lost edit conflict as a conflict instead of a generic failure", () => {
-    const message = userFacingDataError("This client changed in another session", "40001");
+    const message = userFacingDataError("This client changed in another session", "DW001");
     expect(message).toMatch(/changed|another session/i);
     expect(message).toMatch(/reopen|reload|latest/i);
-    expect(message).not.toMatch(/40001|SQLSTATE|transaction_abort/i);
+    expect(message).not.toMatch(/DW001|40001|SQLSTATE|transaction_abort/i);
+  });
+
+  it("recognises the conflict from its code alone, whatever the database wrapped around it", () => {
+    const message = userFacingDataError("raise_exception while editing", "DW001");
+    expect(message).toMatch(/changed while you were editing/i);
+    expect(message).toMatch(/reopen|reload|latest/i);
+    expect(message).not.toMatch(/DW001|SQLSTATE|raise_exception/i);
+  });
+
+  it("recognises the conflict from its wording when the reply arrives without a code", () => {
+    expect(userFacingDataError("This receivable changed in another session")).toMatch(/changed while you were editing/i);
   });
 
   it("answers a lifecycle refusal in the ledger's own language", () => {

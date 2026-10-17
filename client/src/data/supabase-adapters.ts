@@ -76,7 +76,9 @@ export function paymentMethodToDatabase(method: PaymentMethod) {
 
 export function userFacingDataError(message?: string, code?: string) {
   const normalized = (message ?? "").toLowerCase();
-  if (code === "40001" || normalized.includes("changed in another session")) return "This record changed while you were editing. Reopen it and save again with the latest version.";
+  // DW001, not SQLSTATE 40001: the transport treats a class-40 serialization failure as an
+  // instruction to re-run the transaction, so a refusal raised with 40001 never came back.
+  if (code === "DW001" || normalized.includes("changed in another session")) return "This record changed while you were editing. Reopen it and save again with the latest version.";
   // A retry that carries the same request id returns the original result, so a
   // mismatch here means two genuinely different writes were attempted.
   if (normalized.includes("already recorded a different")) return "That change does not match what was already saved. Reload to see the current state before trying again.";

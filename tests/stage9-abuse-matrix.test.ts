@@ -269,8 +269,9 @@ describeLocalStack("Stage 9 malformed id and request-id abuse", () => {
   it("accepts the account's own well-formed ids before claiming anything about refusals", async () => {
     expectAccepted("control: record_payment against the account's own receivable", await owner.client.rpc("record_payment", { p_receivable_id: owner.ids.receivableId, p_amount_paise: 250_000, p_paid_on: "2026-09-20", p_method: "UPI", p_reference: "control", p_request_id: crypto.randomUUID() }));
     expectAccepted("control: record_contacted against the account's own receivable", await owner.client.rpc("record_contacted", { p_receivable_id: owner.ids.receivableId, p_note: "control" }));
-    // Measured: an edit without the stored token is refused with 40001, which is Stage
-    // 4's honest-edit contract and not a malformed-id path. The control therefore reads
+    // Measured: an edit without the stored token is refused with the private conflict code
+    // the Stage 4 routines raise (DW001 since CL-39), which is Stage 4's honest-edit contract
+    // and not a malformed-id path. The control therefore reads
     // the token back and passes it, so this suite never mistakes a concurrency refusal
     // for the refusals it is trying to prove.
     const stored = await owner.client.from("clients").select("updated_at").eq("id", owner.ids.clientId).maybeSingle();

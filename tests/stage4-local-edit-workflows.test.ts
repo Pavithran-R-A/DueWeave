@@ -255,8 +255,8 @@ describeLocalStack("Stage 4 local edit workflows: owner edits, foreign accounts,
     });
     const result = refusedBy("A", probe);
     bookRefusal("concurrency", "a stale expected_updated_at is refused", result);
-    expect(probe.error?.code, "a stale edit must surface the serialization conflict code").toBe("40001");
-    ledger.push({ category: "concurrency", label: "stale edit surfaces SQLSTATE 40001", outcome: "refused", detail: `code ${probe.error?.code}` });
+    expect(probe.error?.code, "a stale edit must surface the conflict code the edit routines raise").toBe("DW001");
+    ledger.push({ category: "concurrency", label: "stale edit surfaces the private conflict code", outcome: "refused", detail: `code ${probe.error?.code}` });
     const after = await readClient(a, a.clientId);
     bookUnchanged("stale client edit changed nothing", "concurrency", after, current);
   });
@@ -386,7 +386,7 @@ describeLocalStack("Stage 4 local edit workflows: owner edits, foreign accounts,
 
     const stale = await a.client.rpc("update_receivable_details", { p_receivable_id: a.receivableId, p_label: "Written From A Stale Tab", p_invoice_ref: "", p_notes: "", p_expected_updated_at: current.created_at });
     bookRefusal("concurrency", "a stale receivable edit is refused", refusedBy("A", stale));
-    expect(stale.error?.code).toBe("40001");
+    expect(stale.error?.code).toBe("DW001");
 
     const foreign = await b.client.rpc("update_receivable_details", { p_receivable_id: a.receivableId, p_label: "Rewritten By Beta", p_invoice_ref: "", p_notes: "", p_expected_updated_at: current.updated_at });
     bookRefusal("cross-tenant-edit", "B cannot edit A's receivable even holding A's timestamp", refusedBy("B", foreign));
@@ -403,7 +403,7 @@ describeLocalStack("Stage 4 local edit workflows: owner edits, foreign accounts,
     const before = await readClient(a, a.clientId);
     const probe = await a.client.rpc("update_client", { p_client_id: a.clientId, p_name: "Written Without A Token", p_company: "", p_phone: "", p_email: "", p_notes: "" });
     bookRefusal("concurrency", "a missing expected_updated_at is refused", refusedBy("A", probe));
-    expect(probe.error?.code, "omitting the token must surface the conflict code").toBe("40001");
+    expect(probe.error?.code, "omitting the token must surface the conflict code").toBe("DW001");
     const after = await readClient(a, a.clientId);
     bookUnchanged("tokenless edit changed nothing", "concurrency", after, before);
   });

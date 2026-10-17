@@ -355,7 +355,7 @@ test.describe("Stage 4 concurrent edits through the real screens", () => {
     await expect(second.getByText(/changed while you were editing/i)).toBeVisible();
     await expect(sheet.getByRole("heading", { name: "Edit client" })).toBeVisible();
     await expect(sheet.getByLabel("Client name")).toHaveValue(`${account.clientName} (tab two)`);
-    await expect(second.getByText(/row-level security|permission denied|SQLSTATE|40001|P0002/i)).toHaveCount(0);
+    await expect(second.getByText(/row-level security|permission denied|SQLSTATE|40001|DW001|P0002/i)).toHaveCount(0);
 
     await second.reload();
     await openSection(second, "Clients");
