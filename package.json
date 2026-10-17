@@ -19,6 +19,7 @@
     "verify:hosted:auth": "node scripts/hosted-auth-status.mjs",
     "verify:hosted:census": "node scripts/hosted-db-census.mjs",
     "verify:hosted:isolation": "node scripts/hosted-tenant-isolation.mjs",
+    "verify:hosted:stale-edit": "node scripts/hosted-stale-edit-probe.mjs",
     "verify:hosted:erasure": "node scripts/hosted-account-erasure.mjs",
     "verify:hosted:backup": "node scripts/hosted-db-backup.mjs",
     "verify:hosted:restore": "node scripts/hosted-db-restore-rehearsal.mjs",
