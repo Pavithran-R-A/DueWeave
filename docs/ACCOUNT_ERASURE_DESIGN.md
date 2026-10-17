@@ -253,3 +253,29 @@ production residue this repository's cleanup discipline forbids. B19's hosted re
 for the same credential reason, not because nothing was deployed. Full measurements and the corrected
 blocker rows are in `docs/CONSUMER_LIVE_PROGRESS.md`, "Production re-verification at the released
 head `ea70052` (2026-10-12)".
+
+**Update 2026-10-17: the hosted journey has since run, and the paragraph above is no longer the
+current state.** On 2026-10-16 `scripts/hosted-account-erasure.mjs` erased a real, confirmed,
+signed-in account on `ugzdqcytouwfdlcjujqv` — one created through the public signup API and confirmed
+through a real mailbox, so the state erased is the state a customer is actually in. Its own census
+bracketed the call: `BEFORE accounts=2 confirmed=2 unconfirmed=0 own-rows entitlements=1 profiles=1`
+-> `FUNCTION delete-account HTTP 200 status=deleted` -> `AFTER accounts=1 confirmed=1 unconfirmed=0
+own-rows none - auth-own none` -> `GRANT the erased credential answered HTTP 400 - it no longer signs
+in`, exit 0, `DONE erasure proven`. A second instrument that performed no deletion re-read the same
+state (`hosted-db-census.mjs`: `DONE 10/10 reads answered`, no `account-state` row for the erased
+uuid, `owner-census` 0 in all twelve public tables, `rows_for_owner` 0 in every auth table, the two
+whole-table counts that moved shedding exactly the one row each the erased account owned, QA-A's
+ledger untouched, the October 5 orphans preserved). The pre-purge refusals were measured on the
+production host too, with a live session: wrong phrase `HTTP 400 in 440 ms`, empty body `HTTP 400 in
+199 ms`, `GET` `405`, no bearer `401`, `OPTIONS` `204`. Every line is quoted in
+`docs/CUSTOMER_RELEASE_READINESS.md`, gate 4, with its log filename.
+
+**What this does not close.** B17's mechanism and its hosted proof are now measured; two things stay
+open around it. The destructive submit has still never been *clicked through the deployed UI* on
+production — the executed hosted deletion drove the served function with a bearer, not the rendered
+sheet — and that run is deferred to the QA-A cleanup, because QA-A is now the only signed-in account
+on the project and erasing it ends the hosted two-account isolation comparison, so it needs the
+owner's explicit authorisation. Separately, the CL-39 migration (`20261017090000`) is the 26th in the
+chain and is not on the hosted project yet; production is at 25 until the owner pushes it. B19's
+product question — what happens to review provenance when the account it names is erased — remains
+the owner's and no run here has answered it.

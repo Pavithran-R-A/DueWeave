@@ -3,12 +3,17 @@
 Stage 9 PHASE 30, carried forward through Arc 3C. The catalog numbers below were measured on
 2026-09-29 against the project's own disposable loopback Supabase (23 committed migrations replayed
 from zero) by `pnpm exec supabase db query --local "<sql>"`, `pnpm test:db` (pgTAP) and
-`pnpm test:live`. The chain now carries **25** committed migrations: `20261004170000_current_arc2_ledger_required_blank_class.sql`
-and `20261006120000_current_arc3c_account_erasure_path.sql`. The Arc 3C migration **has** been replayed
-from zero on the loopback stack (`pnpm verify:migrations` → 25 on disk, 25 applied), with pgTAP at
-`Files=9, Tests=405 … PASS` and the ten live suites at 331 tests including the 22-claim erasure battery
-with the Edge Function served — all inside `pnpm verify:release:local` at exit 0 on 2026-10-06. What has
-*not* executed is its CI half and its browser half, and the hosted project has no copy of it. Anything
+`pnpm test:live`. The chain now carries **26** committed migrations: `20261004170000_current_arc2_ledger_required_blank_class.sql`,
+`20261006120000_current_arc3c_account_erasure_path.sql` and `20261017090000_current_cl39_edit_conflict_errcode_reachable.sql`.
+All three have been replayed from zero, most recently by CI at `2fb74ca` on 2026-10-17: that
+`Database contracts` job prints `Migrations on disk: 26. Applied in the local database: 26.`, pgTAP
+`Files=10, Tests=410 … Result: PASS` (the tenth file being `supabase/tests/stage4_02_edit_conflict_code.sql`,
+`plan(5)`), and the ten live suites `Tests 332 passed (332)` in `Duration 46.42s` — including the
+22-claim erasure battery with the Edge Function served, which that job starts before the run and
+releases under `if: always()`. When this section was first written (2026-10-06) it could report the
+loopback measurements only, at 25 migrations and `Files=9, Tests=405`, and its CI and browser halves
+were unexecuted; both have executed since, and the hosted project now carries migrations 1-25 with
+`delete-account` deployed. The 26th is not on the hosted project until the owner pushes it. Anything
 sourced rather than measured is marked
 **(source, not yet measured)**, and `docs/ACCOUNT_ERASURE_DESIGN.md` keeps the full gate list with its
 measurements. Where a claim could be executed it was; the test citations are the same ones
@@ -241,13 +246,13 @@ through this path because the browser calls the function through the caller's ow
 | Accessibility conformance | Stage 6's targeted keyboard/screen-reader/reduced-motion qualification is retained (`e2e/stage6-local-accessibility.spec.ts`); it is not a WCAG certification. |
 | Leaked-password protection on the hosted project | Measured off: `password_hibp_enabled = false` (read 2026-10-06). It is a project-level Auth configuration write, and enabling it is an owner decision about the plan; this phase was instructed to spend nothing and write nothing hosted. The application-side eight-character floor is what this repository can enforce — see *Password posture*. |
 | Erasure of a Founder-entangled account (B19) | The purge refuses an account named in `founder_audit_events` because two RESTRICT edges protect review provenance. Erasing it would mean deleting reviewer evidence Stage 8 made immutable, which is a product decision about the review ledger, not a detail of this repair. |
-| The Arc 3C gates CI and a browser would run | The migration, pgTAP and the live erasure battery have executed against the loopback stack (2026-10-06, numbers in `docs/ACCOUNT_ERASURE_DESIGN.md`). Still open: no Phase 3C head has run CI's `database` job, which is what now serves `delete-account` before `pnpm test:live`; the battery has not been re-run against that script-managed serve, whose env file carries only `ALLOWED_APP_ORIGIN`; and the erasure sheet has never been rendered in a browser. B17's verdict is **not closed** until those, the exact-SHA three-job green and the owner's deploy have happened. **(Amended 2026-10-12: the first, second and last of those have since happened — CI executes the served-function gates and the browser battery on GitHub-hosted runners at `ea70052` (174 passed / 8 skipped, including the journey that deletes its own account through the served function), and the owner has pushed migration 25 and deployed the function with JWT verification on. B17 stays open on one remaining proof: an authenticated, confirmed account completing the erasure journey against the *production* project with a before/after row census, which no credential reachable from this run permits. See `docs/CONSUMER_LIVE_PROGRESS.md`, "Production re-verification at the released head `ea70052`".)** |
+| The Arc 3C gates CI and a browser would run | The migration, pgTAP and the live erasure battery have executed against the loopback stack (2026-10-06, numbers in `docs/ACCOUNT_ERASURE_DESIGN.md`). Still open: no Phase 3C head has run CI's `database` job, which is what now serves `delete-account` before `pnpm test:live`; the battery has not been re-run against that script-managed serve, whose env file carries only `ALLOWED_APP_ORIGIN`; and the erasure sheet has never been rendered in a browser. B17's verdict is **not closed** until those, the exact-SHA three-job green and the owner's deploy have happened. **(Amended 2026-10-12: the first, second and last of those have since happened — CI executes the served-function gates and the browser battery on GitHub-hosted runners at `ea70052` (174 passed / 8 skipped, including the journey that deletes its own account through the served function), and the owner has pushed migration 25 and deployed the function with JWT verification on. B17 stays open on one remaining proof: an authenticated, confirmed account completing the erasure journey against the *production* project with a before/after row census, which no credential reachable from this run permits. See `docs/CONSUMER_LIVE_PROGRESS.md`, "Production re-verification at the released head `ea70052`".)** **(Amended again 2026-10-17: that proof happened on 2026-10-16.** `scripts/hosted-account-erasure.mjs` erased a confirmed account created through the public signup API on `ugzdqcytouwfdlcjujqv`, and its census read `BEFORE accounts=2 confirmed=2 ... own-rows entitlements=1 profiles=1` then `FUNCTION delete-account HTTP 200 status=deleted` then `AFTER accounts=1 confirmed=1 ... own-rows none - auth-own none` then `GRANT the erased credential answered HTTP 400 - it no longer signs in`, exit 0; the independent frozen census re-read it (`DONE 10/10 reads answered`, no `account-state` row, `rows_for_owner` 0 in every auth table, October 5 orphans preserved, QA-A's ledger untouched). Quoted with log filenames in `docs/CUSTOMER_RELEASE_READINESS.md`, gate 4, and in `docs/ACCOUNT_ERASURE_DESIGN.md`. **The erasure row is therefore proven on production for its mechanism, and two things keep it from being simply closed: the destructive submit has never been clicked through the *deployed UI* against production — that run is deferred to the QA-A cleanup, since QA-A is now the only signed-in account on the project and erasing it ends the hosted isolation comparison — and the 26th migration (CL-39) is not on the hosted project yet, which needs the owner's push.)** |
 
 ## Reproducing
 
 ```sh
 pnpm db:reset:local && pnpm verify:migrations   # 26 committed migrations, replayed from zero (the hosted project is at 25 until CL-39's is pushed)
-pnpm test:db                                   # pgTAP: 9 files / 364 assertions measured at 8 files on 2026-09-29
+pnpm test:db                                   # pgTAP: 10 files / 410 assertions, measured by CI at 2fb74ca on 2026-10-17
 pnpm test:live                                 # ten database suites incl. the abuse matrix and the erasure suite
 pnpm test:e2e:smoke                            # the two-account and credential-boundary journeys
 pnpm verify:secrets                            # 11 shapes over the tree and dist/

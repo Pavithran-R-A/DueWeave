@@ -57,23 +57,52 @@ of the property that neither a laptop nor CI can prove.
 ### What has moved since these measurements were taken
 
 Rows A-T are the Stage 9 measurement of 2026-09-29 and are deliberately **not** rewritten here —
-that is what makes them usable as a baseline. Four numbers in them are now known to describe an older
-tree, and a reviewer should read them with this pointer:
+that is what makes them usable as a baseline. The numbers in them that now describe an older tree are
+listed below, and a reviewer should read them with this pointer. Each figure is quoted from the run
+named in front of it, most recently CI at `2fb74ca` (push head of the CL-39 change, observed 2026-10-17):
 
-- Row H says 23 migrations. The chain committed **24** before this phase (Phase 3B applied all 24 to
-  the hosted project and measured parity), and Arc 3C adds a **25th**: it has replayed from zero on the
-  loopback stack (`pnpm verify:migrations` → "Migrations on disk: 25. Applied in the local database:
-  25.") and it is **not** applied to the hosted project, because this phase made no hosted write.
-- Row J says `Files=8, Tests=364`. There are **9** pgTAP files on disk now, and the measured run is
-  `Files=9, Tests=405 … Result: PASS` — the ninth being `arc3c_01_account_erasure.sql`, which plans 41.
-- Row D's unit counts are the Stage 9 series. At the Phase 3C head `pnpm test:unit` measures
-  **33 files / 463 tests, 0 skipped**, and the live manifest's **10th** file
-  (`tests/arc3c-local-account-erasure.test.ts`) has now executed inside `pnpm test:live`
-  (**10 files / 331 tests**, 22 of them that file's).
-- Row U's executing gates ran on 2026-10-06 against the loopback stack; they have **not** run in CI.
-  The measurements, the two red pgTAP executions that preceded the green one, the authorised prune
-  passes and the daemon probe timings are in `docs/CONSUMER_LIVE_PROGRESS.md` ("Phase 3C — account
-  erasure (B17)") and `docs/ACCOUNT_ERASURE_DESIGN.md` ("Execution status").
+- Row H says 23 migrations. The chain committed **24** before Phase 3B (which applied all 24 to the
+  hosted project and measured parity), Arc 3C added a **25th**, and CL-39 adds a **26th**
+  (`20261017090000_current_cl39_edit_conflict_errcode_reachable.sql`). CI's `Database contracts` job
+  at that head prints **"Migrations on disk: 26. Applied in the local database: 26."** The hosted
+  project is at **25**: the 26th is not pushed, because this phase made no hosted write.
+- Row J says `Files=8, Tests=364`. There are **10** pgTAP files on disk now, and the measured run is
+  `Files=10, Tests=410 … Result: PASS` — the ninth being `arc3c_01_account_erasure.sql`, which plans
+  41, and the tenth `stage4_02_edit_conflict_code.sql`, which plans 5 and printed
+  `supabase/tests/stage4_02_edit_conflict_code.sql ... ok`.
+- Row D's unit counts are the Stage 9 series. At the CL-39 head `pnpm test:unit` measures
+  **50 files / 752 tests, 0 skipped** (exit 0, `Duration 7.93s`, measured locally on 2026-10-17), and
+  the live manifest's **10th** file (`tests/arc3c-local-account-erasure.test.ts`) executes inside
+  `pnpm test:live`, which CI at that head measures as **10 files / 332 tests** in `Duration 46.42s`,
+  22 of them that file's (`✓ tests/arc3c-local-account-erasure.test.ts (22 tests) 4631ms`).
+- Row U's executing gates ran on 2026-10-06 against the loopback stack and were recorded there as not
+  yet run in CI. **That has moved twice since.** CI now runs the served-function battery and the
+  browser erasure journey on GitHub-hosted runners at every head of this line, and on 2026-10-16 a
+  confirmed, signed-in account completed the same erasure against the *production* project with its
+  before/after census (`docs/CUSTOMER_RELEASE_READINESS.md`, gate 4, and
+  `docs/ACCOUNT_ERASURE_DESIGN.md`, "Update 2026-10-17"). What still keeps B17 open is narrower: the
+  destructive submit clicked through the **deployed UI** on production, which is deferred to the QA-A
+  cleanup because erasing QA-A ends the hosted two-account comparison. The older prose in rows D-T and
+  the Phase 3C sections of `docs/CONSUMER_LIVE_PROGRESS.md` predates both moves; the measurements, the
+  two red pgTAP executions that preceded the green one, the authorised prune passes and the daemon
+  probe timings stay in `docs/CONSUMER_LIVE_PROGRESS.md` ("Phase 3C — account erasure (B17)") and
+  `docs/ACCOUNT_ERASURE_DESIGN.md` ("Execution status").
+- Rows N and the note-9 limitation describe the stale-edit refusal as a stall on this host and a pass
+  in CI, and name the PostgREST build as the discriminator. **CL-39 is the repair, and the host-side
+  question it recorded is now answered by production itself:** on 2026-10-16 the same call against
+  `ugzdqcytouwfdlcjujqv` went unanswered at 30 s and the edge returned HTTP 504 at 125,140 ms with the
+  row untouched, so the refusal never reached a real customer on the deployed transport. Both routines
+  now raise the private code `DW001`, which the build answers promptly (on the local
+  `postgrest:v14.18` container `DW001` returned HTTP 400 in 181 ms, and 124 ms / 15 ms once the
+  stalled connections cleared), and `stage4_02_edit_conflict_code.sql` pins the code, the
+  wording and a catalog-wide sweep for the two retryable codes. The before/after latency on the local
+  v14.18 container has **not** been re-measured since the migration landed — this host's daemon is down
+  and `C:` has 1.1 G free — so that half is owed to a machine with room, and CI's `v16.2` cannot prove
+  it (that build answers `40001` too, which is exactly why the defect stayed invisible there).
+- Row S cites `e2e/stage9-release-journey.spec.ts:452` for the sign-out/sign-in case. That pointer has
+  rotted: the same file's own CI slot numbers at `2fb74ca` place the founder refusal at `:446`, the
+  profile-edit/sign-out/sign-in case at `:472` (slot 80) and account deletion at `:505` (slot 81), so
+  `:452` now lands inside the founder test. Read row S by the case names, which CI prints verbatim.
 
 ## "Cannot run" is a different answer from "passed"
 
@@ -126,6 +155,19 @@ execution, on one machine (WSL2 Ubuntu, Docker Desktop engine, Node 22), and it 
 against a second machine or a cold Docker image cache. If a future run times out, the budget is
 raised from the observed number rather than from a guess. `retries` stays **0** in both Playwright
 configs, so a red CI run is a defect report, not a retry counter.
+
+**(Second machine measured 2026-10-17, at `2fb74ca`.)** The job has since run many times on
+GitHub-hosted runners, and the CL-39 head gives the pair this paragraph said did not exist:
+`Browser release smoke` job `117342266800` on runner `GitHub Actions 1000010612`,
+`started_at 2026-10-17T07:32:35Z → completed_at 07:47:29Z` — **14 m 54 s of the 45-minute budget** —
+with its own log printing `Running 81 tests using 1 worker` → `81 passed (11.0m)`, then
+`pnpm test:e2e:paused` building `dist-paused` and answering `Running 3 tests using 2 workers` →
+`3 passed (5.0s)`, then `pnpm test:e2e:react-warnings` → `3 passed (31.3s)`. The previous head
+`99dce90` measured `14 m 52 s` on the same runner family, so the budget has a second machine and a
+repeated one. Slot 81 of the 81 is
+`e2e/stage9-release-journey.spec.ts:505 › account deletion is gated by exact confirmation and removes
+the last QA account (1.2s)`, executed against the `delete-account` function the same job served
+(`delete-account is served and ALLOWED_APP_ORIGIN reached the runtime (1349 ms …)`).
 
 ### One budget was wrong, and how it was found
 
@@ -256,3 +298,18 @@ turning the gate red) was measured the same day.
    exists to show a customer would never reach the screen — the save would hang instead. Reading the
    `Server` header of an authenticated `GET /rest/v1/` on production is the one-request instrument that
    closes this, and it is not yet run.
+   **Closed by a better instrument than the one this note proposed, on 2026-10-16, and CL-39 is the
+   repair.** Rather than read a header, the refusal itself was sent to production: the same session
+   answered a `P0002` refusal in 76 ms and 128 ms, while the stale-token `update_client` was still
+   unanswered after 30 s and the edge gave up with HTTP 504 "upstream request timeout" at 125,140 ms;
+   the owner's read-back afterwards showed the row untouched, so the customer waited two minutes for a
+   message the code already contained. That settles the conditional above on production, without naming
+   a version. The forward migration `20261017090000_current_cl39_edit_conflict_errcode_reachable.sql`
+   re-raises both routines with the private-use code `DW001`, which v14.18 answers promptly (HTTP 400
+   in 181 ms, and 15 ms on a second call after both stalls, so the stall belonged to the code and not to
+   a wedged pool), and `supabase/tests/stage4_02_edit_conflict_code.sql` pins the code, the wording and
+   a catalog-wide sweep for the two retryable codes. The four local failures this note attributed to
+   the `40001` path are therefore the defect, not host flakiness — and the repair's own latency
+   re-measurement on this host's v14.18 container is still owed, because the daemon is down with `C:`
+   at 1.1 G free. CI cannot stand in for it: its `postgrest:v16.2` answers `40001` in 676/752 ms, which
+   is precisely why every CI head stayed green while customers hung.
