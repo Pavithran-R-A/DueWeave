@@ -1,0 +1,6 @@
+# supabase/rollback files are trusted because their headers hash the exact bytes they carry — the
+# definitions production's pg_get_functiondef returned. On a host with core.autocrlf=true a checkout
+# would otherwise rewrite every newline and leave those digests pointing at bytes the file no longer
+# holds, which is a restore that fails in the worst possible hour. Scoped to this directory: no other
+# path's line-ending policy changes.
+supabase/rollback/** -text

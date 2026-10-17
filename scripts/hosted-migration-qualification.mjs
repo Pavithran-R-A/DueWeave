@@ -165,6 +165,30 @@ export function revertFile(entries, capturedOn = "2026-10-17") {
 
 export const digest = (text) => createHash("md5").update(text).digest("hex");
 
+/** Read a restore file and prove it carries the bytes its header says it carries — so the claim that
+ *  migration 26 is reversible is re-derived from the artifact rather than remembered from a log.
+ *  A definition is the span from its `CREATE OR REPLACE FUNCTION` line up to the line holding only its
+ *  terminator semicolon, and the newline before that semicolon belongs to the definition, because
+ *  `pg_get_functiondef` ends every body with one — which is why the header quotes its digests as
+ *  "newline included". A copy whose newlines were rewritten by a `core.autocrlf=true` checkout hashes
+ *  differently here, and must be reported as not carrying the qualified bytes rather than trusted. */
+export function verifyCarriedDefinitions(text) {
+  const header = text.split("\n").find((line) => line.startsWith("-- Captured md5")) ?? "";
+  const claims = new Map([...header.matchAll(/([a-z_]+) ([0-9a-f]{32})/g)].map((match) => [match[1], match[2]]));
+  const carried = [];
+  for (const match of text.matchAll(/^CREATE OR REPLACE FUNCTION public\.([a-z_]+)/gm)) {
+    const terminator = text.indexOf("\n;", match.index);
+    if (terminator === -1) {
+      carried.push({ routine: match[1], chars: 0, carriedDigest: null, claimedDigest: claims.get(match[1]) ?? null, matchesHeader: false });
+      continue;
+    }
+    const definition = text.slice(match.index, terminator + 1);
+    const carriedDigest = digest(definition);
+    carried.push({ routine: match[1], chars: definition.length, carriedDigest, claimedDigest: claims.get(match[1]) ?? null, matchesHeader: claims.get(match[1]) === carriedDigest });
+  }
+  return carried;
+}
+
 function parseArgs(argv) {
   const options = { ref: PRODUCTION_REF, host: POOLER_HOST, port: POOLER_PORT, dryRun: false, migration: DEFAULT_MIGRATION, revertOut: DEFAULT_REVERT_OUT };
   for (let index = 0; index < argv.length; index += 1) {
@@ -324,6 +348,18 @@ async function main() {
   mkdirSync(path.dirname(path.resolve(options.revertOut)), { recursive: true });
   writeFileSync(options.revertOut, revertFile(before), "utf8");
   console.log(`WROTE ${options.revertOut}`);
+  const onDisk = verifyCarriedDefinitions(readFileSync(path.resolve(options.revertOut), "utf8"));
+  let carries = onDisk.length === before.length;
+  for (const entry of before) {
+    const counterpart = onDisk.find((candidate) => candidate.routine === entry.routine);
+    const ok = counterpart?.carriedDigest === entry.md5 && counterpart.matchesHeader === true;
+    carries = carries && ok;
+    console.log(`CARRY-CHECK ${entry.routine} production=${entry.md5} on-disk=${counterpart?.carriedDigest ?? "unreadable"} matches=${ok}`);
+  }
+  if (!carries) {
+    console.log("NOT QUALIFIED: the restore file on disk does not carry the definitions production holds, so treat it as unusable and re-run.");
+    return 1;
+  }
   console.log(`QUALIFIED migration=${MIGRATION_VERSION} statements=${statements.length} restore_digests=${before.map((entry) => `${entry.routine} ${entry.md5}`).join(", ")}`);
   return 0;
 }

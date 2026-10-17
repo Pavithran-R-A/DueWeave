@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -26,7 +26,7 @@ const instrument = await import(`file:///${script.replace(/\\/g, "/").replace(/^
 // PRODUCTION_REF is deliberately not imported: the assertions below name the ref literally, so the
 // instrument pinning its target to its own export cannot pass a case that a drifted export would
 // silently send to a different project.
-const { splitStatements, dryRunBlock, revertFile, definitionRead, probeBlock, parseJsonRows } = instrument;
+const { splitStatements, dryRunBlock, revertFile, definitionRead, probeBlock, parseJsonRows, verifyCarriedDefinitions } = instrument;
 
 const SECRET = "sesame,open?#pw";
 const ENCODED_SECRET = encodeURIComponent(SECRET);
@@ -202,6 +202,12 @@ describe("hosted migration 26 qualification instrument", () => {
     ]);
     expect(text).toContain(first.trimEnd());
     expect(text).toContain(second.trimEnd());
+    const generated = verifyCarriedDefinitions(text);
+    expect(generated.map((entry: { routine: string }) => entry.routine)).toEqual(["update_client", "update_receivable_details"]);
+    generated.forEach((entry: { routine: string; carriedDigest: string; matchesHeader: boolean }, position: number) => {
+      expect(entry, `the generated file must round-trip through the reader: ${entry.routine}`).toMatchObject({ matchesHeader: true });
+      expect(entry.carriedDigest).toBe(createHash("md5").update([first, second][position]).digest("hex"));
+    });
     for (const definition of [first, second]) {
       const digest = createHash("md5").update(definition).digest("hex");
       expect(text, `the header must carry the digest of exactly the bytes it restores: ${digest}`).toContain(digest);
@@ -244,6 +250,39 @@ describe("hosted migration 26 qualification instrument", () => {
     expect(parseJsonRows("STUB no useful answer")).toBeNull();
     // A bracket in prose is not an answer, and guessing with one would be worse than failing closed.
     expect(parseJsonRows("[note] some advisory\nstill no json here")).toBeNull();
+  });
+
+  it("proves the committed restore file carries the bytes its header hashes, and flags a renormalized copy", () => {
+    // This host runs `core.autocrlf=true`, so a checkout that rewrites newlines would leave this
+    // file's header digests pointing at bytes the file no longer holds — and the one person who needs
+    // this file is reading it during an incident, on a machine like this one. The case below pins the
+    // attribute that stops the rewrite; this one proves the digests actually depend on it.
+    const committed = path.join(projectRoot, "supabase", "rollback", "20261017090000_revert_cl39_to_hosted_25_definition.sql");
+    const text = readFileSync(committed, "utf8");
+    const carried = verifyCarriedDefinitions(text);
+    expect(carried.map((entry: { routine: string }) => entry.routine)).toEqual(["update_client", "update_receivable_details"]);
+    // These two digests are what production's `md5(pg_get_functiondef(...))` answered on 2026-10-17,
+    // so the assertion is that the file holds exactly the bytes the live catalog was holding.
+    const measuredOnHosted = ["4563d2577760a1ff4c72d4f8b3888e14", "75090b6ed5a5b273949f6ba5a86d7bea"];
+    carried.forEach((entry: { routine: string; carriedDigest: string; matchesHeader: boolean }, position: number) => {
+      expect(entry, `the file does not carry its own digest: ${entry.routine}`).toMatchObject({ matchesHeader: true });
+      expect(entry.carriedDigest, `${entry.routine} is not the byte sequence production held`).toBe(measuredOnHosted[position]);
+    });
+    const renormalized = text.replace(/\n/g, "\r\n");
+    for (const entry of verifyCarriedDefinitions(renormalized)) {
+      expect(entry, "a CRLF checkout must not look like the qualified bytes").toMatchObject({ matchesHeader: false });
+    }
+  });
+
+  it("keeps the restore file out of the checkout's own line-ending rewrite", () => {
+    // The case above only proves the digests for the bytes sitting in this working tree. On a host
+    // like this one — `core.autocrlf=true`, and until now no attribute to overrule it — a fresh
+    // checkout rewrites every newline before the incident reader opens the file, and the header's
+    // digests quietly stop describing what the file holds. One scoped attribute, nothing repo-wide.
+    const committed = "supabase/rollback/20261017090000_revert_cl39_to_hosted_25_definition.sql";
+    const check = spawnSync("git", ["check-attr", "text", "--", committed], { cwd: projectRoot, encoding: "utf8" });
+    expect(check.status, `git check-attr failed: ${check.stderr}`).toBe(0);
+    expect(check.stdout.trim(), `${committed} is not checked out byte-for-byte: ${check.stdout.trim()}`).toMatch(/: text: (?:unset|false)$/m);
   });
 
   it("reads a routine definition and the rollback probe as one statement each, so the CLI accepts them", () => {
