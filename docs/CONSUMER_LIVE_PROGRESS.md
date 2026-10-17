@@ -1319,6 +1319,21 @@ Deliberately not performed by this workstream, and not performable by any engine
   re-reading `select count(*) from supabase_migrations.schema_migrations` on the hosted project to
   confirm **26**, then `pnpm verify:types` against the hosted schema before the readiness record's
   latency claim can say "production".
+- Reclaim space on this host's `C:` volume, or give this workstream a machine with room. On
+  2026-10-17 the local re-run of the served-function battery became an environment stall rather than
+  a product result: `C:` reported 476 GB **100 % used**, with free space falling
+  `527 MB → 223 MB → 168 MB → 150 MB` across the pass, and the stall showed up as
+  `runtime: cannot allocate memory` and `fatal error: out of memory allocating heap arena map` from
+  `docker exec`, `spawnSync docker UNKNOWN` from the Supabase CLI, and the edge container answering
+  its own gateway with `HTTP 502 "An invalid response was received from the upstream server"` while
+  reporting `running`, `restarts=0`, `OOMKilled=false`, `memory=0`. `docker system df` on that date
+  reads 232 local volumes totalling 11.74 GB with **11.43 GB reclaimable**, and images at 17.47 GB
+  with 5.906 GB reclaimable. This pass deliberately did not prune any of them: the same vhdx holds
+  another live project that this workstream must not touch, and one of those volumes is the CL-36
+  production snapshot, so which of 232 are safe to delete is an owner judgement, not something an
+  engineering pass should infer from a reclaimable figure. The seven failures are classified file by
+  file, with their CI control at the same head (`332 passed (332)`), in `docs/RELEASE_GATE_MATRIX.md`
+  under the bullet that opens "The live battery re-run locally at 26 migrations".
 - Print or store any privileged credential: no service-role key, `sb_secret_*`, database password,
   SMTP credential, payment credential or registration token appears in this file, in any commit, or
   in any log produced by this workstream.

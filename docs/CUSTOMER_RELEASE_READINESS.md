@@ -564,11 +564,33 @@ Any later SHA must earn its own CI and deployment verification.
    (`delete-account is served and ALLOWED_APP_ORIGIN reached the runtime (1349 ms …)`).
    What that green did **not** test is the thing CL-39 changed: CI's PostgREST is
    `postgrest:v16.2`, which answers `40001` in 676/752 ms, so the 125 s production hang CL-39 repairs is
-   unreachable there and the repair's latency half is proven only on production's own build and on this
-   host's `v14.18` before the migration landed (see `docs/RELEASE_GATE_MATRIX.md`, note 9 and the row-N
-   bullet). And the 26th migration is committed, not hosted: the hosted catalog read recorded here is
+   unreachable there; the repair's latency half is proven on production's own build and, from the
+   afternoon of 2026-10-17, on this host's `v14.18` **after** the migration landed as well — six stale or
+   tokenless edit calls through the local gateway answered `HTTP 400` with `DW001` in 10-20 ms, and the
+   fresh-token control edit answered `HTTP 200` in 21 ms and persisted, at 26 migrations (see
+   `docs/RELEASE_GATE_MATRIX.md`, note 9 and the row-N bullet). And the 26th migration is committed,
+   not hosted: the hosted catalog read recorded here is
    **25/25**, so until the owner pushes it, a real customer's stale edit on production still hangs rather
    than being refused in words.
+   **CI at the recording head that followed (`6f5e919`), with its four run ids taken after
+   `git ls-remote origin refs/heads/release/consumer-live` returned that SHA:** `CI` `39015502946`
+   (`Static verification` `117346680766`, `Database contracts` `117346680580`, `Browser release smoke`
+   `117347416313`), `Complete customer-browser regression` `39015502960` (job `117346680472`), `Live
+   production public smoke` `39015502940`, `CodeQL security review` `39015502956` — all six of its jobs
+   `completed / success`, the two long ones closing at `08:15:49Z` and `08:18:15Z`. Read out of those
+   jobs' own logs at that SHA: static `Test Files 50 passed (50)` / `Tests 752 passed (752)` in
+   `Duration 11.89s` and `Scanned 301 files for 11 credential shapes`; database contracts
+   `Migrations on disk: 26. Applied in the local database: 26.`, pgTAP `Files=10, Tests=410 … Result:
+   PASS`, served-function battery `Test Files 10 passed (10)` / `Tests 332 passed (332)` in
+   `Duration 42.97s`; browser smoke `Running 81 tests using 1 worker` → `81 passed (10.9m)`, the
+   flags-off gate `3 passed (4.5s)`, the console gate `3 passed (30.3s)`, serve readiness
+   `1149 ms`; `live-public` `6 passed (29.7s)`; the journey job `Running 193 tests using 1 worker` →
+   `8 skipped`, `185 passed (18.5m)`. **That `332 passed (332)` is the discriminator for this host's own
+   live run at the same head**, which finished `7 failed | 325 passed (332)` with every failure carrying
+   a machine signature (`runtime: cannot allocate memory`, `spawnSync docker UNKNOWN`, gateway `502` and
+   `503`) while `C:` sat at 100 % used with 150 MB free; the classification and the two cleanups that run
+   owed are in `docs/RELEASE_GATE_MATRIX.md` (the live-battery bullet under "What has moved since these
+   measurements were taken").
 5. **Founder monetization:** Production readiness deliberately reports `false`; no actual live
    UPI destination, approved support/refund/disclosures or reviewer allowlist. Do not collect or
    represent real Founder payments as enabled. Finish operator decisions and perform refund/manual

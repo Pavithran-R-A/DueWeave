@@ -59,7 +59,8 @@ of the property that neither a laptop nor CI can prove.
 Rows A-T are the Stage 9 measurement of 2026-09-29 and are deliberately **not** rewritten here —
 that is what makes them usable as a baseline. The numbers in them that now describe an older tree are
 listed below, and a reviewer should read them with this pointer. Each figure is quoted from the run
-named in front of it, most recently CI at `2fb74ca` (push head of the CL-39 change, observed 2026-10-17):
+named in front of it, most recently CI at `6f5e919` (the recording head of the CL-39 change, observed
+2026-10-17; its four runs and their measured counts are in `docs/CUSTOMER_RELEASE_READINESS.md`):
 
 - Row H says 23 migrations. The chain committed **24** before Phase 3B (which applied all 24 to the
   hosted project and measured parity), Arc 3C added a **25th**, and CL-39 adds a **26th**
@@ -71,10 +72,38 @@ named in front of it, most recently CI at `2fb74ca` (push head of the CL-39 chan
   41, and the tenth `stage4_02_edit_conflict_code.sql`, which plans 5 and printed
   `supabase/tests/stage4_02_edit_conflict_code.sql ... ok`.
 - Row D's unit counts are the Stage 9 series. At the CL-39 head `pnpm test:unit` measures
-  **50 files / 752 tests, 0 skipped** (exit 0, `Duration 7.93s`, measured locally on 2026-10-17), and
+  **50 files / 752 tests, 0 skipped** (exit 0, `Duration 7.93s`, measured locally on 2026-10-17, and
+  re-measured locally at the recording head `6f5e919` the same day as **50 / 752** in `10.17s`), and
   the live manifest's **10th** file (`tests/arc3c-local-account-erasure.test.ts`) executes inside
-  `pnpm test:live`, which CI at that head measures as **10 files / 332 tests** in `Duration 46.42s`,
-  22 of them that file's (`✓ tests/arc3c-local-account-erasure.test.ts (22 tests) 4631ms`).
+  `pnpm test:live`, which CI at `2fb74ca` measures as **10 files / 332 tests** in `Duration 46.42s`,
+  22 of them that file's (`✓ tests/arc3c-local-account-erasure.test.ts (22 tests) 4631ms`); CI at
+  `6f5e919` measures the same battery as **10 / 332** in `Duration 42.97s`.
+- **The live battery re-run locally at 26 migrations is a "cannot run on this host", not a failed
+  gate (2026-10-17, at `6f5e919`).** `node scripts/local-functions-serve.mjs start` came up
+  (`delete-account is served and ALLOWED_APP_ORIGIN reached the runtime (6997 ms,
+  supabase_edge_runtime_dueweave recreated by the serve)`) and `pnpm test:live` reported
+  `Test Files 3 failed | 7 passed (10)` / `Tests 7 failed | 325 passed (332)` / `Duration 207.14s`,
+  with the 7 split across `stage7-local-export` (3), `stage8-local-founder-readiness` (1) and
+  `arc3c-local-account-erasure` (3). Every one of them carries a host signature rather than a
+  repository one: `fatal error: runtime: cannot allocate memory`, `fatal error: out of memory
+  allocating heap arena map`, `Error: spawnSync docker UNKNOWN`, `TypeError: fetch failed` caused by
+  `SocketError: other side closed`, and a gateway `503` where the test expected `405`. Re-running the
+  erasure file alone made it **worse** (`7 failed | 15 passed (22)`), because the gateway had by then
+  begun answering an unauthenticated `POST /functions/v1/delete-account` with
+  `HTTP 502 "An invalid response was received from the upstream server"` while the container still
+  reported `running`, `restarts=0`, `OOMKilled=false` — a served runtime that stops answering, which
+  is the machine, not the code. The drive tells the same story: `C:` was 100 % used throughout and its
+  free space fell `527 MB → 223 MB → 168 MB → 150 MB` across the attempts. **The discriminator is CI at the
+  same head:** `Database contracts` job `117346680580` at `6f5e919` prints `Migrations on disk: 26.
+  Applied in the local database: 26.` with `Test Files 10 passed (10)` / `Tests 332 passed (332)` in
+  `Duration 42.97s`. Locally, the CL-39-relevant file did pass —
+  `✓ tests/stage4-local-edit-workflows.test.ts (14 tests) 2956ms` — including the stale-token and
+  missing-token refusals now raised as `DW001`. Two cleanups this run owed and got: the stage4
+  teardown's own purge died on the OOM and left 2 accounts, which this phase purged with the suite's
+  scoped statement (`residue=0`, history guards read back `4/4`, auth users 26 → 24), and the serve
+  was stopped (`delete-account no longer answers (gateway-503) after 5161 ms`). What remains open is
+  the local execution of the arc3c battery on a host with room — not a verdict about the erasure path,
+  which CI and production have both already carried.
 - Row U's executing gates ran on 2026-10-06 against the loopback stack and were recorded there as not
   yet run in CI. **That has moved twice since.** CI now runs the served-function battery and the
   browser erasure journey on GitHub-hosted runners at every head of this line, and on 2026-10-16 a
@@ -95,10 +124,25 @@ named in front of it, most recently CI at `2fb74ca` (push head of the CL-39 chan
   now raise the private code `DW001`, which the build answers promptly (on the local
   `postgrest:v14.18` container `DW001` returned HTTP 400 in 181 ms, and 124 ms / 15 ms once the
   stalled connections cleared), and `stage4_02_edit_conflict_code.sql` pins the code, the
-  wording and a catalog-wide sweep for the two retryable codes. The before/after latency on the local
-  v14.18 container has **not** been re-measured since the migration landed — this host's daemon is down
-  and `C:` has 1.1 G free — so that half is owed to a machine with room, and CI's `v16.2` cannot prove
-  it (that build answers `40001` too, which is exactly why the defect stayed invisible there).
+  wording and a catalog-wide sweep for the two retryable codes.
+  **That owed half is measured now, on this host, at `6f5e919` (2026-10-17).** Migration 26 was
+  applied forward to the running local database (`supabase migration up --local`, then
+  `pnpm verify:migrations` → `Migrations on disk: 26. Applied in the local database: 26.`), and a
+  throwaway account drove the real routines over HTTP through this stack's gateway
+  (`127.0.0.1:54321`, container image `public.ecr.aws/supabase/postgrest:v14.18`). A stale
+  `p_expected_updated_at` on `update_client` returned `HTTP 400` with `code=DW001` and the unchanged
+  wording in **14 ms, 10 ms and 20 ms** across three calls; the same routine with **no token at all**
+  in **13 ms**; `update_receivable_details` stale in **18 ms and 13 ms**. The legitimate fresh-token
+  edit on the same routine answered `HTTP 200` in **21 ms** and the returned row carried the new name,
+  so the repair did not loosen the write it protects. `pnpm test:db` at 26 migrations reports
+  `Files=10, Tests=410 … Result: PASS`, and the throwaway account and its rows were purged afterwards
+  (`residue=0`, history guards read back at `4/4`). **What that pair is, stated exactly:** the BEFORE
+  half is this same container's recorded `40001` unanswered at 40 s and `40P01` unanswered at 20 s,
+  together with the definition read taken here before the apply —
+  `update_client :: raise exception 'This client changed in another session' using errcode = '40001';` —
+  because migration 26 removes the code that stalls, so the stall cannot be re-created on a repaired
+  database without re-introducing it. CI's `v16.2` cannot stand in for either half (it answers
+  `40001` too, which is exactly why the defect stayed invisible there).
 - Row S cites `e2e/stage9-release-journey.spec.ts:452` for the sign-out/sign-in case. That pointer has
   rotted: the same file's own CI slot numbers at `2fb74ca` place the founder refusal at `:446`, the
   profile-edit/sign-out/sign-in case at `:472` (slot 80) and account deletion at `:505` (slot 81), so
@@ -309,7 +353,10 @@ turning the gate red) was measured the same day.
    in 181 ms, and 15 ms on a second call after both stalls, so the stall belonged to the code and not to
    a wedged pool), and `supabase/tests/stage4_02_edit_conflict_code.sql` pins the code, the wording and
    a catalog-wide sweep for the two retryable codes. The four local failures this note attributed to
-   the `40001` path are therefore the defect, not host flakiness — and the repair's own latency
-   re-measurement on this host's v14.18 container is still owed, because the daemon is down with `C:`
-   at 1.1 G free. CI cannot stand in for it: its `postgrest:v16.2` answers `40001` in 676/752 ms, which
+   the `40001` path are therefore the defect, not host flakiness. **And the repair's own latency
+   re-measurement on this host's v14.18 container, which this note recorded as owed, was taken on
+   2026-10-17 at `6f5e919` once the daemon came back: six stale or tokenless edit calls answered
+   `HTTP 400` with `DW001` in 10-20 ms each, and the fresh-token control edit answered `HTTP 200` in
+   21 ms — the full reading is in the row-N bullet above.** CI cannot stand in for it: its
+   `postgrest:v16.2` answers `40001` in 676/752 ms, which
    is precisely why every CI head stayed green while customers hung.
