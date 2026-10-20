@@ -739,6 +739,32 @@ Any later SHA must earn its own CI and deployment verification.
    (2) The pages are English-only and describe India-facing product facts (INR, Asia/Kolkata);
    jurisdiction, GST and any consumer-affairs disclosure remain the operator's decision, which is
    exactly what this gate has always asked for.
+   **Corrected again on 2026-10-20 under the CL-7 final-corrections brief, because one pinned
+   sentence was itself false.** The Privacy Policy said "The hosting platform takes database
+   backups, and restoring one is how an incident is recovered." Supabase's Free plan includes no
+   automatic backups and no point-in-time recovery, so that sentence credited the plan with a
+   protection it does not sell. The section now states the absence, keeps "deletion erases the live
+   ledger", says no retention period has been published, describes the operator's manual logical
+   snapshot as an unscheduled procedure rather than a product feature, and points at the customer's
+   export as the copy whose retention they control. The support half gained a gated integration:
+   `client/src/config/support.ts` resolves `VITE_SUPPORT_EMAIL` and returns null unless the value is
+   a usable address, so while the variable is unset the page renders the "no published channel" copy
+   and no mailbox at all. The owner publishes an address by setting that variable in the Pages build
+   environment — one decision, no code edit, and no literal address in this public tree.
+   `tests/trust-surface.contract.test.ts` is 13 cases at this state: one reads the backup section
+   alone and rejects the platform-backup sentence, a retention window, and any claimed
+   disaster-recovery or restore guarantee; another calls the resolver with absent, blank, malformed
+   and valid values, forbids a hard-coded address, and requires every `mailto:` target to be
+   `${SUPPORT_EMAIL}`. Both were watched RED before the repair — the backup case on the delivered
+   sentence, the support case on `Cannot find module '@/config/support'` — and are green after it.
+   In this working tree `pnpm test:unit` is `56 files / 818 tests`; the CI-reachable tree without the
+   held `tests/response-headers.contract.test.ts` is `55 files / 808`. `pnpm check` and lint are
+   green. **Still open, and not papered over:** item 4's row-data half has never been dumped or
+   restored — `--data` writes customer content to disk and stays the operator's call — and a fresh
+   structure dump/restore could not be re-run today because Docker Desktop 4.93.0 stopped at its own
+   failed-update dialog ("Insufficient disk space for update", 1544 MB available against 3366 MB
+   required) and never opened its engine socket. The executed 2026-10-16 structure rehearsal and its
+   nine-count MATCH below remain the evidence; this host added none.
 7. **Durability, abuse and performance:** Define zero-cost backup/restore and incident response
    appropriate to the hosted Free plan (no PITR), anti-abuse/rate-limit acceptance, load estimates,
    and investigate the five informational unindexed foreign keys using measured workloads.
@@ -876,6 +902,10 @@ Any later SHA must earn its own CI and deployment verification.
    Teardown was scoped to what this rehearsal created: `DROP DATABASE dueweave_restore`, and both rehearsal
    containers removed by name, leaving the other tenant's containers on this shared host untouched. The dumps
    live outside the repository, so no broad `git add` can publish them.
+   **The customer-facing statement was corrected on 2026-10-20:** the Privacy Policy no longer credits
+   the Free plan with backups. The plan provides none automatically, the operator procedure is manual
+   and unscheduled, and no retention period is published. Gate 6 records the correction, its contract
+   cases and the measured Docker block that kept today's rehearsal from running.
 8. **Release governance:** Reconcile the long-lived `main` branch, branch/PR protection, final
    changelog and operations rollback; verify head==GitHub CI SHA==Pages deployed SHA, all intended
    gates pass, and no secret is in Git or client assets. The repository is temporarily public for

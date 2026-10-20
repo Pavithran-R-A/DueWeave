@@ -35,6 +35,14 @@ const erasureMigration = read("supabase/migrations/20261006120000_current_arc3c_
 /** Every non-whitespace character of the three documents, so a claim can be searched whole-document. */
 const documents = legalPage.replace(/\s+/g, " ");
 
+/** One section of one document, so a claim about backups cannot be satisfied by a sentence elsewhere. */
+function section(id: string): string {
+  const start = legalPage.indexOf(`<Section id="${id}"`);
+  if (start < 0) return "";
+  const end = legalPage.indexOf("</Section>", start);
+  return end < 0 ? "" : legalPage.slice(start, end);
+}
+
 describe("customer trust surface (CL-7 items 11-12)", () => {
   it("publishes the source this contract is reading", () => {
     // Without this, every case below passes vacuously on a tree where the file was never made.
@@ -130,6 +138,43 @@ describe("customer trust surface (CL-7 items 11-12)", () => {
     expect(documents).not.toMatch(/\b(?:30|60|90|180|365)[- ]day\b|\b(?:seven|thirty|ninety) days\b/i);
   });
 
+  it("does not credit the free plan with backups or recovery it does not provide", () => {
+    // Measured on 2026-10-20: Supabase Free has no automatic backups and no point-in-time recovery.
+    // The page said "The hosting platform takes database backups, and restoring one is how an incident
+    // is recovered" — a protection the plan does not include. The correction has to state the absence,
+    // stop quoting a retention window, and keep the two promises the app can actually keep: deletion
+    // erases the live ledger, and the customer's export is the copy they control.
+    const backups = section("privacy-backups");
+    expect(backups, "the Privacy Policy lost its backup section").not.toBe("");
+    expect(backups, "the page still says the hosting platform takes backups")
+      .not.toMatch(/(?:hosting )?platform (?:takes|keeps|runs|provides) (?:automatic |daily |nightly )?backups/i);
+    expect(backups, "the page still treats a platform restore as the recovery path")
+      .not.toMatch(/restoring (?:one|a (?:platform )?backup) is how/i);
+    expect(backups).toMatch(/free plan/i);
+    expect(backups, "the free plan is not credited with automatic backups")
+      .toMatch(/(?:no|not|without)[^.]{0,80}automatic[^.]{0,40}backups?/i);
+    expect(backups).toMatch(/(?:no|not)[^.]{0,60}(?:retention|schedule)/i);
+    expect(backups).toMatch(/live (?:ledger|database)/i);
+    expect(backups).toMatch(/export|Your data/i);
+    expect(backups, "a recovery capability is claimed rather than disclaimed")
+      .not.toMatch(/disaster[- ]recovery (?:plan|capability|service)|point-in-time recovery (?:is )?(?:available|included|enabled)|guarantee[sd]? (?:a )?restore/i);
+  });
+
+  it("keeps the support mailbox unpublished until the owner supplies one", async () => {
+    // Item 5: the integration is prepared, the address is not published. An environment variable is
+    // the one switch an owner can flip in the Pages build settings without editing code — and while it
+    // is unset, the resolver must return nothing and the page must keep saying no channel is published.
+    const { resolveSupportEmail } = await import("@/config/support");
+    expect(resolveSupportEmail(undefined), "an absent variable published an address").toBeNull();
+    expect(resolveSupportEmail("   "), "a blank variable published an address").toBeNull();
+    expect(resolveSupportEmail("not-an-address"), "an unusable value was rendered as a mailbox").toBeNull();
+    expect(resolveSupportEmail(" support@example.com "), "a supplied address was not normalised").toBe("support@example.com");
+    expect(legalPage, "the support address is hard-coded into the published page").not.toMatch(/dueweave@gmail\.com/i);
+    expect(legalPage, "the page does not render the resolver's answer").toMatch(/SUPPORT_EMAIL\s*\?/);
+    expect(legalPage, "the configured branch has no mail link").toMatch(/mailto:\$\{SUPPORT_EMAIL\}/);
+    expect(legalPage, "the unconfigured branch must keep telling the truth").toMatch(/has not published a support email/i);
+  });
+
   it("keeps paid Founder access described as the disabled feature it currently is", () => {
     // Production is fail-closed: `isFounderPaymentReady` refuses the payment screen until the
     // offer is LIVE, so the Terms cannot advertise a purchase that cannot happen.
@@ -141,7 +186,10 @@ describe("customer trust surface (CL-7 items 11-12)", () => {
     // The defect found while writing this: three sentences in the app point a customer at
     // "DueWeave support", which does not exist. A trust page must not repeat that, and must not
     // invent a company, an address or a promise to paper over it.
-    expect(documents).not.toMatch(/mailto:|[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i);
+    // A mail link may exist only as the owner-supplied variable: any other `mailto:` target, and any
+    // literal address in the source, would publish a mailbox before the owner approved it.
+    expect(legalPage, "a mailbox is published without the owner-supplied variable").not.toMatch(/mailto:(?!\$\{SUPPORT_EMAIL\})/i);
+    expect(documents, "a literal email address appears in the published documents").not.toMatch(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i);
     expect(documents).not.toMatch(/\b(Pvt|LLC|Inc\.|GmbH|LLP|Private Limited)\b/);
     // The word is allowed in the direction that limits DueWeave ("no guarantee that it is always
     // there"); it is forbidden in the direction that promises the customer something.

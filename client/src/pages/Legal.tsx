@@ -10,6 +10,7 @@
 import type { ReactNode } from "react";
 import { Link } from "wouter";
 import { BRAND } from "@/config/brand";
+import { SUPPORT_EMAIL } from "@/config/support";
 
 /** Rewritten whenever a document changes materially, so a reader can date what they saw. */
 const LAST_UPDATED = "20 October 2026";
@@ -108,7 +109,10 @@ export function PrivacyPage() {
       </Section>
 
       <Section id="privacy-backups" heading="Backups">
-        <p>The hosting platform takes database backups, and restoring one is how an incident is recovered. We have not published how long a backup is kept, so we cannot tell you that deleting your account provably removes an older copy from a backup. Deletion erases the live ledger, which is what the app can honestly promise.</p>
+        <p>Supabase's Free plan includes no automatic backups and no point-in-time recovery. Nothing at the hosting layer copies this database on a schedule, so a lost or damaged ledger cannot be recovered from a platform-side daily copy.</p>
+        <p>A manual logical snapshot can be taken by the operator and kept outside the hosting account. That is an operator procedure, not a product feature: it runs on no schedule, no retention period has been published, and it protects nothing written after the last snapshot. The app does not offer a restore button, and nothing here is a disaster-recovery guarantee.</p>
+        <p>The copy the app does give you is your own export: More → Your data produces a full JSON archive and CSV files you keep yourself. Take it regularly, because it is the only copy whose retention you control.</p>
+        <p>Deleting your account erases the live ledger. It cannot reach a snapshot the operator already took, so a copy of your rows may survive in an operator-held file until that file is rotated or destroyed; no deadline for that is promised.</p>
       </Section>
 
       <Section id="privacy-changes" heading="Changes to this page">
@@ -170,16 +174,30 @@ export function TermsPage() {
 }
 
 export function SupportPage() {
+  const openDecisions = [
+    ...(SUPPORT_EMAIL ? [] : ["a scheduled, monitored support channel and where it is published"]),
+    "a retention period for production backups",
+    "a named legal entity with published refund terms",
+  ];
   return (
     <LegalShell
       current="support"
       eyebrow="Support and Contact"
       title="When something goes wrong, here is where to look."
-      lede="DueWeave has not published a support email, phone number or chat channel. Rather than imply one, this page lists what you can do inside the product, and what is still undecided."
+      lede={SUPPORT_EMAIL
+        ? "One address to write to, what to include, and what the product can explain by itself when a screen refuses you."
+        : "DueWeave has not published a support email, phone number or chat channel. Rather than imply one, this page lists what you can do inside the product, and what is still undecided."}
     >
-      <Section id="support-channel" heading="There is no published channel yet">
-        <p>DueWeave has not published a support email address or any other direct contact line, and the Founder offer's own support field is still the placeholder saved in its configuration. So: anyone who contacts you claiming to be DueWeave support by email, phone or message is not. The product never asks for a PIN, an OTP, a password or a bank credential in reply to anything.</p>
-        <p>What the app does instead is explain itself where it refuses you. Every refusal is shown on the screen where it happened, in ordinary words, and the reason stays on the page rather than disappearing.</p>
+      <Section id="support-channel" heading={SUPPORT_EMAIL ? "Where to write" : "There is no published channel yet"}>
+        {SUPPORT_EMAIL ? (
+          <>
+            <p>Write to <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>. That is the only address DueWeave has published for support; a message from any other address claiming to be DueWeave is not from DueWeave. The product never asks for a PIN, an OTP, a password or a bank credential, and neither should a reply to you.</p>
+            <p>Include what you were doing, the screen you were on and what you expected to happen. Never send your password, a recovery link or a screenshot showing one.</p>
+          </>
+        ) : (
+          <p>DueWeave has not published a support email address or any other direct contact line, and the Founder offer's own support field is still the placeholder saved in its configuration. So: anyone who contacts you claiming to be DueWeave support by email, phone or message is not. The product never asks for a PIN, an OTP, a password or a bank credential in reply to anything.</p>
+        )}
+        <p>The app also explains itself where it refuses you. Every refusal is shown on the screen where it happened, in ordinary words, and the reason stays on the page rather than disappearing.</p>
       </Section>
 
       <Section id="support-locked" heading="If you cannot get in">
@@ -199,7 +217,7 @@ export function SupportPage() {
       </Section>
 
       <Section id="support-open" heading="Still undecided by the owner">
-        <p>Three things this page cannot promise today, each an owner decision rather than a technical limit: a monitored support channel and where it is published, a retention period for production backups, and a named legal entity with published refund terms. Until they are decided, the honest position is the one above — self-service inside the product, and no invented help.</p>
+        <p>Each of these is an owner decision rather than a technical limit: {openDecisions.join("; ")}. Until they are decided, the honest position is the one above — self-service inside the product, and no invented help.</p>
       </Section>
     </LegalShell>
   );
