@@ -47,21 +47,31 @@ function workspace(options: {
   productionCensus?: string;
   restoredCensus?: string;
   restoreStderr?: string;
+  rowRestoreStderr?: string;
+  productionRows?: string;
+  restoredRows?: string;
 } = {}) {
   const dir = mkdtempSync(path.join(tmpdir(), "dw-rehearse-"));
   const dump = path.join(dir, "dueweave-hosted-schema-20261016T152904Z.sql");
   writeFileSync(dump, 'CREATE POLICY "clients_owner_all" ON "public"."clients" FOR ALL TO "authenticated";\n');
+  // Shaped like a `--data-only` dump: a COPY block whose rows the rehearsal must load, not print.
+  const rows = path.join(dir, "dueweave-hosted-rows-20261020T120000Z.sql");
+  writeFileSync(rows, "COPY public.clients (id, name) FROM stdin;\n00000000-0000-0000-0000-000000000001\tFixture\n\\.\n");
 
   const recordFile = path.join(dir, "calls.jsonl");
   writeFileSync(recordFile, "");
   const answersFile = path.join(dir, "answers.json");
   // Ordered: the stub replays the first key found in the argv it was handed. `-f -` is the restore itself,
-  // so a refusal test that finds no such call proves no dump byte was fed.
+  // so a refusal test that finds no such call proves no dump byte was fed. Row-count probes are answered
+  // before the host key, because both the hosted and the local census carry the pooler host's query shape.
   writeFileSync(
     answersFile,
     JSON.stringify({
       NONEMPTY_PROBE: `NONEMPTY_PROBE=${options.appTables ?? "0"}\n`,
+      ROWCOUNT_PRODUCTION: `${options.productionRows ?? '{"clients":2}'}\n`,
+      ROWCOUNT_RESTORED: `${options.restoredRows ?? '{"clients":2}'}\n`,
       [POOLER_HOST]: `${options.productionCensus ?? censusLine()}\n`,
+      "DWEAVE_ROWS=1": `${options.rowRestoreStderr ? `###stderr###${options.rowRestoreStderr}` : ""}`,
       "-f -": `${options.restoreStderr ? `###stderr###${options.restoreStderr}` : ""}`,
       CENSUS_PROBE: `${options.restoredCensus ?? censusLine()}\n`,
       nspname: `${options.schemas ?? "auth\nextensions\nrealtime\nstorage\nvault"}\n`,
@@ -77,6 +87,13 @@ function workspace(options: {
       `const answers = JSON.parse(readFileSync(${JSON.stringify(answersFile)}, 'utf8'));`,
       "const joined = process.argv.slice(2).join(' ');",
       `appendFileSync(record, JSON.stringify(process.argv.slice(2)) + '\\n');`,
+      // A row census is identified by the probe marker plus the host it is asking, because the same
+      // query runs against production and against the restored copy and must return different numbers.
+      "if (joined.includes('ROWCOUNT_PROBE')) {",
+      `  const key = joined.includes(${JSON.stringify(POOLER_HOST)}) ? 'ROWCOUNT_PRODUCTION' : 'ROWCOUNT_RESTORED';`,
+      "  process.stdout.write('ROWCOUNT_PROBE' + answers[key]);",
+      "  process.exit(0);",
+      "}",
       "for (const key of Object.keys(answers)) {",
       "  if (!joined.includes(key)) continue;",
       "  const value = answers[key];",
@@ -93,17 +110,25 @@ function workspace(options: {
 
   const password = path.join(dir, "prod-db-password");
   writeFileSync(password, `${SECRET}\n`, { mode: 0o600 });
-  return { dir, dump, recordFile, stub, password };
+  return { dir, dump, rows, recordFile, stub, password };
 }
 
 function run(
   args: string[],
-  options: Parameters<typeof workspace>[0] = {},
+  options: Parameters<typeof workspace>[0] & { rowsMode?: "present" | "absent" | "inside" } = {},
   extraEnv: Record<string, string> = {},
 ): Promise<{ code: number | null; out: string; calls: string[][] }> {
   const work = workspace(options);
+  const rowsArg =
+    options.rowsMode === "present"
+      ? ["--rows", work.rows]
+      : options.rowsMode === "absent"
+        ? ["--rows", path.join(work.dir, "absent-rows.sql")]
+        : options.rowsMode === "inside"
+          ? ["--rows", path.join(projectRoot, "tests", "fixture-rows-must-never-exist.sql")]
+          : [];
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, [script, "--dump", work.dump, ...args], {
+    const child = spawn(process.execPath, [script, "--dump", work.dump, ...rowsArg, ...args], {
       stdio: ["ignore", "pipe", "pipe"],
       env: {
         ...process.env,
@@ -239,5 +264,84 @@ describe("the rehearsal restores, then proves what came back", () => {
       expect(argv).toBeDefined();
       expect(argv!.at(-1)!.startsWith("select ")).toBe(true);
     }
+  });
+});
+
+describe("the rehearsal restores the customer rows, then counts them", () => {
+  it("loads the row dump after the structure and reports both sides", async () => {
+    const result = await run([], { rowsMode: "present" });
+    expect(result.code).toBe(0);
+    const restores = result.calls.filter((argv) => argv.join(" ").includes("-f -"));
+    expect(restores.length, "the structure and the rows must be two separate loads").toBe(2);
+    const rowLoad = restores[1]!;
+    expect(rowLoad.join(" ")).toMatch(/ON_ERROR_STOP=1/);
+    expect(rowLoad.join(" ")).toContain("DWEAVE_ROWS=1");
+    // A public row dump carries promises that reference auth.users, and auth identities are not in it;
+    // deferring FK triggers is what lets the rehearsal prove the rows load instead of dying on the first
+    // reference. It also stops user triggers from re-writing the data being restored.
+    expect(rowLoad.join(" ")).toMatch(/session_replication_role = replica/);
+    expect(result.out).toMatch(/ROWS PRODUCTION clients=2/);
+    expect(result.out).toMatch(/ROWS RESTORED clients=2/);
+    expect(result.out).toMatch(/ROWS MATCH/);
+  });
+
+  it("fails when a table comes back short, naming it and both counts", async () => {
+    const result = await run([], {
+      rowsMode: "present",
+      productionRows: '{"clients":2,"payments":3}',
+      restoredRows: '{"clients":2,"payments":2}',
+    });
+    expect(result.code).toBe(1);
+    expect(result.out).toMatch(/ROWS MISMATCH/);
+    expect(result.out).toMatch(/payments: production=3 restored=2/);
+  });
+
+  it("also catches a table the restored copy does not have", async () => {
+    const result = await run([], {
+      rowsMode: "present",
+      productionRows: '{"clients":2,"payments":3}',
+      restoredRows: '{"clients":2}',
+    });
+    expect(result.code).toBe(1);
+    expect(result.out).toMatch(/payments: production=3 restored=absent/);
+  });
+
+  it("refuses a missing row dump before any restore byte is fed", async () => {
+    const result = await run([], { rowsMode: "absent" });
+    expect(result.code).toBe(1);
+    expect(result.out).toMatch(/row dump/i);
+    expect(restoreCall(result.calls)).toBeUndefined();
+  });
+
+  it("refuses a row dump inside the repository, where a git add -A could publish customer rows", async () => {
+    const result = await run([], { rowsMode: "inside" });
+    expect(result.code).toBe(1);
+    expect(result.out).toMatch(/outside the repository/i);
+    expect(restoreCall(result.calls)).toBeUndefined();
+  });
+
+  it("withholds pg DETAIL and CONTEXT when a row load fails, because they quote the rows", async () => {
+    // A constraint error on a row dump carries the offending values in DETAIL and the COPY line in
+    // CONTEXT — a client's name, an amount. The ERROR line is enough to act on; the rest belongs on the
+    // operator's console, not in a transcript that gets pasted into a release record.
+    const result = await run([], {
+      rowsMode: "present",
+      rowRestoreStderr:
+        'ERROR:  insert or update on table "promises" violates foreign key constraint "promises_user_id_fkey"\n' +
+        'DETAIL:  Key (user_id)=(customer-row-secret) is not present in table "users".\n' +
+        "CONTEXT:  COPY promises, line 3\n",
+    });
+    expect(result.code).toBe(1);
+    expect(result.out).toMatch(/ROWS RESTORE FAILED/);
+    expect(result.out).toContain("ERROR:");
+    expect(result.out).not.toContain("customer-row-secret");
+    expect(result.out).toMatch(/DETAIL and CONTEXT.*withheld/);
+  });
+
+  it("sends psql a SELECT for the row census on both sides", async () => {
+    const result = await run([], { rowsMode: "present" });
+    const rowCalls = result.calls.filter((call) => call.join(" ").includes("ROWCOUNT_PROBE"));
+    expect(rowCalls.length, "the census must be read from production and from the restored copy").toBe(2);
+    for (const argv of rowCalls) expect(argv.at(-1)!.startsWith("select ")).toBe(true);
   });
 });

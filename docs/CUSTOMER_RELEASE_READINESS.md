@@ -891,14 +891,42 @@ Any later SHA must earn its own CI and deployment verification.
    argument an expression list with no `select`, which a stub that matches argv substrings accepts happily and
    psql does not. Each was pinned by a contract case watched RED first — one asserts the pooler census carries
    `-e` and `PGPASSWORD` and never `PGPASSWORD=`, the other asserts both census statements begin `select ` —
-   then fixed. `tests/hosted-db-restore-rehearsal.contract.test.ts` is 13 cases; `pnpm test:unit` is 50 files /
+   then fixed. `tests/hosted-db-restore-rehearsal.contract.test.ts` was 13 cases at that measurement; `pnpm test:unit` is 50 files /
    750 tests (49 / 737 at `3e63ac8`), and `pnpm check`, `pnpm lint` and `pnpm verify:secrets`
    (`Scanned 297 files for 11 credential shapes. No privileged credential found.`) are green locally at this head.
-   **What this does not claim:** structure only — `--data` has still never been dumped, so no client name,
-   receivable, promise or payment row left the project and no row-level equivalence is being asserted. The
-   comparison is an object census, not the 152 grant statements inside the dump, which were preserved but not
-   compared. And it proves the dump replays onto a database provisioned like a Supabase project; replaying
-   onto a bare Postgres instance is precisely what the instrument now refuses, which is the finding, not a gap.
+   **The row half was made executable and then executed on 2026-10-20, and its first attempt failed in a way
+   the recording stub could not.** `--rows <file>` was added under TDD (six cases, watched RED at 6 failed /
+   13 passed, then 20/20 green): the rehearsal loads the row dump after the structure with
+   `ON_ERROR_STOP=1` and `set session_replication_role = replica` — the latter because a public row dump
+   names auth users whose identities are not in it, so FK triggers would stop on the first reference — reads
+   every public table's count from production and from the restored copy, refuses a row dump that is
+   missing or inside this temporarily-public repository, and on a failed row load prints only psql's
+   `ERROR:` line while stating that `DETAIL` and `CONTEXT` are withheld because they quote the rows. The
+   first real run used the instrument's unrestricted `--data-only` dump and died at `psql:<stdin>:47:
+   ERROR: column "email_confirmed_at" of relation "users" does not exist`: the structure half is
+   application-only, but the data half also emitted `auth.users` inserts, and GoTrue owns that schema —
+   the image's auth schema is a different version from production's. The data dump is now scoped with
+   `--schema public` (one new backup contract case, watched RED first: 9/9 green), the auth-bearing file
+   was deleted by its exact path, and a fresh rehearsal ran clean:
+   `RESTORED dueweave-hosted-schema-20261020T112854Z.sql … with ON_ERROR_STOP=1 and nothing on stderr`,
+   `PRODUCTION`/`RESTORED` both `tables=13 views=0 functions=51 triggers=21 policies=15 indexes=36
+   sequences=0 rls_tables=13 constraints=93`, `MATCH`; then `ROWS LOADED dueweave-hosted-rows-20261020T113105Z.sql`
+   (10,185 bytes, 9 tables carrying rows) and `ROWS PRODUCTION`/`ROWS RESTORED` both `promises=2 clients=4
+   profiles=1 receivables=3 payments=1 promise_events=2 activities=8 founder_admins=0 founder_audit_events=0
+   entitlements=1 purchase_claims=0 analytics_events=0 founder_offer_config=1`, `ROWS MATCH every public
+   table came back with the same row count (13 tables)`, exit 0. The target was a fresh, port-less
+   `public.ecr.aws/supabase/postgres:17.11.0.002` container (the image the local stack uses, so its auth,
+   extensions and vault schemas exist); it was removed by its exact name after the run and left no volume.
+   **What the row rehearsal does not claim:** the SQL backup covers the `public` schema only — auth
+   identities stay with GoTrue and account sign-in recovery is not claimed from this file; FK enforcement
+   was deferred during the load, so references from restored rows to auth identities were not validated;
+   the census compares row counts, not row contents, and the 152 grant statements in the structure dump
+   are still not compared; storage objects are not covered; and the process remains manual, unscheduled
+   and without a published retention period, which is what the Privacy Policy now says.
+   **What this does not claim:** the structure comparison is an object census, not the 152 grant statements
+   inside the dump, which were preserved but not compared. And it proves the dump replays onto a database
+   provisioned like a Supabase project; replaying onto a bare Postgres instance is precisely what the
+   instrument now refuses, which is the finding, not a gap.
    Teardown was scoped to what this rehearsal created: `DROP DATABASE dueweave_restore`, and both rehearsal
    containers removed by name, leaving the other tenant's containers on this shared host untouched. The dumps
    live outside the repository, so no broad `git add` can publish them.

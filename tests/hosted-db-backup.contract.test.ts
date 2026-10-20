@@ -129,6 +129,20 @@ describe("hosted database backup instrument", () => {
     expect(rows.out).toMatch(/not in git|outside the repository|never commit/i);
   });
 
+  it("takes rows from the application schema only, because auth identities belong to GoTrue", async () => {
+    // The first rehearsal of this pair proved it: the structure dump is application-only, while an
+    // unrestricted data dump also emits `auth.users` inserts, and a project-shaped target created from
+    // the Supabase image carries a different GoTrue schema version — the load died on a missing
+    // `email_confirmed_at`, halfway through the file. The two halves of one backup must describe the
+    // same schemas, and auth identities need GoTrue's own recovery path rather than raw SQL inserts.
+    const { code, out, calls } = await run(["--data"], {});
+    expect(code).toBe(0);
+    expect(calls.length).toBe(1);
+    const call = calls[0]!;
+    expect(call[call.indexOf("--schema") + 1]).toBe("public");
+    expect(out).toMatch(/auth identities/i);
+  });
+
   it("carries no connection-string shape in its own source, where the secrets gate would find one", () => {
     // The secrets scan reads tracked files only, so a script written this session hides its own text
     // from the gate until it is staged — which is exactly when it stopped being free to fix. A printed

@@ -9,8 +9,14 @@
 //
 // So this rehearses the recovery the way recovery actually happens: a target provisioned like a new
 // Supabase project, the dump fed with ON_ERROR_STOP=1, and a proof built from what came back — the same
-// nine-object census read from production over the session pooler and from the restored database. The
-// credential follows the rules the backup instrument already keeps: read from the operator's off-repo
+// nine-object census read from production over the session pooler and from the restored database. With
+// `--rows`, the customer-row dump is loaded after the structure and every public table is counted on
+// both sides, so "the rows restored" is a measurement rather than a claim. A row dump carries values
+// that identify clients, so it is held to the backup instrument's rule — refused if it lives inside this
+// temporarily-public repository — and a failed load prints only psql's ERROR line, never DETAIL or
+// CONTEXT, which quote the rows.
+//
+// The credential follows the rules the backup instrument already keeps: read from the operator's off-repo
 // password file, handed to psql through the environment, and scrubbed from every printed byte.
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -23,14 +29,22 @@ const DEFAULT_POOLER_HOST = "aws-0-ap-south-1.pooler.supabase.com";
 const DEFAULT_POOLER_PORT = "5432";
 const REQUIRED_SCHEMAS = ["auth", "extensions", "vault"];
 const REDACTION = "[redacted-db-password]";
+const projectRoot = path.resolve(import.meta.dirname, "..");
 
 const passwordPath = () => process.env.DWEAVE_DB_PASSWORD_FILE ?? path.join(homedir(), ".config/dueweave/prod-db-password");
 const dockerBin = () => process.env.DWEAVE_DOCKER_BIN ?? "docker";
 const scrub = (text, secrets) => secrets.reduce((acc, secret) => (secret ? acc.split(secret).join(REDACTION) : acc), text);
 
+/** True for a path the repository would track: inside it, or equal to it. */
+function isInsideRepository(target) {
+  const relative = path.relative(projectRoot, target);
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
 function parseArgs(argv) {
   const options = {
     dump: "",
+    rows: "",
     allowNonEmpty: false,
     container: process.env.DWEAVE_RESTORE_CONTAINER ?? "supabase_db_dueweave",
     database: process.env.DWEAVE_RESTORE_DATABASE ?? "postgres",
@@ -41,6 +55,7 @@ function parseArgs(argv) {
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index];
     if (flag === "--dump") options.dump = path.resolve(String(argv[++index] ?? ""));
+    else if (flag === "--rows") options.rows = path.resolve(String(argv[++index] ?? ""));
     else if (flag === "--container") options.container = String(argv[++index] ?? "");
     else if (flag === "--database") options.database = String(argv[++index] ?? "");
     else if (flag === "--project-ref") options.ref = String(argv[++index] ?? "");
@@ -48,12 +63,12 @@ function parseArgs(argv) {
     else if (flag === "--pooler-port") options.port = String(argv[++index] ?? "");
     else if (flag === "--allow-non-empty") options.allowNonEmpty = true;
     else {
-      console.error(`usage: node scripts/hosted-db-restore-rehearsal.mjs --dump <file.sql> [--container <name>] [--database <name>] [--allow-non-empty]`);
+      console.error(`usage: node scripts/hosted-db-restore-rehearsal.mjs --dump <file.sql> [--rows <file.sql>] [--container <name>] [--database <name>] [--allow-non-empty]`);
       return null;
     }
   }
   if (!options.dump) {
-    console.error("usage: node scripts/hosted-db-restore-rehearsal.mjs --dump <file.sql> [--allow-non-empty]");
+    console.error("usage: node scripts/hosted-db-restore-rehearsal.mjs --dump <file.sql> [--rows <file.sql>] [--allow-non-empty]");
     return null;
   }
   for (const value of [options.container, options.database]) {
@@ -92,6 +107,32 @@ const parseCensus = (text) =>
       .map((part) => [part.slice(0, part.indexOf("=")), part.slice(part.indexOf("=") + 1)]),
   );
 
+/** Every public table's row count as one JSON object, so a table that vanished and a table that lost rows
+ *  are both visible in one comparison. `query_to_xml` is what lets a single statement count tables whose
+ *  names are not known ahead of time. */
+function rowCensusSql() {
+  return (
+    "select 'ROWCOUNT_PROBE'||coalesce(json_object_agg(t,n),'{}'::json)::text from (" +
+    "select c.relname as t, (xpath('/row/c/text()', query_to_xml(format('select count(*) as c from public.%I', c.relname), false, true, '')))[1]::text::bigint as n " +
+    "from pg_class c join pg_namespace nsp on nsp.oid=c.relnamespace " +
+    "where nsp.nspname='public' and c.relkind in ('r','p')" +
+    ") s"
+  );
+}
+
+const parseRowCensus = (text) => {
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start < 0 || end < start) return {};
+  try {
+    return JSON.parse(text.slice(start, end + 1));
+  } catch {
+    return {};
+  }
+};
+
+const renderRowCensus = (census) => Object.entries(census).map(([table, count]) => `${table}=${count}`).join(" ");
+
 /** `docker exec` through an argv array — no shell string is ever built from an input. */
 function dockerExec(args, { stdin, env } = {}) {
   return new Promise((resolve) => {
@@ -127,6 +168,17 @@ async function main() {
   if (!existsSync(options.dump)) {
     say(`REFUSED the dump file ${options.dump} does not exist — run scripts/hosted-db-backup.mjs first.`);
     return 1;
+  }
+
+  if (options.rows) {
+    if (isInsideRepository(options.rows)) {
+      say(`REFUSED the row dump ${options.rows} is inside the repository; it must land outside the repository, because this tree is published and the file holds customer rows.`);
+      return 1;
+    }
+    if (!existsSync(options.rows)) {
+      say(`REFUSED the row dump ${options.rows} does not exist — run scripts/hosted-db-backup.mjs --data first.`);
+      return 1;
+    }
   }
 
   const schemasResult = await dockerExec([
@@ -243,6 +295,61 @@ async function main() {
     return 1;
   }
   say("MATCH the restored database holds the same object census as the live project.");
+
+  if (options.rows) {
+    const hostedRowsResult = await dockerExec(
+      ["exec", "-e", "PGPASSWORD", options.container, "psql", "-h", options.host, "-p", options.port, "-U", `postgres.${options.ref}`, "-d", "postgres", "-tAc", rowCensusSql()],
+      { env: { PGPASSWORD: password } },
+    );
+    if (hostedRowsResult.code !== 0 || !hostedRowsResult.out.trim()) {
+      say(`REFUSED the hosted row census failed (exit ${hostedRowsResult.code}): ${hostedRowsResult.err.trim()}`);
+      return 1;
+    }
+
+    const rowsDump = readFileSync(options.rows, "utf8");
+    // `session_replication_role = replica` defers FK checks and disables user triggers for this session:
+    // a public data dump names auth users whose identities live in another schema and are not in it, and
+    // `--data-only` rows must land as they were rather than be re-derived by triggers.
+    const rowsRestore = await dockerExec(
+      ["exec", "-i", options.container, "psql", "-h", "127.0.0.1", "-U", "postgres", "-d", options.database, "-q", "-v", "ON_ERROR_STOP=1", "-v", "DWEAVE_ROWS=1", "-c", "set session_replication_role = replica", "-f", "-"],
+      { stdin: rowsDump },
+    );
+    if (rowsRestore.code !== 0 || rowsRestore.err.trim()) {
+      say(`ROWS RESTORE FAILED exit=${rowsRestore.code}`);
+      for (const line of rowsRestore.err.split(/\r?\n/)) {
+        if (/\b(?:ERROR|FATAL|PANIC):/.test(line)) say(line);
+      }
+      say("NOTE pg DETAIL and CONTEXT are withheld: they quote the rows being loaded. Re-run the load in the operator's console if the ERROR line above is not enough.");
+      return 1;
+    }
+    say(`ROWS LOADED ${path.basename(options.rows)} into ${options.container}/${options.database} with ON_ERROR_STOP=1 and session_replication_role=replica.`);
+
+    const restoredRowsResult = await dockerExec([
+      "exec",
+      options.container,
+      "psql",
+      "-h",
+      "127.0.0.1",
+      "-U",
+      "postgres",
+      "-d",
+      options.database,
+      "-tAc",
+      rowCensusSql(),
+    ]);
+    const productionRows = parseRowCensus(hostedRowsResult.out);
+    const restoredRows = parseRowCensus(restoredRowsResult.out);
+    say(`ROWS PRODUCTION ${renderRowCensus(productionRows)}`);
+    say(`ROWS RESTORED ${renderRowCensus(restoredRows)}`);
+
+    const tables = [...new Set([...Object.keys(productionRows), ...Object.keys(restoredRows)])];
+    const rowDifferences = tables.filter((table) => productionRows[table] !== restoredRows[table]);
+    if (rowDifferences.length > 0) {
+      say(`ROWS MISMATCH ${rowDifferences.map((table) => `${table}: production=${productionRows[table] ?? "absent"} restored=${restoredRows[table] ?? "absent"}`).join(", ")}`);
+      return 1;
+    }
+    say(`ROWS MATCH every public table came back with the same row count (${tables.length} tables).`);
+  }
   return 0;
 }
 

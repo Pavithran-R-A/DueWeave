@@ -74,7 +74,11 @@ function main() {
     return 1;
   }
   const args = ["db", "dump", "--file", target];
-  if (options.data) args.push("--data-only");
+  // The structure half is application-only, so the row half must be too. An unrestricted data dump also
+  // emits auth.users inserts, and GoTrue owns that schema: its columns differ between versions, so those
+  // rows fail halfway through a restore into a project-shaped target, and identities need GoTrue's own
+  // recovery path rather than raw SQL. The rehearsal measured exactly that on 2026-10-20.
+  if (options.data) args.push("--data-only", "--schema", "public");
 
   console.log(`TARGET ref=${options.ref} user=postgres.${options.ref} host=${options.host} port=${options.port} database=postgres password=${REDACTION}`);
   console.log(`DUMP would dump ${options.data ? "the rows" : "the structure"} of the hosted project to ${target}`);
@@ -84,6 +88,7 @@ function main() {
   console.log(`ARGS ${[...args, "--db-url", `<pooler connection string for postgres.${options.ref}, password ${REDACTION}>`].join(" ")}`);
   if (options.data) {
     console.log("NOTE this file holds production rows — client names, receivables, promises, payments. It stays outside the repository and is never committed.");
+    console.log("SCOPE public schema only; auth identities belong to GoTrue and are not in this dump, so account recovery is not claimed from this file.");
   }
   if (options.dryRun) {
     console.log("DRY-RUN nothing was read and no file was written");
