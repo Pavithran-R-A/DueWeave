@@ -282,7 +282,10 @@ async function stop() {
     runDocker(["stop", "-t", "5", edgeContainer], dockerStopCeilingMs, { inherit: true });
     console.log(`stopped ${edgeContainer}`);
   } else {
-    console.log(`${edgeContainer} is not running — the stack never served a function`);
+    // The serve CLI owns this container, so terminating the watcher can leave Docker with nothing
+    // to list here. That is a released function, not evidence that the function never ran: CI at
+    // 0cc964c answered readiness in 1306 ms and passed the erasure battery, then reached this line.
+    console.log(`${edgeContainer} is not running — nothing to stop`);
     return;
   }
 

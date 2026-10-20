@@ -177,7 +177,18 @@ test.describe("the policy DueWeave ships, enforced by a browser", () => {
       base.href = "https://origin-not-in-the-policy.example/";
       document.head.append(base);
     });
+    // The <base> refusal is reported synchronously inside the evaluate above; the iframe's
+    // document request, started by that same evaluate, is still being fetched through the route.
+    // Waiting only for base-uri let the test end with that fetch in flight, and teardown closed
+    // the context underneath `route.fulfill({ response })` — `Fetch response has been disposed`.
+    // The frame's own refusal arrives only after its document has been fetched and its headers
+    // evaluated, so asserting it is both the frame surface this test's name promises and the
+    // barrier that keeps teardown behind the route.
     await expect.poll(() => refusals.join("\n"), { timeout: 10_000 }).toMatch(/base-uri|base href/i);
-    expect(refusals.join("\n"), "an iframe on the same origin is allowed by design and proves nothing here").toMatch(/base-uri/);
+    await expect
+      .poll(() => refusals.join("\n"), { timeout: 10_000 }, "the shipped policy never refused the app framing itself")
+      .toMatch(/frame-ancestors|X-Frame-Options/i);
+    expect(refusals.join("\n"), "the base surface was not the refusal this case expects").toMatch(/base-uri/);
+    expect(refusals.join("\n"), "the shipped policy let the app frame itself").toMatch(/frame-ancestors|X-Frame-Options/i);
   });
 });

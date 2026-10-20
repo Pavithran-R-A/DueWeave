@@ -1448,8 +1448,49 @@ requests under WSL), and a controlled probe whose requests answered 401/400 trig
 the churn is a property of this host's watcher, not a product refusal. WSL was tried as the Linux
 executor and is not usable here: `/var/run/docker.sock` is absent, the Docker Desktop proxy sockets
 are root-only and sudo needs a password. **A green local release suite has therefore not been
-obtained on this host**; the Linux CI job above is the defined executor, and its first run is the
-proof that is still outstanding.
+obtained on this host**; the Linux CI job above is the defined executor.
+
+**The Linux executor ran the wrapper at `0cc964c`.** CI run `39420822181` (push of `0cc964c`) closed
+all three jobs green: Static verification, Database contracts and Browser release smoke. The
+database log shows the wrapper's own sequence — `pnpm test:live:served` → `node
+scripts/run-live-suite.mjs`; `wrote supabase/functions/.env containing ALLOWED_APP_ORIGIN only`;
+`delete-account is served and ALLOWED_APP_ORIGIN reached the runtime (1306 ms,
+supabase_edge_runtime_dueweave recreated by the serve)`; `tests/arc3c-local-account-erasure.test.ts
+(22 tests) 5481ms`; then `Test Files 10 passed (10)` / `Tests 332 passed (332)` in 54.44 s. The
+teardown terminated the watcher (pid 11607), and Docker then listed no runtime container. The stop
+script's old message called that "the stack never served a function", which contradicts the
+readiness line and the battery above; the message now reads "nothing to stop" (wording only — the
+container-absence check is unchanged). The browser job ran the smoke, paused-bundle (7 passed) and
+React-warning (3 passed) batteries green, and CodeQL run `39420821910` is green at the same head.
+This is the wrapper's first Linux proof; the Windows-host limitation above stands.
+
+**The live gate is red for the deployment reason, measured at this head.** Live run `39420822201`
+at `0cc964c` settled on two identical reads (`index-C4rUFk9x.js` + `index-DzfHaBba.css`, 15,263 ms),
+then ran seven live tests: six passed and one failed at `e2e-live/public-release.spec.ts:33` with
+`the live origin sends no Content-Security-Policy` (`Received: undefined`). `pnpm
+verify:deployed:current --sha 0cc964c…` answered `NOT CURRENT` because `/build-info.json` still
+returns the 1,220-byte HTML fallback (`text/html; charset=utf-8`). Nothing in the repository changed
+between the 11:36Z measurement and this one; the failure is the artifact the origin serves.
+
+**The full customer-browser regression failed one case, and the failure was teardown behind an
+in-flight route, not a policy refusal.** `release-full-browser` run `39420822751` at `0cc964c`
+reported `1 failed, 206 passed (19.2m)`: `e2e/response-headers.spec.ts:168` threw `route.fulfill:
+Fetch response has been disposed` from the document helper's `route.fulfill({ response, headers })`
+at line 68. The case reproduced 1/1 in isolation on this host. A diagnostic that timed the same
+actions recorded the `<base>` refusal at 417 ms — synchronously with the `evaluate` that also
+appends the iframe — the iframe's document route starting at 419 ms, `route.fetch()` returning at
+567 ms and fulfilling at 569 ms, and the frame's own refusal at 573 ms. The test's only wait was
+for `base-uri`, which was already in the console when `evaluate` returned, so the body ended and
+Playwright closed the context while the iframe's fetched response was still awaiting `fulfill`;
+the disposed response is teardown, not a product refusal. The same measurement showed the case's
+old comment was wrong: the same-origin iframe is refused by `frame-ancestors 'none'` and
+`X-Frame-Options: DENY`, so the frame probe had asserted nothing. The repair asserts that refusal
+and waits for it; the message is produced only after the fetched document's headers are evaluated,
+which makes the frame-surface assertion and the teardown barrier the same wait. No assertion was
+weakened — the case gained the surface its name claims. Measured after the repair: the case
+`5 passed` in five consecutive runs, then the whole spec `5 passed (47.7s)`; `pnpm lint` and `pnpm
+check` exit 0. The run of `release-full-browser` at the head carrying this repair is the
+outstanding executor proof.
 
 **Deployment currency.** The deployment the brief cites (`f955cacc-4471-49eb-a796-a6cffc70030a`)
 serves SHA `2eed7dd`, the remote tip, which predates this line's four commits (`e5e8090`,
@@ -1457,10 +1498,12 @@ serves SHA `2eed7dd`, the remote tip, which predates this line's four commits (`
 `content-security-policy` nor `strict-transport-security`, and `/build-info.json` answers the
 1,220-byte SPA fallback with no commit — exactly what an artifact predating `1d85395` and `698ec96`
 must do. At `2eed7dd` the repository's check-runs are its four workflows plus CodeQL; none of them
-is a Pages deployment check, so GitHub carries no deployment proof for that SHA. The next pushed
-head is the first artifact that can carry the stamp; `pnpm verify:deployed:current --sha <head>`
-and the live `public-release.spec.ts` are the two instruments that must pass on it. A bundle that
-stays stable is not thereby current, and the gate treats the two as different claims.
+is a Pages deployment check, so GitHub carries no deployment proof for that SHA. Any head after
+`1d85395` can carry the stamp; the head measured here (`0cc964c`) has not been built by Pages: the
+check-runs at that SHA are again the four repository workflows plus CodeQL, with no deployment
+check. `pnpm verify:deployed:current --sha 0cc964c…` and the live `public-release.spec.ts` are the
+two instruments that must pass on the built artifact. A bundle that stays stable is not thereby
+current, and the gate treats the two as different claims.
 
 **What stays closed.** Public signup and recovery flags remain false in the served bundle and
 Founder payments remain disabled (items 18–19). QA-A's credential remains off-repo and unprinted;
