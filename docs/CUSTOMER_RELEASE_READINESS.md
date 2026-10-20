@@ -999,6 +999,41 @@ Any later SHA must earn its own CI and deployment verification.
    push the origin still sends no `Content-Security-Policy` and no `Strict-Transport-Security`, which
    is the state the probe at the top of this row measured, and what is proved here is the text of the
    policy and a browser's behaviour under it, not the deployment.
+   **Which artifact production answers for, read rather than assumed, `2026-10-20T09:05Z`.** The
+   premise of the paragraph above — that a push to this branch deploys — was tested by fetching what
+   `GET /` names and reading the bytes behind it. The origin serves entry `assets/index-C7pebI3S.js`
+   (495,166 B) and `assets/index-CUm43t91.css` (68,415 B); that entry lazy-loads
+   `assets/Auth-Bm6EgDao.js`, whose bytes carry `"This recovery link is not active"` (the D-Rec-1 copy
+   pushed at `2a4872c`) and still carry "temporarily paused" with no "Create an account", so the
+   flags-off posture holds in what is live. That entry's lazy map names no `Legal-*.js`, the served
+   stylesheet has `auth-legal-link`, `legal-shell` and `min-height:24px` at zero occurrences each, and
+   the same command against the working tree's flags-off build prints
+   `MISS assets/Legal-Cz0mKZ7o.js … not served by the deployed site` for twelve of 21 built files plus
+   `DIFF index.html` (`accbde1aac36` local against `7abf0e5edf53` served). So the rebuild *does* follow
+   pushes — `2a4872c` got there — and as of this reading it has not yet caught up with `c0fc2d8`,
+   `4a8211f` and `523fa26`, which were pushed at `08:58Z` and `09:01Z`. **The consequence for the
+   customer is stated plainly: the three trust documents and the 24-pixel trust row are committed and
+   not yet what a visitor on `https://dueweave.pages.dev/` receives.** That lag is not new —
+   `playwright.live-public.config.ts` budgets for it, and its comment records a push taking 17 minutes
+   to serve a byte-identical stylesheet on 2026-10-13 — but re-read at `09:27Z`, 29 minutes after the
+   first of those pushes, the entry had still not moved, so this head's wait is **longer than the 17
+   minutes that precedent recorded** and cannot be quoted as a bound. This line's instrument cannot
+   shorten it, but item 20's validation on the newly deployed artifact must re-read these fingerprints
+   rather than inherit them. A third read at `09:32Z`, cache-busted, still names the same two files —
+   34 minutes after the first of those pushes — so the wait grows with each read rather than closing.
+   **One way this gate could be misread, found while reading it.** `scripts/verify-deployed-parity.mjs`
+   checks the host configuration files by *effect*, and it reads `client/public/_headers` out of the
+   working tree, so while the two directives are held uncommitted the instrument reports
+   `DIFF _headers … declares "Content-Security-Policy: …" but
+   https://dueweave.pages.dev/.gitkeep answered nothing`. Its arithmetic is worth spelling out because
+   it is easy to mistake for a broken deployment: `84 live header declaration(s) honoured` is the four
+   headers the deployment really does send, counted over the 21 built artifacts, and the 55 reported
+   mismatches are exactly 12 absent artifacts + `index.html` + 42 problems, which is the held CSP and
+   the held HSTS failing on all 21 paths. `verify:deployed:parity` is a laptop and operator command and
+   never a CI step, so this reading is a status report, not a gate result — and it is why the artifact
+   half above is the `MISS`/`DIFF` file list rather than the exit code alone. Committing the policy
+   without deploying it is impossible — the file *is* the deployment — which is the point of keeping it
+   unstaged until Stage E item 19.
    **D-Trust-2, found by measuring the artifact production serves: the trust row was a 21.75-pixel
    target.** `e2e-paused/auth-trust-links.spec.ts` clicks the flags-off bundle that
    `scripts/run-paused-e2e.mjs` builds with the same two environment variables production builds
@@ -1073,6 +1108,37 @@ Any later SHA must earn its own CI and deployment verification.
    No privileged credential found.`, over the tracked tree, the untracked files a `git add -A` would
    stage, and the built bundle — so a policy file that names a hosted origin is scanned before it is
    committed rather than after.
+   **CI at the head carrying this row's product work, read out of the job logs:
+   `523fa26af3fb76926e7e5a7b712236651c0955f3`.** All six check-runs are `completed/success`.
+   Static verification prints `Test Files 55 passed (55)`
+   and `Tests 806 passed (806)` — 55, not 57, because the two header specs are held untracked in this
+   working tree — then hygiene (`0 untracked, non-ignored file(s) in the git add -A surface`) and
+   `Scanned 315 files for 11 credential shapes. No privileged credential found`. Browser release smoke
+   built flags-off *in CI* and printed the same fingerprints this row's local build has
+   (`../dist-paused/assets/Legal-Cz0mKZ7o.js 15.38 kB`, `index-DzfHaBba.css 71.13 kB`,
+   `index-C4rUFk9x.js 495.56 kB`), then ran the **first CI execution** of
+   `e2e-paused/auth-trust-links.spec.ts`: `✓ 2 … hands a phone customer three documents whose targets a
+   thumb can hit (1.1s)`, `✓ 3 … keeps the trust row inside the narrowest phone and readable on it
+   (798ms)`, `✓ 5 … lets a keyboard reach every document from the sign-in screen, and says where it is
+   (718ms)`, `✓ 7 … opens the document each link names, on the artifact production serves (3.3s)` —
+   inside `7 passed (7.4s)`, alongside `81 passed (11.0m)` for the stack battery and `3 passed (30.2s)`
+   for the React-warning suite. `all-customer-journeys` is `202 passed (19.0m)` and its cases 107–123 are
+   `e2e/stage6-local-trust-surface.spec.ts`, including `links all three from the sign-in screen, before a
+   credential is typed` and `links all three from the signed-in screen that holds the data controls`.
+   **These numbers are not portable to the head before it.** At `4a8211f`, three minutes earlier,
+   `Database contracts`, `Browser release smoke` and `all-customer-journeys` all end
+   `completed/cancelled` — the `cancel-in-progress` group firing when this head was pushed, after
+   Static verification had already succeeded there — while `analyze` and `live-public` completed. Only
+   those two are shared readings; the trust-row evidence is `523fa26`'s alone.
+   **What `live-public` green does not prove, found in its own log.** Its settle step read the
+   deployment at `09:02:01Z` and printed `[live-settle] https://dueweave.pages.dev/auth read 1 names
+   /assets/index-C7pebI3S.js, /assets/index-CUm43t91.css`, then `served the same build twice
+   (index-C7pebI3S.js + index-CUm43t91.css) after 2 reads in 15344ms` — the two `2a4872c` fingerprints
+   this row re-measured by hand at `09:05Z` and `09:27Z`. The instrument certifies that the origin is
+   *stable*, not that it is *current*, and `e2e-live/` holds no trust-document or target-size
+   assertion, so `6 passed (32.2s)` validates the deployed sign-in screen as it stood before items
+   11–12. Item 20's acceptance on the newly deployed artifact therefore has to be taken against the
+   moved fingerprint, not against this run.
 
 ## Release verdict
 
