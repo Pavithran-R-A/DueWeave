@@ -663,6 +663,66 @@ Any later SHA must earn its own CI and deployment verification.
 6. **Customer trust, support and compliance:** Publish an accurate privacy policy, terms,
    data-retention and deletion policy, and real reachable support address. Verify jurisdiction and
    payment disclosures with the business operator; do not invent a support mailbox or payment details.
+   **Items 11–12 delivered 2026-10-20 (CL-7 Stage C), and the "real reachable support address"
+   half is refused rather than invented.** `client/src/pages/Legal.tsx` (206 lines) publishes
+   Privacy (10 sections), Terms of Use (10) and Support (6) at `/privacy`, `/terms` and `/support`,
+   routed outside the protected shell at `client/src/App.tsx:107`, so a stranger can read them
+   before handing the product a name and a phone number. `client/public/_redirects` — `/* /index.html
+   200`, read again today in `dist/_redirects` after the build — is what makes those three addresses
+   resolve on Cloudflare Pages instead of 404ing. Both entry points the brief asks for carry the
+   links: the sign-in screen itself, above any credential (`client/src/pages/Auth.tsx:267-271`), and
+   the signed-in More screen that holds the export and the erasure control
+   (`client/src/pages/Home.tsx:388`).
+   **Accuracy is enforced, not asserted — that is item 12's real content.**
+   `tests/trust-surface.contract.test.ts` (10 cases) refuses a document that claims a host the app
+   does not use, a deletion that differs from the migration, a retention period nobody measured, or
+   a support channel that does not exist: the third-party list must name Supabase, Cloudflare and
+   Google Fonts *and* `client/index.html` must really load the font host; the erasure paragraph must
+   match what `delete_my_account()` implements, and the test derives the table list from
+   `supabase/migrations/20261006120000_current_arc3c_account_erasure_path.sql` rather than from a
+   sentence — measured there: 10 owner-scoped `delete from public.…` statements plus
+   `analytics_events`; any `30/60/90/180/365-day` or `seven/thirty/ninety days` retention promise
+   fails the file, so the page says "We have not published how long a backup is kept" instead
+   (`Legal.tsx:111`); `mailto:`, an email-shaped token, `Pvt|LLC|Inc.|GmbH|LLP` and any
+   promising-direction guarantee are forbidden, and the file must contain "has not published a
+   support email" (`Legal.tsx:178`). Three owner decisions are therefore listed inside the product
+   as undecided — a monitored support channel, a backup retention period, and a named legal entity
+   with refund terms (`Legal.tsx:202`) — which is this gate's remaining operator half, not a
+   completed one. Founder stays disabled and the file refuses "buy now", "subscribe now" or
+   "auto-renews".
+   **D-Trust-1 found and repaired here: the deletion copy pointed customers at a channel that does
+   not exist.** `client/src/lib/account-deletion.ts:26` told a Founder-entangled customer to
+   "Settle that review with DueWeave support first" and `:28` offered "contact support" for an
+   incomplete erasure, while the same build publishes no support address at all. Both now name the
+   Support page, which is the thing the app can actually deliver; `tests/arc3c-account-deletion.test.ts`
+   keeps the wording inside the message table and still recognises both outcomes.
+   **Measured at this head, and proved able to fail:** the surface went RED for the reason a
+   contract must — wrapping only `/privacy` in `<ProtectedPage>` produced
+   `× … serves each document at a public address that needs no session → /privacy is not routed to
+   PrivacyPage`, `1 failed | 9 passed`, and unwrapping it returned `10 passed (10)` with the two
+   Founder routes still the only wrapped ones. `pnpm test:unit` is `54 files / 801 tests` (53 / 790
+   at `2a4872c`): the new file's 10 cases, plus one more because the boundary contract enumerates
+   every UI source and `Legal.tsx` joined that scan — i.e. the new page is now proven not to touch
+   the Supabase client. `pnpm check`, `pnpm lint`, `pnpm build` exit 0, the three documents ship as
+   one lazy chunk (`dist/assets/Legal-*.js`, 15.38 kB / 5.55 kB gzip) rather than inside `Home` or
+   `Auth`, `verify:hygiene` reports the repository root clean, and `verify:secrets` is
+   `Scanned 313 files for 11 credential shapes. No privileged credential found.`
+   **What this does not claim:** the browser half of item 11 has never executed except in CI.
+   `e2e/stage6-local-trust-surface.spec.ts` — `playwright test --list` collects `Total: 17 tests in
+   1 file`: each document served to a session-less browser with one `main` and one `h1` and no
+   `sb-*` storage, document-to-document switching, "Return to sign in", the three links on the
+   sign-in screen, the six viewport widths 360–1440 measured for horizontal overflow and reading
+   measure, and the signed-in More screen — needs the local Supabase stack, which is not running on
+   this host (Docker's engine socket is absent), and `--list` compiles the file without running it.
+   Its first execution is therefore this head's `Complete customer-browser regression` job, and the
+   claim being made here is that CI ran it, not that it was checked locally. Two further limits are
+   recorded rather than smoothed over. (1) `supabase/functions/delete-account/contract.ts:36` still
+   returns the old "or contact support" sentence for the `incomplete` outcome; the client maps that
+   outcome to its own message so the deployed text is not what a customer reads, but proving that
+   and re-deploying the function needs the management credential this line does not hold.
+   (2) The pages are English-only and describe India-facing product facts (INR, Asia/Kolkata);
+   jurisdiction, GST and any consumer-affairs disclosure remain the operator's decision, which is
+   exactly what this gate has always asked for.
 7. **Durability, abuse and performance:** Define zero-cost backup/restore and incident response
    appropriate to the hosted Free plan (no PITR), anti-abuse/rate-limit acceptance, load estimates,
    and investigate the five informational unindexed foreign keys using measured workloads.

@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState, type ReactNode } from "react";
 import { ArrowLeft, ArrowRight, CheckCircle2, Loader2, LockKeyhole, Mail, RefreshCw, ShieldCheck } from "lucide-react";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import { BRAND } from "@/config/brand";
 import { useSupabaseAuth } from "@/hooks/useSupabaseAuth";
 import { RESEND_REQUESTED_COPY } from "@/lib/auth-outcome";
@@ -264,6 +264,11 @@ export default function Auth() {
           </>}
 
           <p className="auth-footnote">Your browser uses a secure session to open your private ledger. We never display technical database errors here.</p>
+          <nav className="auth-legal-links" aria-label="DueWeave policies and help">
+            <Link className="auth-legal-link" to="/privacy">Privacy Policy</Link>
+            <Link className="auth-legal-link" to="/terms">Terms of Use</Link>
+            <Link className="auth-legal-link" to="/support">Support</Link>
+          </nav>
         </div>
       </section>
     </main>

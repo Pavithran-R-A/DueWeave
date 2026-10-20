@@ -23,9 +23,9 @@ export const DELETION_MESSAGES = {
   origin: "DueWeave did not recognise this browser as the application. Open DueWeave from its own address and try again.",
   notConfigured: "Account deletion is not switched on for this deployment yet. Nothing has changed.",
   offline: "DueWeave could not reach the deletion service. Nothing has changed and your account is intact — try again once you are connected.",
-  founder: "This account is part of a Founder review record, so DueWeave cannot erase it from the app. Settle that review with DueWeave support first.",
+  founder: "This account is part of a Founder review record, so DueWeave cannot erase it from the app. The Support page explains what stands until that review is settled.",
   unchanged: "DueWeave could not delete your account. Everything is unchanged — keep working as before, or try the deletion again.",
-  incomplete: "DueWeave removed your business records but could not finish closing the account. Sign in again and repeat the deletion, or contact support.",
+  incomplete: "DueWeave removed your business records but could not finish closing the account. Sign in again and repeat the deletion. The Support page says what to do if it keeps failing.",
 } as const;
 
 export interface DeletionReply {

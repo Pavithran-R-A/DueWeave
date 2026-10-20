@@ -246,3 +246,41 @@ first caption is styled here, or a control wrapper inherits caption type. */ lab
 .deletion-scope__row>span:not(.deletion-scope__label) { color:var(--muted); font-size:10.5px; line-height:1.5; }
 .deletion-export { width:100%; }
 .confirm-phrase { padding:2px 7px; color:var(--coral-deep); background:var(--coral-deep-soft); border-radius:6px; font-size:11px; font-weight:800; letter-spacing:.06em; white-space:nowrap; }
+
+/* CL-7 Stage C: the three documents a stranger reads before handing DueWeave a name and a phone
+   number. They are stand-alone screens, not panels of the ledger shell, so they sit outside
+   `.app-shell--dark` and keep the paper ramp even on a device set to the dark theme — a person
+   deciding whether to trust this product should not get a different-looking legal page than the
+   one they read yesterday. Every colour here is an existing token, held to AA by
+   `tests/secondary-text-contrast.contract.test.ts`. */
+.legal-shell { min-height:100vh; padding:clamp(22px,4vw,54px) clamp(18px,5vw,52px) calc(56px + env(safe-area-inset-bottom)); background:var(--canvas); color:var(--ink); }
+.legal-inner { max-width:760px; margin:0 auto; }
+.legal-header { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px 20px; padding-bottom:20px; border-bottom:1px solid var(--rule); }
+.legal-brand { color:var(--ink); font-size:16px; font-weight:800; letter-spacing:-.05em; text-decoration:none; }
+.legal-nav { display:flex; flex-wrap:wrap; gap:7px 16px; }
+.legal-nav__link { padding:3px 0; color:var(--teal-dark); font-size:11px; font-weight:700; text-decoration:none; }
+.legal-nav__link:hover { color:var(--teal); text-decoration:underline; }
+.legal-heading { padding:32px 0 4px; }
+.legal-heading h1 { max-width:24ch; margin:11px 0 14px; font-family:var(--font-display); font-size:clamp(29px,4.4vw,44px); font-weight:500; letter-spacing:-.06em; line-height:1.03; overflow-wrap:anywhere; }
+.legal-lede { max-width:64ch; margin:0; color:var(--ink-soft); font-size:14px; line-height:1.65; overflow-wrap:anywhere; }
+.legal-updated { margin:15px 0 0; color:var(--muted); font-size:11px; }
+.legal-body { max-width:70ch; padding-top:12px; }
+.legal-section { padding:25px 0; border-top:1px solid var(--rule); }
+.legal-section h2 { margin:0 0 11px; font-size:17px; letter-spacing:-.035em; line-height:1.25; overflow-wrap:anywhere; }
+.legal-section p { margin:0 0 12px; color:var(--ink-soft); font-size:13.5px; line-height:1.7; overflow-wrap:anywhere; }
+.legal-section p:last-child { margin-bottom:0; }
+.legal-section strong { color:var(--ink); font-weight:700; }
+.legal-footer { margin-top:32px; padding-top:22px; border-top:1px solid var(--rule); }
+.legal-back { display:inline-flex; align-items:center; justify-content:center; min-height:42px; padding:0 16px; color:var(--on-accent); background:var(--teal); border-radius:10px; font-size:12px; font-weight:700; text-decoration:none; }
+.legal-back:hover { background:var(--teal-dark); }
+.legal-footnote { margin:17px 0 0; color:var(--muted); font-size:11px; line-height:1.55; }
+
+/* The two places a person can reach those documents from: the sign-in screen, where the decision
+   is still being made, and the More screen, where their own data is on the page. */
+.auth-legal-links { display:flex; flex-wrap:wrap; gap:6px 15px; margin:13px 0 0; }
+.auth-legal-link { padding:3px 0; color:var(--teal-dark); font-size:10.5px; font-weight:700; text-decoration:none; }
+.auth-legal-link:hover { color:var(--teal); text-decoration:underline; }
+.more-legal-links { display:flex; flex-wrap:wrap; gap:7px 17px; margin-top:15px; }
+.more-legal-link { padding:3px 0; color:var(--teal-dark); font-size:11px; font-weight:700; text-decoration:none; }
+.more-legal-link:hover { color:var(--teal); text-decoration:underline; }
+@media (max-width:560px) { .legal-header { align-items:flex-start; flex-direction:column; } .legal-body,.legal-lede { max-width:none; } }

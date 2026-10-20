@@ -15,6 +15,11 @@ const Home = lazy(() => import("./pages/Home"));
 const Onboarding = lazy(() => import("./pages/Onboarding"));
 const FounderPurchase = lazy(() => import("./pages/FounderPurchase"));
 const FounderAdmin = lazy(() => import("./pages/FounderAdmin"));
+// Public documents: one module, three addresses, each reachable with no session, because a
+// locked-out customer has to be able to read the reason and the remedy.
+const PrivacyPage = lazy(() => import("./pages/Legal").then((module) => ({ default: module.PrivacyPage })));
+const TermsPage = lazy(() => import("./pages/Legal").then((module) => ({ default: module.TermsPage })));
+const SupportPage = lazy(() => import("./pages/Legal").then((module) => ({ default: module.SupportPage })));
 
 function SessionLoading() {
   return <main className="auth-loading" aria-live="polite"><Loader2 className="spin" size={24} /><span>Opening your private ledger…</span></main>;
@@ -99,7 +104,7 @@ function AuthRoute() {
 }
 
 function App() {
-  return <ErrorBoundary><WorkspaceProfileProvider><Toaster /><Suspense fallback={<SessionLoading />}><Switch><Route path="/auth" component={AuthRoute} /><Route path="/auth/update-password" component={Auth} /><Route path="/onboarding" component={OnboardingRoute} /><Route path="/founder" component={() => <ProtectedPage Page={FounderPurchase} />} /><Route path="/admin/founder-claims" component={() => <ProtectedPage Page={FounderAdmin} />} /><Route path="/" component={ProtectedHome} /><Route component={NotFound} /></Switch></Suspense></WorkspaceProfileProvider></ErrorBoundary>;
+  return <ErrorBoundary><WorkspaceProfileProvider><Toaster /><Suspense fallback={<SessionLoading />}><Switch><Route path="/auth" component={AuthRoute} /><Route path="/auth/update-password" component={Auth} /><Route path="/onboarding" component={OnboardingRoute} /><Route path="/founder" component={() => <ProtectedPage Page={FounderPurchase} />} /><Route path="/admin/founder-claims" component={() => <ProtectedPage Page={FounderAdmin} />} /><Route path="/privacy" component={PrivacyPage} /><Route path="/terms" component={TermsPage} /><Route path="/support" component={SupportPage} /><Route path="/" component={ProtectedHome} /><Route component={NotFound} /></Switch></Suspense></WorkspaceProfileProvider></ErrorBoundary>;
 }
 
 export default App;
