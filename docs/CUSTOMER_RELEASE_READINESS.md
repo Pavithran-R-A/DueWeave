@@ -1505,6 +1505,57 @@ check. `pnpm verify:deployed:current --sha 0cc964c…` and the live `public-rele
 two instruments that must pass on the built artifact. A bundle that stays stable is not thereby
 current, and the gate treats the two as different claims.
 
+**The CAPTCHA client push and what the four runs said.** `c505561` reached `release/consumer-live`
+at `2026-10-20T16:32:36Z`, and the same four workflows started on it: `CI` `39458361993`, `CodeQL
+security review` `39458361901`, `Complete customer-browser regression` `39458361946` and `Live
+production public smoke` `39458362020`. Pages served the pushed SHA at `2026-10-20T16:50:52Z` —
+`/build-info.json` named `c505561…` with `source: cloudflare-pages`, 18m16s after the push, which
+is a measurement of how long a hand-started build took and not of a trigger working — and the
+served `/auth` now carries the `script-src … https://challenges.cloudflare.com` and
+`frame-src https://challenges.cloudflare.com` policy with `frame-ancestors 'none'`, HSTS and
+`X-Frame-Options: DENY` all intact. `live-public` failed its first attempt at 16:34 while the site
+still answered with `4f61f3d…` — the coupling this file already records — and passed at `16:52:16Z`
+once the head was served; its second attempt started at `16:51:07Z` and was not issued from this
+checkout. `CI` and `CodeQL` passed at their first attempt.
+
+**That build was not triggered by the push.** The owner's Cloudflare read-back records deployment
+`9c3de90f-3bd3-49da-a420-262c7f146522` for `c505561` with `deployment_trigger.type = ad_hoc` — it
+was started directly against the Pages project, exactly as `4f61f3d…`'s deployment
+`b5ddd806-2c03-44e4-b3fa-0b12e36396e3` was. That matches the boundary this file already draws: the
+last build the GitHub App demonstrably produced was `9478a012-0cf9-42f9-81e6-b8dc0a8229c1` at
+`2026-10-17T17:02:34Z`, and since then no `github:push`-triggered build has appeared — the two heads
+that reached production in this window both arrived by hand. GitHub carries no Pages check-run that
+could distinguish the two trigger kinds, so the trigger type read from Cloudflare plus
+`/build-info.json` are the only evidence there is, and they narrow but do not settle the
+repository-side question at line 994: a suspended installation and a project with automatic
+production deployment turned off still look identical from here.
+**Automatic GitHub-triggered deployment therefore stays an open operational defect:** every head so
+far has needed a human-started build before production became current, so the deployed-SHA currency
+instrument remains load-bearing and a served SHA is not evidence that the push would have caused
+it. Any reading of this file that treats `source: cloudflare-pages` as proof of a working push
+trigger is wrong.
+
+The regression run did not pass: `e2e/response-headers.spec.ts:168` asserted that the app framing
+itself is refused *by the name of the directive* (`frame-ancestors` or `X-Frame-Options`), and a
+policy that opens `frame-src` for the CAPTCHA host alone now refuses that frame at `frame-src`,
+before `frame-ancestors` is consulted. Chromium stops at the first blocking directive, so the older
+matcher read a stricter block as no block at all. The browser's refusal — `Framing
+'http://127.0.0.1:3000/auth' violates … "frame-src https://challenges.cloudflare.com"` — shows the
+surface is shut. The matcher now names the frame surface instead of one directive, so a refusal
+quoting `frame-src`, `frame-ancestors` or `X-Frame-Options` satisfies it alike: the probe's claim is
+only that a live Chromium refuses the frame, not which wall stopped it. That division is deliberate
+and it is not a weakening — `frame-src` governs what DueWeave may embed, so it cannot demonstrate
+the parent-side promise that DueWeave refuses *to be* framed, which stays pinned statically by
+`frame-ancestors 'none'` and `X-Frame-Options: DENY` in
+`tests/response-headers.contract.test.ts:136,:186,:258`. The repaired matcher was checked in three
+states on this checkout's build, and the pair was re-run before the commit was pushed: the old
+matcher against the shipped policy failed the case (1 failed, 4 passed — the CI failure reproduced
+word for word), the new matcher against the shipped policy passes the file whole (5 passed, exit 0),
+and the new matcher against a temporarily relaxed policy — `frame-src 'self'` added and
+`frame-ancestors 'none'` dropped, then restored byte-identical — fails that same case again
+(1 failed, 4 passed, exit 1) with only the `base-uri` refusal present. So the assertion measures
+the block, not the wording.
+
 **What stays closed.** Public signup and recovery flags remain false in the served bundle and
 Founder payments remain disabled (items 18–19). QA-A's credential remains off-repo and unprinted;
 the production ledger, the database snapshots and the other project stacks were not touched; the

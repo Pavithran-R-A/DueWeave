@@ -41,6 +41,12 @@ function policyHosts(directive: string) {
 
 const CSP_REPORT = /refused to|content security policy/i;
 
+// The frame surface refusing the probe. Chromium stops at the first directive that blocks, and the
+// shipped policy now blocks a self-frame at `frame-src` — before `frame-ancestors` is consulted — so
+// naming only the older directive would read a harder block as no block at all. The refusal still
+// has to name the frame surface, or an unrelated console error would pass this case.
+const FRAME_REFUSAL = /(?:framing|refused to display)[^\n]*(?:frame-(?:src|ancestors)|x-frame-options)/i;
+
 /** Chromium reports every refusal on the console; nothing else about this page is excused. */
 async function watchRefusals(page: Page) {
   const refusals: string[] = [];
@@ -187,8 +193,8 @@ test.describe("the policy DueWeave ships, enforced by a browser", () => {
     await expect.poll(() => refusals.join("\n"), { timeout: 10_000 }).toMatch(/base-uri|base href/i);
     await expect
       .poll(() => refusals.join("\n"), { timeout: 10_000 }, "the shipped policy never refused the app framing itself")
-      .toMatch(/frame-ancestors|X-Frame-Options/i);
+      .toMatch(FRAME_REFUSAL);
     expect(refusals.join("\n"), "the base surface was not the refusal this case expects").toMatch(/base-uri/);
-    expect(refusals.join("\n"), "the shipped policy let the app frame itself").toMatch(/frame-ancestors|X-Frame-Options/i);
+    expect(refusals.join("\n"), "the shipped policy let the app frame itself").toMatch(FRAME_REFUSAL);
   });
 });
