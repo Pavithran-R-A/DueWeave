@@ -1,4 +1,48 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { expect, test } from "@playwright/test";
+
+// Cloudflare Pages enforces `client/public/_headers`, so the committed file is the policy the
+// repository claims. Reading it here and requiring the live document to answer with the same
+// directives is what separates a shipped policy from a deployment that predates it.
+const shipped = new Map(
+  readFileSync(path.resolve(import.meta.dirname, "..", "client", "public", "_headers"), "utf8")
+    .split(/\r?\n/)
+    .map((line) => /^\s{2}([A-Za-z-]+):\s*(.+)$/.exec(line))
+    .filter((match): match is RegExpExecArray => match !== null)
+    .map((match) => [match[1].toLowerCase(), match[2].trim()]),
+);
+
+function directives(value: string) {
+  return value.split(";").map((part) => part.trim()).filter(Boolean);
+}
+
+test("production serves the committed CSP and HSTS, and the policy refuses nothing the sign-in screen needs", async ({ page }) => {
+  const csp = shipped.get("content-security-policy");
+  const hsts = shipped.get("strict-transport-security");
+  expect(csp, "client/public/_headers must declare a Content-Security-Policy").toBeTruthy();
+  expect(hsts, "client/public/_headers must declare Strict-Transport-Security").toBeTruthy();
+
+  const refusals: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error" && /content security policy|refused to/i.test(message.text())) refusals.push(message.text());
+  });
+  const response = await page.goto("/auth");
+  expect(response?.status()).toBe(200);
+  const headers = response?.headers() ?? {};
+  expect(headers["content-security-policy"], "the live origin sends no Content-Security-Policy").toBeTruthy();
+  expect(directives(headers["content-security-policy"]), "the live CSP is not the committed policy").toEqual(directives(csp!));
+  expect(headers["strict-transport-security"], "the live origin sends no Strict-Transport-Security").toBe(hsts);
+
+  await expect(page.getByRole("button", { name: /sign in/i })).toBeVisible();
+  await page.evaluate(() => document.fonts.ready);
+  const family = await page.evaluate(() => getComputedStyle(document.body).fontFamily.split(",")[0].replaceAll('"', ""));
+  expect(
+    await page.evaluate((name) => document.fonts.check(`400 16px '${name}'`), family),
+    `the sign-in screen sets ${family}, which the policy never delivered`,
+  ).toBe(true);
+  expect(refusals, "the shipped policy refused something the sign-in screen needs").toEqual([]);
+});
 
 test("production login, PWA mark and browser errors", async ({ page, request }) => {
   const uncaught: string[] = [];

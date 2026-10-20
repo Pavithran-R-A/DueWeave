@@ -43,6 +43,46 @@ describe("Stage 9 release command composition", () => {
     expect(positionOf(command, "pnpm build")).toBeLessThan(positionOf(command, "pnpm verify:secrets"));
   });
 
+  it("serves the erasure endpoint after the reset that tears it down, and releases it again", () => {
+    // `supabase db reset` removes `supabase_edge_runtime_<project>`, so a serve started before
+    // `verify:release:local` is already gone by the time the live battery runs. Measured on
+    // 2026-10-20: the battery passed 22/22 against a serve started after a fresh reset, and the
+    // full gate's live stage failed its nine endpoint cases on this Windows host when the watcher
+    // churned (502 / `fetch failed`). A release command whose live half cannot reach the endpoint
+    // on a clean host is not the whole release.
+    const steps = stepOrder(scripts["verify:release:local"]);
+    const reset = steps.indexOf("pnpm verify:db:local");
+    const served = steps.indexOf("pnpm test:live:served");
+    expect(reset, "no `pnpm verify:db:local` step in verify:release:local").toBeGreaterThanOrEqual(0);
+    expect(served, "verify:release:local must run `pnpm test:live:served`").toBeGreaterThanOrEqual(0);
+    expect(reset, "the serve must start after the reset that removes the Edge runtime").toBeLessThan(served);
+    expect(steps, "plain `pnpm test:live` cannot reach delete-account on a freshly reset stack").not.toContain("pnpm test:live");
+    expect(scripts["test:live:served"], "the served suite must be the wrapper that owns the serve lifecycle").toBe(
+      "node scripts/run-live-suite.mjs",
+    );
+
+    const wrapper = readFileSync(path.join(projectRoot, "scripts", "run-live-suite.mjs"), "utf8");
+    expect(wrapper, "the wrapper must start the project's serve script").toMatch(/local-functions-serve\.mjs/);
+    expect(wrapper, "the wrapper must start the serve").toMatch(/"start"/);
+    expect(wrapper, "the wrapper must release the serve").toMatch(/"stop"/);
+    expect(wrapper, "a failing live suite must still release the serve").toContain("finally");
+    expect(wrapper, "the wrapper must run the live battery it wraps").toContain("test:live");
+  });
+
+  it("has CI execute the same served-live wrapper the local release uses", () => {
+    // Two lifecycles for one requirement drift: CI's hand-managed start/run/stop and the local
+    // wrapper would each need every teardown fix. The wrapper is also the only place this
+    // repository can prove the composition on Linux, because this checkout's Windows serve
+    // churns (measured 2026-10-20: 9 change events, 5 setups, 3 requests reached the handler,
+    // and the battery answered 502/`fetch failed`).
+    const ci = readFileSync(path.join(projectRoot, ".github", "workflows", "ci.yml"), "utf8");
+    const database = ci.slice(ci.indexOf("  database:"), ci.indexOf("  browser:"));
+    expect(database, "the database job must run the served-live wrapper").toContain("pnpm test:live:served");
+    expect(database, "a bare `pnpm test:live` step bypasses the wrapper's teardown").not.toMatch(
+      /^\s*run:\s*pnpm test:live\s*$/m,
+    );
+  });
+
   it("runs the browser half through the one runner that sets every battery flag", () => {
     expect(scripts["verify:e2e:local"]).toBe("node scripts/run-e2e.mjs");
     expect(scripts["test:e2e:smoke"], "CI's browser job must use the same runner").toContain("node scripts/run-e2e.mjs");

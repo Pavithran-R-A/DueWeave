@@ -92,7 +92,7 @@ credential** — `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` for `127.0.0.1
 configuration they read.
 
 ```bash
-pnpm verify:release:local   # database + static half — needs Docker
+pnpm verify:release:local   # database + live + static half — needs Docker
 pnpm verify:e2e:local       # browser half — needs Docker and `pnpm build`
 ```
 
@@ -125,15 +125,15 @@ pnpm verify:types     # generated types must equal the live schema, byte for byt
 pnpm verify:migrations   # committed migration files must equal the applied set
 pnpm test:db          # pgTAP: policies, triggers, privileges, money and lifecycle invariants
 pnpm db:lint          # Supabase schema lint
-node scripts/local-functions-serve.mjs start
-                      # only `pnpm test:live` needs this: it serves the delete-account Edge Function
-                      # the erasure battery calls, detached, and waits until the endpoint answers 401
-                      # for a caller with no token (404 = not mounted, 501 = the origin never reached
-                      # the runtime). The env file it writes carries ALLOWED_APP_ORIGIN and nothing
-                      # else — the CLI injects the Supabase keys into the container itself
-pnpm test:live        # the Stage 2-9 suites that talk to the real database over PostgREST
-node scripts/local-functions-serve.mjs stop
-                      # terminates that watcher and stops only this project's edge-runtime container
+pnpm test:live:served # the Stage 2-9 suites over PostgREST, plus the erasure battery's HTTP calls
+                      # `supabase db reset` removes the edge-runtime container, so the serve cannot be
+                      # started before this command: scripts/run-live-suite.mjs starts
+                      # scripts/local-functions-serve.mjs after the reset (detached; it waits until
+                      # the endpoint answers 401 for a caller with no token — 404 = not mounted,
+                      # 501 = the origin never reached the runtime), runs `pnpm test:live`, and stops
+                      # the watcher and only this project's container in `finally`. The env file it
+                      # writes carries ALLOWED_APP_ORIGIN and nothing else — the CLI injects the
+                      # Supabase keys into the container itself
 ```
 
 **Browser verification** drives the built bundle in Chromium. `playwright.config.ts` declares a
@@ -241,7 +241,8 @@ executable, and closed the places where a run could report green while proving n
 ```bash
 pnpm test:e2e:smoke            # 79 tests, measured 14.2 min on one worker
 pnpm test:e2e:react-warnings   # 3 tests, measured 1.9 min
-pnpm test:live                 # 9 suites / 307 tests, incl. tests/stage9-abuse-matrix.test.ts
+pnpm test:live:served          # 10 suites / 332 tests over PostgREST and the served Edge Function,
+                               # incl. the Stage 9 abuse matrix and the Arc 3C erasure battery
 ```
 
 `e2e/stage9-release-journey.spec.ts` walks one account through the whole product on the built

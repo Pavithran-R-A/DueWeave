@@ -124,38 +124,25 @@ jobs:
         run: pnpm db:lint
 
       # Arc 3C row U (`docs/RELEASE_GATE_MATRIX.md`): the erasure battery in `tests/arc3c-local-account-erasure.test.ts`
-      # calls `delete-account` over HTTP, so `pnpm test:live` needs this checkout's Edge Function
-      # served as well as its schema replayed. Until now the workflow had no such step, which is why
-      # the row could never be executed by a run. The script owns the watcher's lifecycle because
-      # `supabase functions serve` is a foreground process — a plain `run:` step would never finish —
-      # and it decides readiness from the endpoint's own answer rather than from a sleep: 404 means
-      # the function is not mounted, 501 means `ALLOWED_APP_ORIGIN` never reached the container, and
-      # only 401-for-a-caller-with-no-token means served-and-configured. Readiness polls every 500 ms
-      # against a 90 s ceiling (both constants live in the script), and a missed ceiling is reported as
-      # a blocked gate rather than a pass. Measured on 2026-10-13, run 38448131068's Database
-      # contracts job executed this step at its own commit: the serve answered `delete-account is
-      # served and ALLOWED_APP_ORIGIN reached the runtime (2888 ms, supabase_edge_runtime_dueweave
-      # recreated by the serve)`, `pnpm test:live` then ran 10 files / 331 tests with
-      # `tests/arc3c-local-account-erasure.test.ts` among them (22 tests), and the teardown step
-      # terminated the watcher and proved the container had stopped. That endpoint-read is the reason
-      # this step exists at all: the first attempt, a serve whose watcher ran against a Windows
-      # checkout, never reached served-and-configured and the battery answered 502 — its churn and
-      # counts are recorded in `docs/CONSUMER_LIVE_PROGRESS.md` and `docs/RELEASE_GATE_MATRIX.md`
-      # note 8.
-      - name: Serve the delete-account Edge Function for the erasure battery
-        run: node scripts/local-functions-serve.mjs start
-
-      - name: Database-backed contract suites
-        run: pnpm test:live
-
-      # `if: always()`, and scoped: the script terminates only the pid this checkout recorded and
-      # stops only `supabase_edge_runtime_<this project id>`, so the release does not reach the other
-      # stack on this host. It then proves the endpoint stopped answering. `release-local-ci-state`
-      # still stops the whole stack afterwards; this step is what keeps the watcher itself from
-      # outliving the job.
-      - name: Release the served Edge Function
-        if: ${{ always() }}
-        run: node scripts/local-functions-serve.mjs stop
+      # calls `delete-account` over HTTP, so the suites need this checkout's Edge Function served as
+      # well as its schema replayed. `supabase functions serve` is a foreground process and `supabase
+      # db reset` removes its runtime container, so the start has to happen after the reset and the
+      # stop has to happen even when a suite fails. `scripts/run-live-suite.mjs` (the same wrapper
+      # `pnpm verify:release:local` runs) owns that lifecycle: it starts the serve, runs `pnpm
+      # test:live`, and releases the watcher and only this project's runtime container in `finally`.
+      # Readiness comes from the endpoint's own answer rather than from a sleep: 404 means the
+      # function is not mounted, 501 means `ALLOWED_APP_ORIGIN` never reached the container, and only
+      # 401-for-a-caller-with-no-token means served-and-configured (polls every 500 ms, 90 s ceiling;
+      # a missed ceiling is a blocked gate, not a pass). Measured on 2026-10-13, run 38448131068
+      # executed the same serve script: it answered `delete-account is served and
+      # ALLOWED_APP_ORIGIN reached the runtime (2888 ms)`, `pnpm test:live` ran 10 files / 331 tests
+      # including the 22-test erasure battery, and the teardown proved the container had stopped. The
+      # wrapper replaces the hand-managed start/suite/stop steps that used to live here so that the
+      # two lifecycles cannot drift; this job is also the Linux host that proves the wrapper's
+      # `finally`, because this checkout's Windows serve churns and the battery answers 502 there
+      # (counts in `docs/RELEASE_GATE_MATRIX.md` note 8).
+      - name: Database-backed contract suites over the served Edge Function
+        run: pnpm test:live:served
 
       - uses: ./.github/actions/release-local-ci-state
         if: ${{ always() }}

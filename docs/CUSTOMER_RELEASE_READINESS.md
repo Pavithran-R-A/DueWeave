@@ -1311,6 +1311,166 @@ Any later SHA must earn its own CI and deployment verification.
    fallback), and the site must not be described as policied or current until a deployment carries
    both and a live header read plus a browser run on that artifact confirm them.
 
+## CL-7 P3 — server-side security and email readiness, measured 2026-10-20
+
+Items 12–15 of the CL-7 brief are hosted-control items, and the live half of item 16 is a deployment
+question. This line holds no usable management credential, so each was audited against what it can
+actually reach. None is closed; the table is the state, and the paragraphs under it are the evidence and the
+action that would move each one.
+
+| # | Item | State at this head |
+| --- | --- | --- |
+| 12 | Turnstile / CAPTCHA | not implemented, CAPTCHA disabled |
+| 13 | Auth email delivery and capacity | two delivered messages proved; sender, reputation and capacity unmeasured |
+| 14 | Site URL, redirect allow-list, password minimum, confirmation | behaviourally proved; configuration unread |
+| 15 | Security and performance advisors | prior classification stands; not refreshed after migration 26 |
+| 16 | CSP and HSTS on the live origin | repository half green at `698ec96`; the live suite now asserts both and is RED against the current origin |
+
+**12 — Turnstile is a hosted control with no code in this tree, and it stays off.** A repository-wide
+search for `turnstile` and `captcha` returns no tracked file, the process holds no
+`TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY` or `VITE_TURNSTILE_SITE_KEY`, and it holds no usable
+management credential: the only `SUPABASE_ACCESS_TOKEN` on disk (`~/.supabase/access-token`) is the
+machine-global token already measured answering `{"message":"Invalid access token"}`, which the
+standing policy forbids reusing, so it was not exercised. `/auth/v1/settings` exposes no CAPTCHA
+field. The server-side enforcement the
+brief asks for is a GoTrue setting written from the dashboard or the Management API, so it cannot be
+completed from this line. **No token-collecting client code was added on purpose.** A widget that
+gathers tokens while GoTrue accepts every request unchanged changes no outcome, cannot produce the
+negative test the brief asks for — that refusal has to come from the server — and would need
+`challenges.cloudflare.com` added to a CSP whose live rollout is still pending, widening production's
+policy for a control that cannot run. The closing sequence is concrete: create a Turnstile widget for
+`dueweave.pages.dev`; enable CAPTCHA in Supabase Auth with its secret through a scoped PAT; then ship
+the widget and token forwarding on the auth calls GoTrue protects, the CSP `script-src`/`frame-src`
+allowances, a no-token signup probe that must answer 400, and one real signup-confirmation plus one
+recovery delivery against the owner's mailbox. Until every step has executed, CAPTCHA stays disabled
+and no customer-facing readiness claim may mention it.
+
+**13 — Email delivery is proved for two messages on 2026-10-14/15, not for the sender or its capacity.**
+The credential-free read at `2026-10-20T11:35Z` still answers `disable_signup=false
+mailer_autoconfirm=false external.email=true`. The rate behaviour this line can measure is the one
+already recorded: a recovery request answered `HTTP 429` inside roughly a minute of a prior one on
+2026-10-14, while two requests 63 seconds apart both answered `HTTP 200` on 2026-10-15 — a throttling
+window exists, but its configured limits are a dashboard read. Confirmation and reset messages were
+read from `dueweave@gmail.com` by the owner and their destinations measured (gates 1–2). This line
+holds neither a mailbox nor an SMTP credential: `GMAIL_APP_PASSWORD` and `SMTP_PASSWORD` are absent,
+and `~/.config/dueweave` holds only the production database password and two QA identity files. So
+the hosted sender identity, SPF/DKIM/DMARC alignment, sender reputation, Gmail SMTP reliability and
+hourly capacity are all unmeasured; Google's published free-Gmail ceiling of about 500 recipients per
+day is a platform fact that may not even describe this project's sender. Closing needs one of two
+reads — a scoped PAT call that returns the hosted SMTP configuration, or owner-forwarded headers from
+a delivered message — followed by a paced send/receipt pair. The paced send was not made today because
+it would consume the rate window and mail an address this line cannot read.
+
+**14 — The auth URL and password values are proved by consequences, and the configuration read is still
+missing.** `GET /auth/v1/settings` exposes neither `site_url`, `additional_redirect_urls` nor
+`password_min_length`; today's read confirms only that email auth is enabled and confirmation is
+required (`mailer_autoconfirm=false`). The values themselves remain proved by what they produced on
+2026-10-14/15: the delivered confirmation link pointed at `https://dueweave.pages.dev/auth` and
+completed; a control reset for an unconfigured destination was replaced by the Site URL rather than
+honoured, read from the delivered mail; a seven-character password change was refused while the
+eight-character replacement was accepted and used; and QA-A's recovery completed on the deployed
+`/auth/update-password` route. Those are behavioural proofs, not a configuration read, and the brief
+asks for verification — so a scoped PAT read of the three values remains the closing step.
+
+**15 — The advisor classification is intact and stale by one migration.** No PAT is held, so both
+advisor endpoints are unreachable today. The last hosted read (2026-10-11) recorded **25
+`SECURITY DEFINER` WARN + 3 `rls_enabled_no_policy` INFO**. The 24 that existed before the erasure
+migration were classified row by row as intentional and proven against the live authorization
+surface, and the 25th, `delete_my_account()`, is pinned by the pgTAP grant assertions. The three INFO
+are the designed deny-all founder tables. The performance side was not empty: **9 INFO at 12:42Z on
+2026-10-11 — 5 unindexed foreign keys and 4 unused indexes** — each unused-index finding reconciled
+one-for-one with `idx_scan`, with no index created or dropped and the five FK columns listed for
+review. One security finding is easy to lose in the count and is named here as open: the pre-QA
+capture carried `auth_leaked_password_protection`, the advisor's name for leaked-password protection
+being **off**; it disappeared after cleanup without any Auth write, and turning it on is an owner
+action. Migration 26 landed after these reads, so the counts are **unrefreshed, not current**.
+Closing is one scoped-PAT re-read of security and performance, followed by classification of any lint
+that is new.
+
+**16 — CSP/HSTS is complete in the repository and absent from production as of this measurement.** At
+`2026-10-20T11:36:41Z`, `HEAD https://dueweave.pages.dev/` answered HTTP 200 with **0**
+`content-security-policy` and **0** `strict-transport-security` headers, and `/build-info.json` still
+answered the 1,220-byte HTML fallback with `content-type: text/html` and no commit. The policy, its
+browser proof and its rollback path are committed at `698ec96` (gate 10), so this is a deployment gap,
+not an authoring gap. One Pages build from the pushed head closes the live half: a header read on the
+served routes plus the browser run on that same artifact. The same stamp closes gate 8's
+deployed-SHA row, which is why the post-deployment output is carried by the P2/P4 record rather than
+promised here.
+
+**The live suite now asks the origin, not the repository.** `e2e-live/public-release.spec.ts` reads
+`client/public/_headers`, requires the `/auth` document to answer with the same CSP directives and
+the identical `Strict-Transport-Security` value, and then proves the sign-in screen renders, its
+webfont arrived and Chromium reported no CSP refusal. Run at `2026-10-20T11:45Z` it failed exactly
+there — `the live origin sends no Content-Security-Policy`, `1 failed` — so a deployment that
+predates the policy cannot satisfy it. The spec lints and type-checks at this head; the command a
+reviewer can repeat is `pnpm exec playwright test -c playwright.live-public.config.ts
+public-release.spec.ts -g "production serves the committed CSP"`.
+
+**What this section does not claim.** None of items 12–15 is closed. Turnstile has no code in the
+tree; email reputation, sender identity and capacity are unmeasured; the auth configuration values are
+proved only by their consequences; the advisor counts are as of 2026-10-11 and migration 26 has not
+been through them; and the live origin still sends neither security header. The fail-closed posture is
+unchanged: public signup and recovery flags remain false in the served bundle, and Founder payments
+remain disabled. No CAPTCHA was enabled, no flag was flipped and no mail was sent for this audit.
+
+## CL-7 P4 — controlled launch and the evidence composition, measured 2026-10-20
+
+Items 17–21 of the brief are the launch gate. This section records what was repaired so that the
+gate can produce evidence, what the gate actually measured, and what is deliberately still closed.
+It does not close the gate.
+
+**The repair: one lifecycle for the served live suite, run by the local release and by CI alike.**
+`pnpm test:live` includes `tests/arc3c-local-account-erasure.test.ts`, which calls `delete-account`
+over HTTP, so the function has to be served — and served *after* `supabase db reset`, because the
+reset removes the `supabase_edge_runtime_dueweave` container. `scripts/run-live-suite.mjs` now owns
+that lifecycle: it starts `scripts/local-functions-serve.mjs`, runs `pnpm test:live`, stops the
+watcher and only this project's runtime container in `finally`, and propagates a stop failure when
+the suites passed. `pnpm test:live:served` names it; `pnpm verify:release:local` runs it in place of
+the bare suite, and the Database contracts job in `.github/workflows/ci.yml` runs the same command in
+place of its hand-managed start/suite/stop steps, so the two lifecycles cannot drift and the Linux
+job becomes the wrapper's authoritative proof. The contract tests in
+`tests/release-command-contract.test.ts` pin the wrapper's position after `verify:db:local`, the
+absence of a bare `pnpm test:live` in the release chain, the wrapper's start/suite/stop/`finally`
+content, and CI's use of the wrapper. Each assertion was watched RED before its corresponding
+change: the CI assertion failed with `1 failed | 7 passed (8)` — `the database job must run the
+served-live wrapper` — and the same file passed 8/8 after the workflow was edited.
+
+**The measurements.** Teardown was proved by running the wrapper: the watcher terminated, only
+`supabase_edge_runtime_dueweave` stopped, and the endpoint stopped answering in about 5.1 s. The
+erasure battery in isolation, against a freshly reset database and a started serve, passed 22/22 in
+25.30 s. A full live run on a fresh reset passed 331 of 332 tests; the single failure was a 503
+during a runtime reload. The full `pnpm verify:release:local` on this Windows host exited 1 with
+`9 failed | 323 passed (332)` — all nine failures in the erasure battery, all of the host signature
+`502`/`fetch failed`, with the serve log recording 9 spurious `File change detected` events, 5
+runtime setups and only 3 requests reaching the handler. The battery's own STATUS comment already
+documents the same signature (24 events / 8 setups on Windows; 1 setup, 0 change events for 104
+requests under WSL), and a controlled probe whose requests answered 401/400 triggered no reloads, so
+the churn is a property of this host's watcher, not a product refusal. WSL was tried as the Linux
+executor and is not usable here: `/var/run/docker.sock` is absent, the Docker Desktop proxy sockets
+are root-only and sudo needs a password. **A green local release suite has therefore not been
+obtained on this host**; the Linux CI job above is the defined executor, and its first run is the
+proof that is still outstanding.
+
+**Deployment currency.** The deployment the brief cites (`f955cacc-4471-49eb-a796-a6cffc70030a`)
+serves SHA `2eed7dd`, the remote tip, which predates this line's four commits (`e5e8090`,
+`1d85395`, `698ec96`, `596154c`). Measured at `2026-10-20T11:36:41Z`, that artifact sends neither
+`content-security-policy` nor `strict-transport-security`, and `/build-info.json` answers the
+1,220-byte SPA fallback with no commit — exactly what an artifact predating `1d85395` and `698ec96`
+must do. At `2eed7dd` the repository's check-runs are its four workflows plus CodeQL; none of them
+is a Pages deployment check, so GitHub carries no deployment proof for that SHA. The next pushed
+head is the first artifact that can carry the stamp; `pnpm verify:deployed:current --sha <head>`
+and the live `public-release.spec.ts` are the two instruments that must pass on it. A bundle that
+stays stable is not thereby current, and the gate treats the two as different claims.
+
+**What stays closed.** Public signup and recovery flags remain false in the served bundle and
+Founder payments remain disabled (items 18–19). QA-A's credential remains off-repo and unprinted;
+the production ledger, the database snapshots and the other project stacks were not touched; the
+wrapper stops only this checkout's serve watcher and only `supabase_edge_runtime_dueweave`
+(item 20). No release manifest has been produced and public activation has not been requested
+(item 21): P3's items 12–15, the live CSP/HSTS half of item 16, the email sender and capacity
+read, the owner's approval of `dueweave@gmail.com` as the published support address, and the
+advisor re-read all remain open. The verdict below is unchanged.
+
 ## Release verdict
 
 **NOT CERTIFIED FOR A GENERAL PUBLIC CUSTOMER LAUNCH.**
