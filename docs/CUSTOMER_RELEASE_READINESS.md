@@ -989,9 +989,11 @@ Any later SHA must earn its own CI and deployment verification.
    stack is not on this host, and `vite preview` ignores `_headers` for every path). So the pushed head
    carries the trust-row target repair, the guard-vocabulary repair and `e2e-paused/auth-trust-links.spec.ts`
    — whose first CI execution is that head's own `pnpm test:e2e:paused`, since that script collects all
-   of `e2e-paused/` — while `client/public/_headers`, `e2e/response-headers.spec.ts` and
-   `tests/response-headers.contract.test.ts` are a second forward commit held in this working tree. Its
-   push is Stage E item 19's controlled step, made after item 18's battery is green at one head, and
+   of `e2e-paused/` — while the two new lines in `client/public/_headers`, `e2e/response-headers.spec.ts` and
+   `tests/response-headers.contract.test.ts` are kept in this working tree **uncommitted** — the two
+   directives unstaged in that file and the two specs untracked — so that no push of this branch can
+   carry a site-wide policy by accident. Committing them is Stage E item 19's controlled step, made
+   after item 18's battery is green at one head, and
    item 20's signed-in validation on the newly deployed artifact is what measures the live policy on
    the surfaces this line cannot reach. **Nothing in the pushed head is a policy claim:** after that
    push the origin still sends no `Content-Security-Policy` and no `Strict-Transport-Security`, which
@@ -1063,11 +1065,14 @@ Any later SHA must earn its own CI and deployment verification.
    described above (kept outside the repository and deleted at the end of this pass, because the
    repository must not carry a config that runs a stack suite without a stack).
    **The two gates that read prose ran last, after this row was written**, which is the ordering
-   lesson `## Blocking gates` row 7 records: `verify:hygiene` then reads the untracked files this row
-   holds for the activation commit and nothing at the repository root, and `verify:secrets` reports its
-   scan over the tracked tree, the untracked files a `git add -A` would stage, and the built bundle —
-   so this head's new instrumentation, including a policy file that names a hosted origin, is scanned
-   before it is committed rather than after.
+   lesson `## Blocking gates` row 7 records. At the head this row was pushed with, `verify:hygiene`
+   answers `Read the working tree: 2 untracked, non-ignored file(s) in the git add -A surface.` — exactly
+   the two specs held above, with the `_headers` directives showing only as a modification to a tracked
+   file — and adds that the repository root carries no untracked, non-ignored artifact, so nothing at it
+   can be staged by accident. `verify:secrets` then answers `Scanned 317 files for 11 credential shapes.
+   No privileged credential found.`, over the tracked tree, the untracked files a `git add -A` would
+   stage, and the built bundle — so a policy file that names a hosted origin is scanned before it is
+   committed rather than after.
 
 ## Release verdict
 
