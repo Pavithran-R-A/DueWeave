@@ -1,7 +1,9 @@
 name: Live production public smoke
 
 # This suite checks the public Pages hostname on release pushes. Deployment may lag CI; the
-# Cloudflare deployment SHA must be verified separately before certifying an exact-head release.
+# Cloudflare deployment SHA must be verified separately before certifying an exact-head release:
+# `pnpm verify:deployed:current --sha <commit>` reads the deployment's own `build-info.json` and
+# fails closed until the site can name the commit it serves. Stability is not currency.
 on:
   push:
     branches: [release/consumer-live]

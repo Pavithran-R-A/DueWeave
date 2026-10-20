@@ -944,6 +944,59 @@ Any later SHA must earn its own CI and deployment verification.
    shipped; the parity claim is that this head's build equals production, not that Pages was rebuilt for
    `a780209`. Both facts are measurable only with the deployment API, which is the owner-side half of gate 8
    that remains open.
+   **CL-7 final corrections, 2026-10-20 — the automatic-deployment stop is bracketed by GitHub's own
+   records, and the deployed-SHA half of this gate now has an instrument that fails closed.** The brief's
+   claims are not repeated here; what was read at this line is. (a) **The integration was working at the
+   last push before the stop and produced nothing after it.** The Cloudflare GitHub App
+   (`cloudflare-workers-and-pages`, app id 85455, subscribed to `push` and `pull_request`) created a
+   completed/success check-run for every commit through `4d829780` — that one's suite opened
+   `2026-10-17T17:01:54Z` and closed `17:02:34Z`, 57 seconds later, at deployment
+   `9478a012-0cf9-42f9-81e6-b8dc0a8229c1` in account `cdfe06b4a219190fcbd20b647b926b0e` (read from the
+   check-run's `details_url`, not from a credential this line holds). The first push with **no** Cloudflare
+   check-run at all is `e9759a59` at `2026-10-20T06:17:28Z`; `2a4872c`, `c0fc2d8` and `2eed7dd` likewise carry
+   only `github-actions` check-runs, zero legacy status contexts, and no Deployments API record. So the stop
+   is bounded to `2026-10-17T17:02:34Z → 2026-10-20T06:17:28Z`, which is what "after October 17" means when
+   dated from evidence rather than from a sentence. (b) **Nothing on the repository side refused it.** The
+   branch is unprotected (`GET …/branches/release/consumer-live/protection` → 404 "Branch not protected"),
+   `GET …/rulesets` is `[]`, and `GET …/hooks` is `[]` — Cloudflare Pages uses the GitHub App, not a repo
+   webhook, so there is no delivery log here to read. The installation itself is not readable from this
+   line: `GET /user/installations` answers 403 ("must authenticate with an access token authorized to a
+   GitHub App") and `GET /repos/…/installation` answers 401 ("A JSON web token could not be decoded") with a
+   user PAT. This establishes the shape of the failure — pushes arrived, GitHub created the check-suite
+   input, and no Cloudflare check-run was ever posted — and it does **not** name the Cloudflare-side cause:
+   a suspended or removed installation and a project whose automatic production deployment was turned off
+   produce the same repository-side silence. That reading needs the connected account, which this line does
+   not hold; the existing Pages project was not reconnected, replaced or otherwise touched.
+   (c) **The deployed-SHA requirement is now executable, and its first real run says production cannot
+   name its commit.** `scripts/build-info.mjs` emits `dist/build-info.json` as
+   `{"schema":1,"commit":…,"source":…}`, taking `CF_PAGES_COMMIT_SHA` from a Pages build, else `GITHUB_SHA`
+   from a workflow build, else an explicit `DUEWEAVE_BUILD_COMMIT` claim labelled `source: "operator"`; a
+   laptop build names no commit rather than reading HEAD from a dirty tree. Two real builds were measured:
+   plain `pnpm build` wrote `{"schema":1,"commit":null,"source":"none"}`, and
+   `DUEWEAVE_BUILD_COMMIT=$(git rev-parse HEAD) pnpm build` wrote
+   `{"schema":1,"commit":"e5e8090bbce9a6472b9a640e23d47b4bf99f3f6a","source":"operator"}`. The gate is
+   `pnpm verify:deployed:current --sha <commit>` (`scripts/verify-deployed-currentness.mjs`): it reads
+   `https://dueweave.pages.dev/build-info.json`, requires schema 1 and a **full** 40/64-hex commit, and
+   refuses a missing file, the SPA fallback answering HTTP 200 for it, unparsable JSON, a null commit, a
+   prefix, or any byte-level difference from the target — all before it can print `CURRENT`. Run against
+   production at this head it answered
+   `NOT CURRENT — https://dueweave.pages.dev answered /build-info.json with something that is not a build
+   stamp (text/html; charset=utf-8, 1220 bytes)…` and exited 1. That is the correct answer for a deployment
+   built before the stamp existed, and it means **"production serves `2eed7dd`" is, at this line, the
+   platform owner's claim rather than a measurement**: the site serves the same stable bundle it served
+   before, which is exactly the certificate item 10 forbids. After one stamp-bearing deployment, the same
+   command either prints `CURRENT — … serves commit <sha>` or names the commit it actually serves. The gate
+   is contract-tested as an operator command that no workflow or local release gate may reach
+   (`tests/deployed-currentness.contract.test.ts`), because a deployment that legitimately lags its branch
+   is not a CI failure; `verify-deployed-parity.mjs` now excludes `build-info.json` for the same reason,
+   with its own case proving that two different stamps are not an artifact defect
+   (`tests/deployed-artifact-parity.contract.test.ts`). The written line was watched RED first —
+   `19 failed | 16 passed (35)` with both modules absent — then green at `35 passed (35)`; `pnpm test:unit`
+   is `58 files / 838 tests passed`, and the release header now names the currency command for the P4
+   manifest. **What remains open in this row is the same owner-side half as before, now with one fewer
+   excuse:** restore the Pages integration from the connected account, deploy one build that carries the
+   stamp, then record `verify:deployed:current` against the pushed SHA. Until that output exists, this gate
+   may not be called closed and the live site may not be called current.
 9. **Temporary QA cloud cleanup:** `DueWeave Validation` was paused but is **not confirmed
    permanently deleted**; this administrative cleanup remains open.
 10. **Production CSP, HSTS, accessibility, mobile behavior and customer-facing error handling

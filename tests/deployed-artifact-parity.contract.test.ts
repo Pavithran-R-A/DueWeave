@@ -268,6 +268,19 @@ describe("Deployed artifact parity", () => {
     expect(out, "the probe path whose promise broke has to be named").toMatch(/parity-probe/);
   });
 
+  it("leaves the deployment's own commit stamp to the currentness gate", async () => {
+    // `build-info.json` describes where the deployment came from, not what the app is. Two
+    // deployments of different commits are exactly what parity is used to compare during a
+    // rollout, and a stamp mismatch here would read as an artifact defect. `verify:deployed:current`
+    // owns that question; this instrument must not answer it by accident.
+    const localStamp = JSON.stringify({ schema: 1, commit: "a".repeat(40), source: "github-actions" });
+    const servedStamp = JSON.stringify({ schema: 1, commit: "b".repeat(40), source: "cloudflare-pages" });
+    const url = await serveSite({ ...distFiles, "build-info.json": servedStamp });
+    const { code, out } = await run(writeDist({ ...distFiles, "build-info.json": localStamp }), url);
+    expect(out, `the healthy HTML was never reached: ${out}`).toMatch(comparedHtml);
+    expect(code, out).toBe(0);
+  });
+
   it("stays a laptop command, because a site that legitimately lags the build is not a CI defect", () => {
     for (const name of ["ci.yml", "live-public.yml", "release-full-browser.yml", "codeql-release.yml"]) {
       const body = readFileSync(path.join(projectRoot, ".github", "workflows", name), "utf8");

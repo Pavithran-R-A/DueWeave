@@ -34,6 +34,11 @@ import path from "node:path";
  *  copy of a file in the repository. */
 const BUNDLED_PREFIX = "assets/";
 const CONFIG_FILES = new Set(["_headers", "_redirects"]);
+/** The deployment's own commit stamp. It describes where this build came from, not what the app
+ *  is, and two stamps that differ are exactly what a rollout looks like mid-flight. Its question
+ *  belongs to `verify-deployed-currentness.mjs`; comparing it here would report a stamp mismatch
+ *  as an artifact defect and invite parity to certify currency by accident. */
+const DEPLOYMENT_METADATA = new Set(["build-info.json"]);
 
 function parseArgs(argv) {
   const options = { dist: "dist", url: "https://dueweave.pages.dev" };
@@ -155,8 +160,9 @@ if (files.length === 0) {
   process.exit(2);
 }
 
-const artifacts = files.filter((relative) => !CONFIG_FILES.has(relative));
+const artifacts = files.filter((relative) => !CONFIG_FILES.has(relative) && !DEPLOYMENT_METADATA.has(relative));
 const configs = files.filter((relative) => CONFIG_FILES.has(relative));
+const stamps = files.filter((relative) => DEPLOYMENT_METADATA.has(relative));
 const mismatches = [];
 const servedHeaders = new Map();
 
@@ -269,6 +275,9 @@ for (const relative of configs) {
 }
 
 console.log(`Compared ${artifacts.length} built file(s) and verified ${configs.length} host configuration file(s) from "${dist}" against ${origin.origin}.`);
+if (stamps.length > 0) {
+  console.log(`Left ${stamps.join(", ")} to verify:deployed:current: which commit the deployment says it is is not a byte comparison.`);
+}
 if (mismatches.length > 0) {
   console.error(`PARITY MISMATCH — ${mismatches.length} of ${files.length} file(s) do not match:`);
   for (const line of mismatches) console.error(`  ${line}`);

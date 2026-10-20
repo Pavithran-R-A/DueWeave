@@ -17,6 +17,7 @@
     "verify:migrations": "node scripts/verify-migrations.mjs",
     "verify:types": "node scripts/verify-types-drift.mjs",
     "verify:deployed:parity": "node scripts/verify-deployed-parity.mjs",
+    "verify:deployed:current": "node scripts/verify-deployed-currentness.mjs",
     "verify:hosted:auth": "node scripts/hosted-auth-status.mjs",
     "verify:hosted:census": "node scripts/hosted-db-census.mjs",
     "verify:hosted:isolation": "node scripts/hosted-tenant-isolation.mjs",
