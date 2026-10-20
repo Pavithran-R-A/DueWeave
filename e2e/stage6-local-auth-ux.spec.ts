@@ -281,7 +281,9 @@ test.describe("Stage 6 sign-up and sign-in honesty", () => {
     await expect(page.getByLabel("Email address")).toHaveValue("nobody@dueweave.local");
     await expect(page.getByLabel("Password")).toBeEnabled();
     await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeEnabled();
-    await expect(page.locator("body")).not.toContainText(/PGRST|SQLSTATE|postgrest|gotrue|InvalidLogin|constraint|policy/i);
+    // The signature of a Postgres authorization refusal, not the bare word "policy": the
+    // sign-in screen links a Privacy Policy, and CI read that as a leak.
+    await expect(page.locator("body")).not.toContainText(/PGRST|SQLSTATE|postgrest|gotrue|InvalidLogin|constraint|row-level security/i);
   });
 
   test("shows a pending sign-in only while the request is actually in flight", async ({ page }) => {
@@ -344,7 +346,7 @@ test.describe("Stage 6 password recovery and sign-out", () => {
     await expect(page.locator(".auth-heading p")).toHaveText(/Ask for a fresh link below/);
     await expect(page.locator('input[type="password"]')).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Save new password" })).toHaveCount(0);
-    await expect(page.locator("body")).not.toContainText(/PGRST|SQLSTATE|postgrest|gotrue|constraint|policy/i);
+    await expect(page.locator("body")).not.toContainText(/PGRST|SQLSTATE|postgrest|gotrue|constraint|row-level security/i);
 
     await page.getByRole("button", { name: "Request a new reset link" }).click();
     await expect(page.getByRole("heading", { name: "Return to your ledger." })).toBeVisible();
@@ -459,7 +461,7 @@ test.describe("Stage 6 password recovery and sign-out", () => {
 
     await expect(page).toHaveURL(/\/auth$/, { timeout: 20_000 });
     await expect(page.getByRole("heading", { name: "Your follow-ups, in one calm place." })).toBeVisible();
-    await expect(page.locator("body")).not.toContainText(/PGRST|SQLSTATE|postgrest|gotrue|constraint|policy/i);
+    await expect(page.locator("body")).not.toContainText(/PGRST|SQLSTATE|postgrest|gotrue|constraint|row-level security/i);
 
     // The account itself is untouched — only this browser lost its session.
     await page.getByLabel("Email address").fill(account.email);

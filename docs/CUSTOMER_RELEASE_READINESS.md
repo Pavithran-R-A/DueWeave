@@ -674,7 +674,8 @@ Any later SHA must earn its own CI and deployment verification.
    the signed-in More screen that holds the export and the erasure control
    (`client/src/pages/Home.tsx:388`).
    **Accuracy is enforced, not asserted — that is item 12's real content.**
-   `tests/trust-surface.contract.test.ts` (10 cases) refuses a document that claims a host the app
+   `tests/trust-surface.contract.test.ts` (10 cases as delivered, 11 at the head recorded in row 10)
+   refuses a document that claims a host the app
    does not use, a deletion that differs from the migration, a retention period nobody measured, or
    a support channel that does not exist: the third-party list must name Supabase, Cloudflare and
    Google Fonts *and* `client/index.html` must really load the font host; the erasure paragraph must
@@ -700,7 +701,7 @@ Any later SHA must earn its own CI and deployment verification.
    contract must — wrapping only `/privacy` in `<ProtectedPage>` produced
    `× … serves each document at a public address that needs no session → /privacy is not routed to
    PrivacyPage`, `1 failed | 9 passed`, and unwrapping it returned `10 passed (10)` with the two
-   Founder routes still the only wrapped ones. `pnpm test:unit` is `54 files / 801 tests` (53 / 790
+   Founder routes still the only wrapped ones. `pnpm test:unit` at that head was `54 files / 801 tests` (53 / 790
    at `2a4872c`): the new file's 10 cases, plus one more because the boundary contract enumerates
    every UI source and `Legal.tsx` joined that scan — i.e. the new page is now proven not to touch
    the Supabase client. `pnpm check`, `pnpm lint`, `pnpm build` exit 0, the three documents ship as
@@ -715,8 +716,23 @@ Any later SHA must earn its own CI and deployment verification.
    measure, and the signed-in More screen — needs the local Supabase stack, which is not running on
    this host (Docker's engine socket is absent), and `--list` compiles the file without running it.
    Its first execution is therefore this head's `Complete customer-browser regression` job, and the
-   claim being made here is that CI ran it, not that it was checked locally. Two further limits are
-   recorded rather than smoothed over. (1) `supabase/functions/delete-account/contract.ts:36` still
+   claim being made here is that CI ran it, not that it was checked locally. **It did run, and the
+   reading below is taken off the job log, not inferred:** run `39387657868`, job `118511274956`
+   (`all-customer-journeys`, which is `pnpm verify:e2e:local` and therefore collects all of `e2e/`),
+   `2026-10-20T07:36:49Z → 07:59:33Z`, reporting `3 failed / 8 skipped / 199 passed (19.3m)`. All 17
+   trust-surface cases passed — log ids 107–123: each of `/privacy`, `/terms` and `/support` served to
+   a session-less browser, switched to the other two, carried back to the screen that can sign in,
+   then the sign-in row, the six viewport widths and the signed-in More screen — so the documents were
+   not the failing half of a red job. The three failures were
+   `e2e/stage6-local-auth-ux.spec.ts:256:3`, `:335:3` and `:442:3`, and each died on its own *leak
+   guard* rather than on a screen a customer sees: the guard refused any body text matching the
+   Postgres / PostgREST / GoTrue error vocabulary **plus the bare English word** `policy`, and this
+   gate had just put a link labelled "Privacy Policy" on the sign-in screen. The log prints the
+   received body, and its only match is the trailing `…Privacy PolicyTerms of UseSupport` — no engine
+   token appears in it. Row 10 records the repair and the gate that stops the collision being
+   "fixed" by weakening the guard. The other three runs at this head — `39387657754` (CI),
+   `39387657945` (Live production public smoke), `39387657721` (CodeQL security review) — each
+   finished `success`. Two further limits are recorded rather than smoothed over. (1) `supabase/functions/delete-account/contract.ts:36` still
    returns the old "or contact support" sentence for the `incomplete` outcome; the client maps that
    outcome to its own message so the deployed text is not what a customer reads, but proving that
    and re-deploying the function needs the management credential this line does not hold.
@@ -900,6 +916,158 @@ Any later SHA must earn its own CI and deployment verification.
    that remains open.
 9. **Temporary QA cloud cleanup:** `DueWeave Validation` was paused but is **not confirmed
    permanently deleted**; this administrative cleanup remains open.
+10. **Production CSP, HSTS, accessibility, mobile behavior and customer-facing error handling
+   (CL-7 Stage C item 14):** reassessed against what the live origin really sends, and two of the
+   five were not there. *Executed 2026-10-20.*
+   **Measured before anything was written:** `GET https://dueweave.pages.dev/` with a cache-busting
+   probe at `2026-10-20T08:29:52Z` answered `HTTP/1.1 200 OK` carrying four application headers
+   (`permissions-policy`, `referrer-policy`, `x-content-type-options`, `x-frame-options`) and **no
+   `Content-Security-Policy` and no `Strict-Transport-Security`**. So the honest answer to "reassess
+   production CSP and HSTS" is that neither existed on the origin customers reach, even though the
+   other four have shipped from `client/public/_headers` since this release line began.
+   **The product repair is those two directives (`client/public/_headers:6-7`), deny-by-default with
+   every allowance traced to a feature.** `default-src 'self'` and `script-src 'self'` — no inline
+   script and no third-party JavaScript, because DueWeave ships no analytics script;
+   `style-src 'self' 'unsafe-inline' https://fonts.googleapis.com` and
+   `font-src 'self' https://fonts.gstatic.com`; `img-src 'self' data:` (the `data:` concession is
+   paid for — the Founder QR and the export preview are generated image URIs, not fetched ones);
+   `connect-src 'self'` plus the one hosted Supabase origin over `https` **and** `wss`, because
+   realtime is a feature a customer sees; and the four surfaces this product never uses are shut —
+   `object-src 'none'`, `base-uri 'self'`, `form-action 'self'`, `frame-ancestors 'none'`, with
+   `upgrade-insecure-requests`. `'unsafe-inline'` for styles is not a shortcut around the policy:
+   React writes inline `style` attributes, and the static gate below couples the concession to the
+   sources that write it, so deleting one breaks the other. HSTS is
+   `max-age=15552000; includeSubDomains` — eighteen months, and deliberately **not** `preload`,
+   because a preload listing cannot be undone from this line.
+   **Gated twice, because a header file can assert anything.** `tests/response-headers.contract.test.ts`
+   (10 cases) pins the text and re-derives it from the sources rather than from a copy of itself: the
+   stylesheet and font-file hosts are read out of `client/index.html`'s own `<link>` tags, so a
+   policy that drops a host the document really loads fails; hosted `https` **and** `wss` must both
+   appear in `connect-src`; wildcards and bare scheme sources are refused; `style-src 'unsafe-inline'`
+   must have a real inline-style writer; and HSTS must reach 15,552,000 seconds without claiming
+   `preload`. The other two cases answer the hole in the browser file below — that no signed-in screen
+   is ever loaded under the policy. *leaves script-src 'self' nothing to refuse anywhere in the
+   bundle* walks every `.ts`/`.tsx` under `client/src` and refuses the constructs this policy has no
+   concession for: `eval(`, `new Function(`, a `Worker`, `navigator.serviceWorker`, `document.write(`,
+   an `<iframe>` and a written `<script>`; measured result, none anywhere in the app, which is what
+   makes `script-src 'self'` with no `unsafe-eval` and no `worker-src` or `frame-src` safe to run on
+   the ledger, the export and the Founder screens as well as the sign-in page. *keeps every
+   cross-origin data call inside connect-src, on every screen* allows no origin written into a
+   `fetch`/`new WebSocket`/`XMLHttpRequest`/`sendBeacon` call that `connect-src` does not name — and
+   separates `wa.me`, which is an `<a target="_blank">` navigation no fetch directive governs, from a
+   fetch to the same host, which would be governed. That case carries its own control: the matcher
+   must read a probe `fetch` to an origin the policy refuses, the host extractor must name it, the
+   origin must really be absent from `connect-src`, and the scan must have walked more than 30 source
+   files — because a reading that found nothing is only worth having if it could have found something.
+   **Proved able to fail by measurement, three times:** lowering the shipped directive to
+   `max-age=86400` produced `× requires HTTPS for every visitor, without claiming a preload listing →
+   a policy under six months is a policy that expires mid-incident: expected 86400 to be greater than
+   or equal to 15552000`, `1 failed | 9 passed (10)`, and restoring it returned `10 passed (10)`;
+   putting `new Function("return 1")` and a `fetch("https://a-host-outside-the-policy.example/x")`
+   into `client/src/lib/download.ts` produced `2 failed | 8 passed (10)`, with both messages naming
+   that file — `client\src\lib\download.ts uses something the policy refuses: generated functions
+   require script-src 'unsafe-eval'` and `client\src\lib\download.ts fetches
+   a-host-outside-the-policy.example, which connect-src refuses` — and the hand revert returned
+   `10 passed (10)` with `git diff` on that file empty.
+   `e2e/response-headers.spec.ts` (5 cases) then runs the app under that policy in real Chromium. It
+   reads the shipped string out of `_headers` and injects it onto the document response, because
+   `vite preview` ignores that file — a harness that waited for the server to send the header would
+   have been measuring nothing. Under the injected policy the sign-in screen must paint in its own
+   webfont family (asked of the page: which family the computed style names, then whether
+   `document.fonts.check` says it arrived — not an assumed weight), all three trust documents must
+   render, the allowlisted API origin must be reachable with its `wss` realtime sibling and a
+   generated `data:` image must decode, and a late `<base href>` must be refused. One control case
+   holds the other four up: an appended inline script must **not** execute and a fetch to an origin
+   outside the policy must be refused, or the passes above would mean the reading was impossible
+   rather than the policy harmless. Re-measured at the shipping state, twice: `5 passed (24.9s)` and
+   then `5 passed (10.7s)` in the run recorded at the end of this row.
+   **The activation is deliberately separated from the repair, because a push to this branch deploys.**
+   Cloudflare Pages rebuilds the production site on every push to `release/consumer-live`, so the two
+   new directives in `client/public/_headers` would go live for every customer in the same push as an
+   unrelated CSS repair — and the only browser proof of that policy covers the sign-in screen and the
+   three trust documents, because no local or CI harness can load a signed-in screen under it (the
+   stack is not on this host, and `vite preview` ignores `_headers` for every path). So the pushed head
+   carries the trust-row target repair, the guard-vocabulary repair and `e2e-paused/auth-trust-links.spec.ts`
+   — whose first CI execution is that head's own `pnpm test:e2e:paused`, since that script collects all
+   of `e2e-paused/` — while `client/public/_headers`, `e2e/response-headers.spec.ts` and
+   `tests/response-headers.contract.test.ts` are a second forward commit held in this working tree. Its
+   push is Stage E item 19's controlled step, made after item 18's battery is green at one head, and
+   item 20's signed-in validation on the newly deployed artifact is what measures the live policy on
+   the surfaces this line cannot reach. **Nothing in the pushed head is a policy claim:** after that
+   push the origin still sends no `Content-Security-Policy` and no `Strict-Transport-Security`, which
+   is the state the probe at the top of this row measured, and what is proved here is the text of the
+   policy and a browser's behaviour under it, not the deployment.
+   **D-Trust-2, found by measuring the artifact production serves: the trust row was a 21.75-pixel
+   target.** `e2e-paused/auth-trust-links.spec.ts` clicks the flags-off bundle that
+   `scripts/run-paused-e2e.mjs` builds with the same two environment variables production builds
+   with, and its first case failed with `"Privacy Policy" is a 67.6x21.8px target of 10.5px type …
+   Expected: >= 24 / Received: 21.75`. Both rows shipped as `padding:3px 0` on 10.5–11px type, under
+   the 24×24 CSS px floor this repository already applies to every other touch target
+   (`e2e/stage6-local-responsive.spec.ts:198`, the rule CL-16 and CL-17 were measured against). The
+   repair sets the floor on the box rather than on the type — `display:inline-flex`,
+   `align-items:center`, `min-height:24px` on `.auth-legal-link` and `.more-legal-link`
+   (`client/src/index.css:284,287`) — so the row still reads as a footnote on a phone and a thumb can
+   land on it. Re-run after the repair: `7 passed (11.7s)` for the whole paused battery.
+   **Four falsifications, all reverted by hand, so the gate is known to be watching:** deleting
+   `min-height` from the sign-in rule and rebuilding reproduced `Received: 21.75` at exit 1; deleting
+   it from the More rule produced `.more-legal-link sets a 0px-tall target on an 11px link: expected 0
+   to be greater than or equal to 24`, `1 failed | 10 passed (11)` — which is why the static case
+   loops both selectors; setting `color:var(--rule)` produced
+   `"Privacy Policy" is 1.16:1 against the background it sits on … Expected: >= 4.5 / Received:
+   1.159906846463471`, `1 failed | 3 passed`; and `tabIndex={-1}` on one link with its `to` swapped
+   produced `the tab stop after the sign-in button was "Support", not "Terms of Use"` and
+   `"Support" opened something other than /support`. A fifth falsification is the one that kept the
+   repair small: forcing `white-space:nowrap` with side padding made the sign-in screen scroll
+   sideways at 360px (`550 inside 360`), which is why the fix adds height instead of width.
+   **Accessibility, gated where it can be measured and left open where it cannot.** The same file
+   computes each link's contrast by compositing the ancestor background chain under it and requires
+   4.5:1, walks the keyboard from the submit control through the three links in document order and
+   requires `:focus-visible` to match with a drawn outline on every stop, and re-measures horizontal
+   overflow (`scrollWidth ≤ clientWidth + 1`) at 360×800 against the flags-off copy — a different
+   screen from the one CI's flags-on `stage6-local-trust-surface` measures, not a second copy of it.
+   The signed-in More row is pinned statically instead, because reaching it needs a session and this
+   host has no stack to give one. **One limit kept as an owner decision rather than quietly styled
+   away:** WCAG 2.2 2.4.13 (focus appearance) is not gated. The shipped ring is
+   `a:focus-visible { outline: 3px solid rgba(19,123,120,.28); outline-offset: 3px }`
+   (`client/src/index.css:39`), whose contrast against `--canvas #f4f1eb` is about 1.4:1 —
+   **calculated by hand, never measured**, and against a 3:1 expectation, which is precisely why this
+   row is left open rather than claimed. `e2e/stage6-local-accessibility.spec.ts:4` already disclaims
+   WCAG conformance, so restyling focus across the app is the operator's design decision.
+   **Customer-facing error handling is where the red CI run turned out to be the finding.** The three
+   failures at `c0fc2d8` were guards, not screens, and the guard's purpose is right — a customer must
+   never read engine internals. The repair keeps every arm and replaces the bare word with the
+   signature Postgres actually emits, `row-level security`, at the four whole-document guards
+   (`e2e/stage6-local-auth-ux.spec.ts:286,349,464` and
+   `e2e/stage6-local-ledger-states.spec.ts:190`), with every engine arm each guard already carried
+   left in place — `PGRST`, `SQLSTATE`, `postgrest`, `gotrue`, `InvalidLogin`, `constraint`,
+   `failed to fetch`. The two `stage6-local-workspace-gate.spec.ts` guards already named SQL error
+   codes rather than words and needed no change. `tests/leak-vocabulary-vs-legal-copy.contract.test.ts` (4 cases) then holds
+   both halves of that line against the product's own shipped copy, read out of `Auth.tsx` and
+   `Legal.tsx` rather than retyped here: no guard may fire on a label or heading a customer is asked
+   to read, every guard carrying authorization vocabulary must fire on the real
+   `new row violates row-level security policy …` and `duplicate key value violates unique
+   constraint …` messages, and no whole-document guard may hold a bare English word
+   (`policy`, `role`, `grant`, `permission`, `table`, `schema`, `session`) as an alternative.
+   **Proved able to fail by putting the bug back:** restoring `policy` as an arm of the first guard
+   produced `stage6-local-auth-ux.spec.ts:286 calls the product's own wording a leak: expected
+   'Privacy Policy' not to match …` and `… bans a bare English word the product may legitimately
+   use: expected 'policy' not to match …`, `2 failed | 2 passed`, and the restore returned
+   `4 passed`. So the collision cannot be closed later by deleting the guard it complains about.
+   **Gate set at this state, each run re-executed after the final edit of this row:** `pnpm check` and
+   `pnpm lint` exit 0. `pnpm test:unit` is `56 files / 814 tests passed` in this working tree; the same
+   suite run with the two held files moved out of the repository reads `55 files / 806 tests passed`,
+   which is the number the pushed head really carries (`54 / 801` at `c0fc2d8`, plus this head's 4 + 1
+   new cases). `pnpm test:e2e:paused` is `7 passed (20.6s)` — the three cases already in that directory
+   plus the four new trust-row cases — after a fresh `1718 modules transformed / built in 11.80s`
+   flags-off build. `e2e/response-headers.spec.ts` is `5 passed (10.7s)` under the throwaway harness
+   described above (kept outside the repository and deleted at the end of this pass, because the
+   repository must not carry a config that runs a stack suite without a stack).
+   **The two gates that read prose ran last, after this row was written**, which is the ordering
+   lesson `## Blocking gates` row 7 records: `verify:hygiene` then reads the untracked files this row
+   holds for the activation commit and nothing at the repository root, and `verify:secrets` reports its
+   scan over the tracked tree, the untracked files a `git add -A` would stage, and the built bundle —
+   so this head's new instrumentation, including a policy file that names a hosted origin, is scanned
+   before it is committed rather than after.
 
 ## Release verdict
 

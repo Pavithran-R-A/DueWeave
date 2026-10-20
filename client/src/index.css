@@ -277,10 +277,13 @@ first caption is styled here, or a control wrapper inherits caption type. */ lab
 
 /* The two places a person can reach those documents from: the sign-in screen, where the decision
    is still being made, and the More screen, where their own data is on the page. */
+/* Both rows are 10.5–11px type, which gives a text-sized hit box of ~22px — under the 24px floor
+   every other touch target in this app is measured against. The floor is set on the box, not the
+   type, so the row still reads as a footnote on a phone while a thumb can land on it. */
 .auth-legal-links { display:flex; flex-wrap:wrap; gap:6px 15px; margin:13px 0 0; }
-.auth-legal-link { padding:3px 0; color:var(--teal-dark); font-size:10.5px; font-weight:700; text-decoration:none; }
+.auth-legal-link { display:inline-flex; align-items:center; min-height:24px; padding:3px 0; color:var(--teal-dark); font-size:10.5px; font-weight:700; text-decoration:none; }
 .auth-legal-link:hover { color:var(--teal); text-decoration:underline; }
 .more-legal-links { display:flex; flex-wrap:wrap; gap:7px 17px; margin-top:15px; }
-.more-legal-link { padding:3px 0; color:var(--teal-dark); font-size:11px; font-weight:700; text-decoration:none; }
+.more-legal-link { display:inline-flex; align-items:center; min-height:24px; padding:3px 0; color:var(--teal-dark); font-size:11px; font-weight:700; text-decoration:none; }
 .more-legal-link:hover { color:var(--teal); text-decoration:underline; }
 @media (max-width:560px) { .legal-header { align-items:flex-start; flex-direction:column; } .legal-body,.legal-lede { max-width:none; } }

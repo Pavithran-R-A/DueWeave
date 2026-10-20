@@ -187,7 +187,7 @@ test.describe("Stage 6 loading, refresh and failure behaviour", () => {
     await expect(page.getByRole("heading", { name: "Your private ledger remains protected." })).toBeVisible({ timeout: 20_000 });
     await expect(page.getByRole("button", { name: "Try again" })).toBeVisible();
     await expect(page.getByText("Stage6 Retry invoice")).toHaveCount(0);
-    await expect(page.locator("body")).not.toContainText(/PGRST|SQLSTATE|failed to fetch|policy|constraint/i);
+    await expect(page.locator("body")).not.toContainText(/PGRST|SQLSTATE|failed to fetch|row-level security|constraint/i);
 
     // Set after the failed load, so the value can only survive if the retry re-reads
     // inside this same document instead of quietly reloading the page.

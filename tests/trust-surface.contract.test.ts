@@ -80,6 +80,19 @@ describe("customer trust surface (CL-7 items 11-12)", () => {
     }
   });
 
+  it("gives both trust rows a target a thumb can hit", () => {
+    // The sign-in row is measured live by `e2e-paused/auth-trust-links.spec.ts`, which reads the
+    // rendered box off the artifact production serves. The More row needs a session to reach, so
+    // what can be checked here is the declaration it ships: 11px type gives a ~23px text box and
+    // 24px is the floor `e2e/stage6-local-responsive.spec.ts` applies to every other target.
+    for (const selector of [".auth-legal-link", ".more-legal-link"]) {
+      const rule = styles.match(new RegExp(`\\${selector}\\s*\\{([^}]*)\\}`));
+      expect(rule, `${selector} is no longer a rule in index.css, so nothing sets this row's size`).toBeTruthy();
+      const minHeight = Number.parseFloat(rule![1].match(/min-height:\s*([\d.]+)px/)?.[1] ?? "0");
+      expect(minHeight, `${selector} sets a ${minHeight}px-tall target on an 11px link`).toBeGreaterThanOrEqual(24);
+    }
+  });
+
   it("names the hosts the ledger actually sits on, and the third party the browser really contacts", () => {
     // Measured, not assumed: the database and auth are Supabase's (`ugzdqcytouwfdlcjujqv`,
     // ap-south-1), the site is served by Cloudflare Pages, and the only other request the entry
