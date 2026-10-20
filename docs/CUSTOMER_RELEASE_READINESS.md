@@ -997,6 +997,16 @@ Any later SHA must earn its own CI and deployment verification.
    excuse:** restore the Pages integration from the connected account, deploy one build that carries the
    stamp, then record `verify:deployed:current` against the pushed SHA. Until that output exists, this gate
    may not be called closed and the live site may not be called current.
+   **Read again at `2026-10-20T11:20Z`, after the owner reported a repair:** the origin now serves entry
+   `assets/index-C4rUFk9x.js` (495,564 B) and `assets/index-DzfHaBba.css`, whose legal chunk is
+   `assets/Legal-Cz0mKZ7o.js` — the flags-off fingerprints the CI build printed at `523fa26`, which the
+   docs-only remote tip `2eed7dd` leaves byte-identical — where at `09:05Z` it served the older
+   `index-C7pebI3S.js` / `index-CUm43t91.css` pair. **A build was delivered after the silence this row
+   dated, so delivery is no longer stalled**; whether the integration rebuilt on push or the owner
+   triggered a deployment from the connected account cannot be told from the bytes. The stamp is still
+   absent (`/build-info.json` is the 1,220-byte SPA fallback), so the gate remains open exactly as stated:
+   a stamped build is what closes it, and "production serves `2eed7dd`" is still the owner's claim rather
+   than a measurement.
 9. **Temporary QA cloud cleanup:** `DueWeave Validation` was paused but is **not confirmed
    permanently deleted**; this administrative cleanup remains open.
 10. **Production CSP, HSTS, accessibility, mobile behavior and customer-facing error handling
@@ -1222,6 +1232,56 @@ Any later SHA must earn its own CI and deployment verification.
    assertion, so `6 passed (32.2s)` validates the deployed sign-in screen as it stood before items
    11–12. Item 20's acceptance on the newly deployed artifact therefore has to be taken against the
    moved fingerprint, not against this run.
+   **The hold recorded above ended with the final-corrections brief, and item 16's repository half is
+   complete at `2026-10-20T11:20Z`.** CL-7 final-corrections item 16 is the controlled step the
+   earlier paragraph reserved for Stage E item 19 — "complete the already-authored CSP/HSTS rollout
+   with real browser testing and a rollback path" — so `client/public/_headers`,
+   `tests/response-headers.contract.test.ts` and `e2e/response-headers.spec.ts` are committed
+   together at this head rather than held. Re-measured at the shipping state: the contract suite is
+   `10 passed (10)`; the browser suite is `5 passed (32.1s)` in real Chromium against a freshly
+   built bundle (`✓ built in 11.67s`), covering the sign-in screen with its webfonts, all three
+   trust documents, the refusal control, the allowlisted API origin with a `data:` QR, and the
+   shut base/frame surfaces; and the live origin is unchanged — a cache-busted
+   `GET https://dueweave.pages.dev/` at `2026-10-20T11:19:39Z` answered `HTTP/1.1 200 OK` with
+   `permissions-policy`, `referrer-policy`, `x-content-type-options` and `x-frame-options`, and
+   **no `content-security-policy` and no `strict-transport-security`**.
+   **The origin has moved since the morning reads, but not to this work.** It now serves entry
+   `assets/index-C4rUFk9x.js` (495,564 B) and `assets/index-DzfHaBba.css`, whose legal chunk is
+   `assets/Legal-Cz0mKZ7o.js` (15,378 B) — the flags-off fingerprints the CI build printed at
+   `523fa26`, which the docs-only remote tip `2eed7dd` leaves byte-identical. That chunk still
+   carries the pre-correction sentence "The hosting platform takes database backups, and restoring
+   one is how an incident is recovered." and contains neither `no automatic backups` nor
+   `point-in-time`, so P1's corrected Privacy copy (`e5e8090`), P2's currentness stamp
+   (`1d85395`) and these two directives are **committed on this laptop and not on the remote
+   branch**, let alone served; the remote tip is still `2eed7dd`. The customer-facing consequence
+   is exact: the live Privacy page still makes the backup claim the brief asked to remove, and the
+   live site still has neither header. Neither may be called corrected here until a Pages build
+   carries them.
+   **Rollback path, written before the policy ships.** The repair is exactly two lines
+   (`client/public/_headers:6-7`). To roll back, delete those two directives and redeploy: a
+   `Content-Security-Policy` applies per response, so the next response without it is unpoliced
+   and a CSP regression is undone by the next deploy with no waiting. HSTS is not symmetric — a
+   browser that has seen `max-age=15552000; includeSubDomains` keeps requiring HTTPS for 180 days
+   even after the header is removed, and nothing this line can serve revokes it early; the client
+   cache must expire or be cleared. That asymmetry is why the directive deliberately omits
+   `preload` (a submitted preload listing cannot be withdrawn from here) and why the commitment is
+   180 days rather than a year.
+   **Residual risk, kept rather than rounded away.** The browser proof loads the sign-in screen
+   and the three trust documents; no signed-in screen is loaded under the policy on this host,
+   because reaching one needs the local Supabase stack and a real account. Those screens are
+   covered statically: the scan above finds no `eval`, `Function`, `Worker`, service worker,
+   `document.write`, iframe or runtime script in `client/src`, every cross-origin data call is in
+   `connect-src`, and no literal external `src=`, `href=` or CSS `url()` origin exists in
+   `client/src` (measured at this state). What remains possible is a future screen that loads a
+   new origin the policy refuses; the contract test would catch a stylesheet or font host added to
+   the entry document or a new cross-origin data call, but an external image added in a signed-in
+   screen would be caught only by a browser, and validation on the new deployment is the first
+   place one can be seen. If that happens, the rollback above is the response.
+   **Gate status: repository-complete, activation-open.** The policy, its contract and its browser
+   proof are part of the release; the live origin sends neither header,
+   `verify:deployed:current` still answers `NOT CURRENT` (`/build-info.json` is the 1,220-byte SPA
+   fallback), and the site must not be described as policied or current until a deployment carries
+   both and a live header read plus a browser run on that artifact confirm them.
 
 ## Release verdict
 

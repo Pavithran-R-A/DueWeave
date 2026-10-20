@@ -1,4 +1,10 @@
+# CL-7 Stage C item 14: the policy a visitor's browser enforces on DueWeave. Every origin
+# here is one the app loads (measured in `client/index.html` and the production build script),
+# every concession is paid for by a feature, and `tests/response-headers.contract.test.ts`
+# re-derives both from the sources so this file cannot drift quietly.
 /*
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://ugzdqcytouwfdlcjujqv.supabase.co wss://ugzdqcytouwfdlcjujqv.supabase.co; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests
+  Strict-Transport-Security: max-age=15552000; includeSubDomains
   X-Frame-Options: DENY
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
