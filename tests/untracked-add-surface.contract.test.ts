@@ -70,6 +70,19 @@ const inertPrivateKeyFrame = ["-----BEGIN", "PRIVATE KEY-----"].join(" ") + "\nn
  */
 const historyDocs = ["docs/CONSUMER_LIVE_PROGRESS.md", "docs/SECURITY_MODEL.md"];
 
+/**
+ * This file, by the name git knows it by. A scan that searches for a literal string always finds
+ * that literal in the source that searches for it, so the file holding the rule is a named carrier
+ * like the history records — and it is named here rather than excused by a match on the pattern's
+ * own shape, because a rule that denies its existence turns the gate into the failure it reports.
+ * Measured: CI run `39379577996` failed exactly this way at head `e9759a5`, after the commit put
+ * this file into `git ls-files` — the case had passed locally only while the file was still untracked.
+ */
+const pointerRuleFile = path.relative(projectRoot, import.meta.filename).split(path.sep).join("/");
+
+/** Every tracked file allowed to carry the retired path, and why each earns its place. */
+const namedCarriers = [...historyDocs, pointerRuleFile];
+
 function scratchRepository(): string {
   const dir = mkdtempSync(path.join(os.tmpdir(), "untracked-surface-"));
   const git = (args: string[]) => {
@@ -248,18 +261,27 @@ describe("The git add -A surface is a release gate", () => {
       .split("\0")
       .filter((file) => /\.(?:mjs|cjs|ts|tsx|js|md|json|yml|yaml)$/.test(file));
     expect(tracked.length, "git listed no source files — the scan is vacuous").toBeGreaterThan(20);
-    const offenders = tracked
-      .filter((file) => !historyDocs.includes(file))
-      .flatMap((file) => {
-        const absolute = path.join(projectRoot, file);
-        if (!existsSync(absolute)) return [];
-        const lines = readFileSync(absolute, "utf8").split(/\r?\n/);
-        return lines
-          .map((line, index) => ({ line, number: index + 1 }))
-          .filter(({ line }) => line.includes("p3c-red-baseline/qa-identity"))
-          .map(({ line, number }) => `${file}:${number}: ${line.trim()}`);
-      });
-    expect(offenders, `these live pointers name a deleted credential path:\n${offenders.join("\n")}`).toEqual([]);
+    const linesNamingRetiredPath = (file: string) => {
+      const absolute = path.join(projectRoot, file);
+      if (!existsSync(absolute)) return [];
+      return readFileSync(absolute, "utf8")
+        .split(/\r?\n/)
+        .map((line, index) => ({ line, number: index + 1 }))
+        .filter(({ line }) => line.includes("p3c-red-baseline/qa-identity"))
+        .map(({ line, number }) => `${file}:${number}: ${line.trim()}`);
+    };
+
+    const carriers = [...new Set(tracked.filter((file) => linesNamingRetiredPath(file).length > 0))].sort();
+    // One assertion does both jobs. It cannot pass on a tree where nothing names the path, so the
+    // scan is proved to fire on the bytes it reads; nothing outside the named carriers can join it,
+    // so a stale pointer written into any other script, spec or document is a failure; and if this
+    // file's own search pattern moved or disappeared, the carrier set would no longer match and the
+    // rule would have to be re-named where it now lives.
+    expect(
+      carriers,
+      `these tracked files name a deleted credential path; a new carrier must be named and justified, ` +
+        `and a carrier that stopped mentioning it should leave the list:\n${carriers.join("\n")}`,
+    ).toEqual([...namedCarriers].sort());
 
     // The history records may still describe the retired file, but only in prose that says so —
     // otherwise a reader cannot tell a record from an instruction. Matched per paragraph, because
