@@ -117,3 +117,17 @@ supabase/.branches/
 
 # Webdev artifacts (checkpoint zips, migrations, etc.)
 .webdev/
+
+# Hosted-instrument evidence kept on disk for the release record and never staged: mailbox
+# captures and QA identity dumps, production row censuses, CI job-log exports, a deployed-build
+# Playwright report and a database probe. Each path is anchored to the repository root and named
+# for the instrument that writes it, so the rule cannot also swallow a same-named source
+# directory deeper in the tree. A .gitignore entry only prevents accidental staging; it is not
+# access control on a shared host — `pnpm verify:hygiene` fails the release if a new root
+# artifact appears without either being committed or being named here with a reason.
+/p3c-red-baseline/
+/prod-census/
+/hosted-db-probe/
+/live-playwright-report/
+/6ab1d2b-ci-logs/
+/c105edc-ci-logs/

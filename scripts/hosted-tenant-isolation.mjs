@@ -4,7 +4,12 @@
 // answers the question from the repository, with real customer sessions:
 //
 //   node scripts/hosted-tenant-isolation.mjs \
-//     --victim p3c-red-baseline/qa-identity.json --attacker p3c-red-baseline/qa-identity-b.json
+//     --victim ~/.config/dueweave/qa-a-identity.json --attacker ~/.config/dueweave/qa-c-identity.json
+//
+// Both paths are supplied by the operator and neither is ever inside this repository. The two QA
+// identity files this line used to point at under `p3c-red-baseline/` were retired on 2026-10-19, and
+// the second account no longer exists on production at all: QA-B was erased on 2026-10-16 and the
+// isolation matrix has since been run with QA-C. `docs/SECURITY_MODEL.md` records the keeper pattern.
 //
 // It signs in as both accounts through the same password grant a customer's browser uses, then has
 // the attacker try to read, edit, delete, insert into and RPC-call the victim's ledger; it repeats

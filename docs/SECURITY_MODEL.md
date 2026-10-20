@@ -234,6 +234,49 @@ ignored by the `.env` rule at `.gitignore:11` (verified with `git check-ignore`)
 through this path because the browser calls the function through the caller's own session —
 `client/src/data/supabase-account-deletion-repository.ts` sends one field and sets no bearer.
 
+## Credential custody: where a QA identity file lives, and what enforces it
+
+A QA account's identity file is a password and a mailbox address in one plain file, and the recovery
+links this arc has consumed are single-use bearer tokens for the same accounts. The rule the release
+now holds is that none of it may sit inside the repository tree — not committed, not staged, and not
+"untracked but one `git add -A` away from both".
+
+**The keeper pattern is `~/.config/dueweave/<account>-identity.json`**, one file per QA account, and
+no script in `scripts/` defaults to a path inside the tree: each takes `--identity`, `--account`,
+`--victim` or `--attacker` and reads exactly what it is handed. Measured on this host on
+2026-10-19 and read again unchanged on 2026-10-20: `qa-a-identity.json` 398 bytes (`sha256` prefix
+`b1305946`) and `qa-c-identity.json` 308 bytes (`1ff80596`); `icacls` on the keeper itself reports
+exactly three inherited ACEs — `NT AUTHORITY\SYSTEM`, `BUILTIN\Administrators` and the owner — and no
+`CodexSandboxUsers` entry. The values inside them are never printed by an instrument, never quoted in
+a report, and never typed into a chat; the drivers print lengths and shapes only.
+
+The two files this section used to point at, `p3c-red-baseline/qa-identity.json` (329 bytes, `91ed9789`)
+and `p3c-red-baseline/qa-identity-b.json` (319 bytes, `9de3e4eb`), were copied to the keeper paths,
+byte-verified with `cmp`, and deleted by exact path on 2026-10-19 after QA-A's recovery completed and
+QA-B had been erased from production. `qa-c-identity.json` is the surviving copy of the second
+account this arc created for the isolation matrix; no QA-B keeper remains, because the account it
+belonged to no longer exists. QA-A's keeper still carries its `password` field with the value
+that *stopped* working at that recovery: it is kept deliberately as the `OLDPW` witness the recovery
+verifier re-uses, and it is not a live credential.
+
+**Two enforcement points, both in the release:**
+
+- `pnpm verify:hygiene` (`scripts/verify-untracked-hygiene.mjs`) fails if any untracked, non-ignored
+  entry sits at the repository root. The six evidence directories the hosted instruments write —
+  `p3c-red-baseline/`, `prod-census/`, `hosted-db-probe/`, `live-playwright-report/` and the two CI
+  job-log exports — are ignored by name, each rule anchored to the root so it cannot also swallow a
+  same-named source directory deeper in the tree.
+- `pnpm verify:secrets` now reads `git ls-files --others --exclude-standard` next to `git ls-files`,
+  so the scan covers the staging surface rather than only what is already staged.
+
+**What neither is, stated plainly:** `.gitignore` is a staging rule, not access control. On this
+machine `Documents` grants `Pavithran\CodexSandboxUsers:(OI)(CI)(RX)` and that ACE inherits into the
+repository, so a file inside the tree is readable by that principal whatever `writeFileSync(…, {mode:
+0o600})` asks for — the mode option is a no-op on Windows, and a same-volume `mv` carries the inherited
+descriptor with it. That is why the keeper directory is outside `Documents` and why a keeper is placed
+there with `cp` (a fresh file re-inherits that directory's ACL: owner, `SYSTEM` and `Administrators`,
+measured as three ACEs) and confirmed with `(Get-Acl -LiteralPath …).Access`, never with `mv`.
+
 ## Known gaps that are hosted-only, and therefore not claimed
 
 | Gap | Why this repository cannot close it |
@@ -255,7 +298,8 @@ pnpm db:reset:local && pnpm verify:migrations   # 26 committed migrations, repla
 pnpm test:db                                   # pgTAP: 10 files / 410 assertions, measured by CI at 2fb74ca on 2026-10-17
 pnpm test:live                                 # ten database suites incl. the abuse matrix and the erasure suite
 pnpm test:e2e:smoke                            # the two-account and credential-boundary journeys
-pnpm verify:secrets                            # 11 shapes over the tree and dist/
+pnpm verify:hygiene                            # the git add -A surface: no loose artifact at the root
+pnpm verify:secrets                            # 11 shapes over tracked files, untracked staging-surface files and dist/
 node scripts/local-stack-check.mjs             # the run needs no privileged key
 ```
 

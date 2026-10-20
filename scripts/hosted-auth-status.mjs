@@ -2,9 +2,14 @@
 // commands, as one repeatable operator instrument:
 //
 //   node scripts/hosted-auth-status.mjs --site https://dueweave.pages.dev
-//   node scripts/hosted-auth-status.mjs --identity p3c-red-baseline/qa-identity.json --request-confirmation
-//   node scripts/hosted-auth-status.mjs --identity p3c-red-baseline/qa-identity.json --request-recovery
-//   node scripts/hosted-auth-status.mjs --identity p3c-red-baseline/qa-identity.json --verify-recovery
+//   node scripts/hosted-auth-status.mjs --identity ~/.config/dueweave/qa-a-identity.json --request-confirmation
+//   node scripts/hosted-auth-status.mjs --identity ~/.config/dueweave/qa-a-identity.json --request-recovery
+//   node scripts/hosted-auth-status.mjs --identity ~/.config/dueweave/qa-a-identity.json --verify-recovery
+//
+// The identity path is never defaulted and never lives in this repository: the QA identity files that
+// used to sit under `p3c-red-baseline/` were retired on 2026-10-19 and the surviving keeper is the
+// off-repo file the pattern above names (`docs/SECURITY_MODEL.md` records why). Shell expansion of
+// `~` supplies the absolute path; this script reads exactly the file it is handed.
 //
 // The last of those is the half that a 200 from `/recover` cannot carry: it signs in twice, once with
 // the password the account used before the reset and once with the one the delivered link installs, so

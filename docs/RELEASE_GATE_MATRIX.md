@@ -35,8 +35,9 @@ of the property that neither a laptop nor CI can prove.
 | E | Production build | `pnpm build` | `dist/` (measured: built in 12.34 s, `index-*.js` 498.18 kB / 144.28 kB gzip) | none | static + browser (before the journeys) | — | yes |
 | F | Production dependency audit | `pnpm audit --prod --audit-level=high` | `pnpm-lock.yaml` runtime graph | network | static | — | yes |
 | F' | Toolchain audit (dev tree) | `pnpm audit --audit-level=high` | same, dev graph | network | static | — | **no** — recorded, see below |
-| G | Secret / privileged-credential scan | `pnpm verify:secrets` | `scripts/verify-secrets.mjs` (11 shapes, tracked tree + `dist/`) | built bundle for the bundle half | static + `browser` artefact scan | — | yes |
+| G | Secret / privileged-credential scan | `pnpm verify:secrets` | `scripts/verify-secrets.mjs` (11 shapes; since Stage A the tracked tree, the untracked files a `git add -A` would stage, and `dist/`) | built bundle for the bundle half | static + `browser` artefact scan | — | yes |
 | G' | CI **job-log** credential redaction (D-S9-7) | the start step pipes through the filter: `pnpm supabase:start 2>&1 \| node scripts/redact-cli-secrets.mjs` under `set -o pipefail` in `.github/actions/local-supabase/action.yml` | `scripts/redact-cli-secrets.mjs` masks the `sb_secret_`/service-role family, connection-string passwords and privileged-role JWTs before they reach the retained log; pinned by `tests/ci-log-credential-redaction.contract.test.ts` (5 cases, incl. the anti-vacuous control and the step-shape pin) | filter + step composition, no stack needed | static (as a unit case) **and** measured live on run `36569878819`: zero privileged shapes across all six expanded logs, `[redacted-sb-secret-key-41-chars]` and `[redacted-db-password]` rows present in both environment logs | — | yes |
+| G2 | The **staging surface** itself: a repository root with nothing loose at it, read before the scan that now covers the same files (Stage A CL-7) | `pnpm verify:hygiene` | `scripts/verify-untracked-hygiene.mjs` fails on any untracked, non-ignored entry at the repository root — the set `git add -A`, `git add .` and an IDE "commit all" reach without a second thought — and `.gitignore` carries a root-anchored rule for each of the six evidence directories the hosted instruments write, named one by one so no rule can also swallow a same-named source directory deeper in the tree. Measured BEFORE at head `4d82978`: eight loose root entries, 109 files, 5,586,500 bytes, among them a QA identity file holding the account's working password and the confirmation and recovery mailbox captures for that same address, while row G's list was the tracked 285 files plus `dist/`, so the scanner reported a clean tree over a scope that excluded all of it. Pinned by `tests/untracked-add-surface.contract.test.ts` (9 cases: the finding in a scratch tree, the honest scope sentence, `.gitignore` still honoured, the no-git failure, the gate's own red-green, the release and CI and matrix wiring, this working tree, the six anchored rules, and no live pointer at a retired credential path). Measured AFTER at this head: `git add -A --dry-run` stages 14 paths, every one of them source, config or documentation; the repository root carries no loose entry and the staging surface is the 2 new gate files; the 107 evidence files moved into the ignored set (`git ls-files --others --ignored --exclude-standard`); row G now reads 309 files rather than 285. The first finding the widened scope produced was this test's own PEM fixture — `HARD private-key-block` in a file the old scanner never opened, which is the miss being repaired working on its author — and it was fixed by assembling the header the way the scanner's own rule source does, not by excusing it, because a hard rule cannot be allowlisted and that is the point of it | a scratch git repository the test builds and tears down; no stack, no bundle | static | `.gitignore` stops accidental staging, not read access; `docs/SECURITY_MODEL.md` records the inherited ACL that makes that distinction matter on this host | yes |
 | H | Database zero replay | `pnpm db:reset:local` + `pnpm verify:migrations` | 23 committed migrations, 23 applied | loopback stack | database (via `.github/actions/local-supabase`, `reset: "true"`) | — | yes |
 | I | Generated-types determinism | `pnpm verify:types` | `client/src/types/database.generated.ts` vs live schema (measured match, 38 326 bytes) | loopback stack | database | — | yes |
 | J | pgTAP (in-database policy, trigger, privilege proofs) | `pnpm test:db` | `supabase/tests/*.sql` — measured Files=8, Tests=364, PASS | loopback stack | database | — | yes |
@@ -160,7 +161,7 @@ regression` `39049440594`, `Live production public smoke` `39049440653`, `CodeQL
 
 ## "Cannot run" is a different answer from "passed"
 
-Three mechanisms keep the matrix honest, and all three are executable, not prose:
+Four mechanisms keep the matrix honest, and all four are executable, not prose:
 
 - `scripts/local-stack-check.mjs` is the single definition of stack presence, and it **throws**
   on a missing URL/anon key, a non-loopback URL, a connection error or a non-2xx
@@ -175,6 +176,11 @@ Three mechanisms keep the matrix honest, and all three are executable, not prose
 - `tests/e2e-battery-flags.contract.test.ts` and `tests/release-command-contract.test.ts` pin the
   browser flags, the script routing, the build-before-contracts order and the suite split, so
   rows D and L-T cannot silently lose the suites they claim.
+- `tests/untracked-add-surface.contract.test.ts` pins row G's scope and row G2 in force together:
+  the credential scanner must read the untracked files `git add -A` would stage, and the repository
+  root must stay free of loose evidence. It fails if the scanner is narrowed back to `git ls-files`,
+  if `verify:hygiene` is dropped from `verify:release:local`, `ci.yml` or this matrix, or if a
+  retired QA credential path is cited as if it still existed.
 
 The full skip inventory — 36 sites, five classes, seven repairs — is
 `docs/TEST_SKIP_CLASSIFICATION.md`.

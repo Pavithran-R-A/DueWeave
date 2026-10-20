@@ -3,7 +3,11 @@
 // committed instrument: it could only be answered by scratch drivers, which is how "the stale edit was
 // refused fast on production" decays into a memory. This is that proof as one operator command.
 //
-//   node scripts/hosted-stale-edit-probe.mjs --account p3c-red-baseline/qa-identity.json
+//   node scripts/hosted-stale-edit-probe.mjs --account ~/.config/dueweave/qa-a-identity.json
+//
+// `--account` has no default and names no path inside this repository: the QA identity file this
+// command used to be run against under `p3c-red-baseline/` was retired on 2026-10-19, and the keeper
+// pattern is recorded in `docs/SECURITY_MODEL.md`.
 //
 // For each of the two edit routines, it reads a sacrificial row the account owns, writes it with the
 // lock token it just read (the authorized fresh edit), then tries the same write with the token the

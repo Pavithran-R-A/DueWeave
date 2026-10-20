@@ -6,8 +6,9 @@ import { spawnSync } from "node:child_process";
 // PHASE 8: this product holds a Founder payment address, an approval history and a
 // database password, and its browser bundle is public. A credential that reaches a
 // commit cannot be recalled, so the release gate looks for the shapes of privileged
-// values in everything the release actually ships: the tracked working tree and the
-// built bundle.
+// values in everything the release actually ships: the tracked working tree, the built
+// bundle, and — since Stage A, because that is what a `git add -A` turns into the first
+// two — the untracked files git is currently not ignoring.
 //
 // Two properties make this worth having as a gate rather than a habit:
 //   1. `hard` rules cannot be silenced by the allowlist below. A service-role JWT is a
@@ -87,7 +88,12 @@ const allowlist = [];
 // default mode's closing line: a CI artefact scan of one untracked file claimed it had opened "the
 // tracked tree or the built bundle" (Stage 9 limitation 4). A finding's wording is part of its
 // truthfulness for the same reason -- an artefact file is not tracked by anything.
-const fullTreeScope = "the tracked tree or the built bundle";
+//
+// Stage A PHASE CL-7 widened the default scope, so the sentence had to follow: `git ls-files`
+// answers what the index knows, and the untracked, non-ignored files are the ones a single
+// `git add -A` would put into it. That set is where the QA evidence at head `4d82978` sat, unseen
+// by this gate, because it was not tracked yet.
+const fullTreeScope = "the tracked tree, the untracked files a `git add -A` would stage, and the built bundle";
 
 function readTargetFiles(argv) {
   const dirFlag = argv.indexOf("--dir");
@@ -99,19 +105,30 @@ function readTargetFiles(argv) {
         const full = path.join(dir, entry.name);
         return entry.isDirectory() ? walk(full) : [path.relative(projectRoot, full)];
       });
-    return { files: walk(root), scope: `the directory ${target}`, tracked: false };
+    return { files: walk(root), scope: `the directory ${target}`, trackedPaths: null };
   }
   const tracked = spawnSync("git", ["ls-files", "-z"], { cwd: projectRoot, encoding: "utf8" });
   if (tracked.status !== 0) {
     console.error("Could not list tracked files with git ls-files.");
     process.exit(1);
   }
-  const files = tracked.stdout.split("\0").filter(Boolean);
+  const untracked = spawnSync("git", ["ls-files", "--others", "--exclude-standard", "-z"], {
+    cwd: projectRoot,
+    encoding: "utf8",
+  });
+  if (untracked.status !== 0) {
+    console.error("Could not list the untracked, non-ignored files with git ls-files --others --exclude-standard.");
+    process.exit(1);
+  }
+  const trackedFiles = tracked.stdout.split("\0").filter(Boolean);
+  // A file git does not ignore is a file `git add -A` takes, and a credential that reaches a commit
+  // cannot be recalled — so the staging surface is scanned, not only the surface already staged.
+  const files = [...trackedFiles, ...untracked.stdout.split("\0").filter(Boolean)];
   // The built bundle is what actually reaches a browser, and it is not tracked.
   if (existsSync(path.join(projectRoot, "dist"))) {
     files.push(...walkDir("dist").map((file) => path.relative(projectRoot, file)));
   }
-  return { files, scope: fullTreeScope, tracked: true };
+  return { files, scope: fullTreeScope, trackedPaths: new Set(trackedFiles) };
 }
 
 function walkDir(dir) {
@@ -165,7 +182,7 @@ function redact(matched) {
 }
 
 const argv = process.argv.slice(2);
-const { files, scope, tracked } = readTargetFiles(argv);
+const { files, scope, trackedPaths } = readTargetFiles(argv);
 const all = files.flatMap(scan);
 
 // A committed environment file is a finding whatever its contents, because the next
@@ -175,7 +192,15 @@ const environmentFiles = files
   .map((file) => file.replace(/\\/g, "/"))
   .filter((file) => /(^|\/)\.env(\..*)?$/.test(file) && !/\.env\.example$/.test(file));
 for (const file of environmentFiles) {
-  const where = tracked ? "is tracked by git and in the release tree" : `is inside the directory scanned (${scope})`;
+  // Three different trees, three different truths: `--dir` never asked git anything, a tracked
+  // file is in the release, and an untracked non-ignored file is in the *next* commit. The
+  // wording has to pick the one that applies or the finding misdescribes the exposure it names.
+  const where =
+    trackedPaths === null
+      ? `is inside the directory scanned (${scope})`
+      : trackedPaths.has(file)
+        ? "is tracked by git and in the release tree"
+        : "is untracked but not ignored, so `git add -A` would stage it into the release tree";
   all.push({ file, line: 0, rule: "committed-env-file", describe: `an environment file ${where}`, hard: true, evidence: `${file} ${where}` });
 }
 

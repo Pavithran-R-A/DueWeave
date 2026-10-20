@@ -144,7 +144,11 @@ describe("artefact scan without artefacts (D-S9-15)", () => {
 // would read as though nothing needed saying. So the tracked-tree claim has to stay where it is
 // true, and move where it is not.
 describe("artefact scan scope reporting (limitation 4)", () => {
-  const defaultModeClaim = "No privileged credential found in the tracked tree or the built bundle.";
+  // CL-7 Stage A widened the default scope, so the claim follows it: the scanner now also opens
+  // `git ls-files --others --exclude-standard`, which is exactly the set `git add -A` would stage.
+  // See `tests/untracked-add-surface.contract.test.ts` for the cases that pin the widened read.
+  const defaultModeClaim =
+    "No privileged credential found in the tracked tree, the untracked files a `git add -A` would stage, and the built bundle.";
 
   /**
    * The scratch copy, run the way CI runs it: from the project root, with a relative `--dir`.

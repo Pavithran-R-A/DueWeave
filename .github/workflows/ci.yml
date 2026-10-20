@@ -74,6 +74,15 @@ jobs:
       - name: TypeScript
         run: pnpm check
 
+      # Stage A CL-7: the credential scanner below reads the untracked files a `git add -A` would
+      # stage, and this step keeps the repository root empty of anything that has been neither
+      # committed nor named in `.gitignore`. A checkout here is clean by construction, so the
+      # value of running it in CI is that a workspace which is *not* clean — a reused self-hosted
+      # runner, whose leftover evidence directory would be scanned by the next job — fails here
+      # instead of silently widening what the next commit could take.
+      - name: Repository-root hygiene (the git add -A surface)
+        run: pnpm verify:hygiene
+
       - name: Secret and privileged-credential scan (source and bundle)
         run: pnpm verify:secrets
 

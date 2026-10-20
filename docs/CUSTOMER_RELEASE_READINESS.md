@@ -42,7 +42,7 @@ Any later SHA must earn its own CI and deployment verification.
    signs in and the old one is refused, plus the SPF/DKIM/DMARC properties, which are
    provider-console facts no probe from this repository can read. The request side is now an
    executable, repeatable step rather than a hand command:
-   `node scripts/hosted-auth-status.mjs --identity <qa-identity> --request-recovery` asks the hosted
+   `node scripts/hosted-auth-status.mjs --identity ~/.config/dueweave/qa-a-identity.json --request-recovery` asks the hosted
    sender for a reset mail at `https://dueweave.pages.dev/auth/update-password`, which is the
    destination `client/src/hooks/useSupabaseAuth.ts:83` asks GoTrue for and the only route that
    renders the password form. Measured 2026-10-15, the same address was accepted twice 63 seconds apart
@@ -67,7 +67,12 @@ Any later SHA must earn its own CI and deployment verification.
    form received was typed by the owner, not read from `qa-identity-b.json`: the probe now answers
    `OLDPW … HTTP 400` and `NEWPW … HTTP 400`. The live pair is therefore still owed, and the only exits
    are the owner typing this file's `recoveryNewPassword` into a fresh link or writing the password they
-   chose into the file. **The instrument that printed the wrong inference has been repaired:**
+   chose into the file. **Superseded 2026-10-19: neither exit remains open, because neither file does.**
+   QA-B was erased from production on 2026-10-16 by its own authenticated deletion, and the two QA
+   identity files this paragraph names were retired out of the repository on 2026-10-19; the surviving
+   keeper is off-repo and its pattern is recorded in `docs/SECURITY_MODEL.md`. QA-A's recovery pair is
+   now closed by a completed recovery on the deployed route (gate 5, step 7-8), so the two-account
+   isolation matrix has since been re-run against QA-C rather than this account. **The instrument that printed the wrong inference has been repaired:**
    `scripts/hosted-auth-status.mjs` used to render any refused grant as "so confirmation is still
    required", which the catalog then contradicted, and it rendered a refused recovery password as "so
    the delivered link has not been used", which is exactly what a link that installed a *different*
