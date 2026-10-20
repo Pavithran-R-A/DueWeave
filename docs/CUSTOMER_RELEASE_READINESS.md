@@ -139,6 +139,33 @@ Any later SHA must earn its own CI and deployment verification.
    the same file with an update-mode guard injected it returns `["forgot","update"]`, which is the shape the
    pin refuses. The file goes `15 → 18` cases and the unit suite `49 files / 722 tests`, `lint` exit 0,
    `tsc` exit 0, `verify:secrets` `Scanned 297 files for 11 credential shapes` clean.
+   **D-Rec-1 found and repaired 2026-10-20 (CL-7 item 10): the screen a lapsed recovery link lands on
+   explained the rule and not the situation.** Read on production on 2026-10-19 (`tmp/cl5-qa/LEDGER.md`):
+   `/auth/v1/verify` answers **303 with an empty fragment for a valid recovery link and for a spent or
+   expired one alike** — `hashLength=0 query=[]` in both cases — so unlike a confirmation link, which was
+   measured arriving with `error_code=otp_expired|validation_failed`, a recovery arrival carries no reason
+   in its address at all. That makes the "This recovery link is not active." panel the only place the
+   customer can be told anything, and its body named only a security rule ("For your security, a new
+   password can only be set from the private link DueWeave emails you…"), leaving an expired link
+   indistinguishable from a broken one and the next step unwritten. `client/src/pages/Auth.tsx:227` now
+   states both causes the application can honestly name — used once, or expired while unread — and the
+   remedy, "Ask for a fresh link below, then open it in this browser", which the button beneath it
+   performs when recovery is enabled. Two proofs, watched RED before they were GREEN: a source contract
+   (`tests/security-contract.test.ts`) asserts on the panel's own block rather than the whole file, so a
+   reason parked in a comment elsewhere cannot satisfy it, and it matches word stems (`been used`,
+   `expired|lapsed`) rather than a fixed sentence so the wording can improve without a test edit; and
+   `e2e/stage6-local-auth-ux.spec.ts` asserts the rendered paragraph in Chromium, which CI's
+   `Complete customer-browser regression` job executes at every head against the flags-on local stack —
+   the reason no shared local stack was started for this repair. Red proved by reverting only the copy:
+   `× … explains to a customer whose recovery link did not work both why and what to do next → expected
+   'outcome === "no-recovery-session" && …' to match /been used/i`, `1 failed | 27 passed`, then
+   `28 passed`, and the full unit battery `53 files / 790 tests`, `tsc` exit 0, `lint` exit 0,
+   `vite build` exit 0, `verify:hygiene` 0 untracked, `verify:secrets` 309 files clean.
+   **What this does not claim:** it cannot tell a customer which of the two causes applied to their own
+   link, because the arrival carries no reason; and with `VITE_AUTH_EMAIL_ENABLED` false in the served
+   bundle the fresh-link button is still replaced by "Password recovery emails are temporarily
+   unavailable.", so the explanation is reachable but the remedy it points to is only delivered once the
+   owner opens the flag — the same flag dependency gate 1 already records.
 2. **Auth URL configuration:** Re-read hosted Site URL, exact redirect allow-list, signup
    confirmation settings, SMTP identity and rate limits. Historical production measurement had
    Site URL `http://localhost:3000` and password minimum 6; set Site URL to

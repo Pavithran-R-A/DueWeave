@@ -103,6 +103,29 @@ describe("Stage 2 Supabase security contract", () => {
     expect(authPage).toMatch(/We never display technical database errors here\./);
   });
 
+  it("explains to a customer whose recovery link did not work both why and what to do next", () => {
+    // D-Rec-1, measured against production on 2026-10-19: a lapsed or already-used recovery link
+    // arrives at `/auth/update-password` with nothing in the URL at all — `/auth/v1/verify` answered
+    // 303 with an empty fragment for a good link and for a dead one alike — so no reason can be read
+    // from the address, and the screen that opens instead of the password form is the only place a
+    // reason can be given. It used to name a security rule and nothing else, which left a customer
+    // unable to tell an expired link from a broken one, and the next step unwritten.
+    const start = authPage.indexOf('outcome === "no-recovery-session"');
+    expect(start, "the auth screen no longer has the recovery panel this contract describes").toBeGreaterThanOrEqual(0);
+    // Asserted on the panel's own block, not the file: a reason that lives in a comment elsewhere
+    // would satisfy a whole-source match and tell the customer nothing.
+    const panel = authPage.slice(start, authPage.indexOf("</OutcomePanel>", start));
+    expect(panel.length, "the recovery panel block is empty").toBeGreaterThan(40);
+    // Both real causes, named — the two things the app can honestly say when the address carries
+    // no reason — plus the next step in the prose and the button that performs it. Matched on
+    // word stems rather than a fixed sentence so the wording can be improved without a test edit,
+    // while a panel that explains nothing (the shape this case was written against) still fails.
+    expect(panel).toMatch(/been used/i);
+    expect(panel).toMatch(/expired|lapsed/i);
+    expect(panel).toMatch(/Ask for a fresh link/i);
+    expect(panel).toMatch(/Request a new reset link/);
+  });
+
   it("tells the truth about sign-up, recovery and pending states on the auth screens", () => {
     // A sign-up that returned no session must never read like an open ledger.
     expect(authOutcome).toMatch(/status: "confirmation-required"/);

@@ -224,7 +224,7 @@ export default function Auth() {
             <p className="auth-outcome__status" role="status"><Loader2 className="spin" size={15} /> Checking…</p>
           </OutcomePanel>}
 
-          {outcome === "no-recovery-session" && <OutcomePanel eyebrow="Account recovery" title="This recovery link is not active." body="For your security, a new password can only be set from the private link DueWeave emails you, opened in this browser. This page has no recovery session, so nothing here could change your password.">
+          {outcome === "no-recovery-session" && <OutcomePanel eyebrow="Account recovery" title="This recovery link is not active." body="A recovery link can be used once, and only for a limited time. It may have been used already, or it may have expired while the message sat unread — either way this page holds no recovery session, so nothing here can set a new password. Ask for a fresh link below, then open it in this browser.">
             {authEmailEnabled ? <button type="button" className="button-primary auth-submit" onClick={() => changeMode("forgot")}>Request a new reset link<ArrowRight size={16} /></button> : <p role="status" className="auth-outcome__note">Password recovery emails are temporarily unavailable. No reset request can be sent right now.</p>}
             <p className="auth-actions auth-actions--single"><button type="button" className="text-button" onClick={goToSignIn}>Back to sign in</button></p>
           </OutcomePanel>}

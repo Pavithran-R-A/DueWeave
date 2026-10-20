@@ -335,6 +335,13 @@ test.describe("Stage 6 password recovery and sign-out", () => {
   test("will not offer a password form to a browser with no recovery session", async ({ page }) => {
     await page.goto("/auth/update-password");
     await expect(page.getByRole("heading", { name: "This recovery link is not active." })).toBeVisible();
+    // D-Rec-1. A lapsed or already-used link was measured arriving on production (2026-10-19) with
+    // nothing at all in its address — `/auth/v1/verify` answered 303 with an empty fragment for a
+    // good link and a dead one alike — so this panel is the only place a customer can be told what
+    // happened. It used to name a security rule and no reason, leaving an expired link
+    // indistinguishable from a broken one and the next step undiscoverable.
+    await expect(page.locator(".auth-heading p")).toHaveText(/can be used once, and only for a limited time/);
+    await expect(page.locator(".auth-heading p")).toHaveText(/Ask for a fresh link below/);
     await expect(page.locator('input[type="password"]')).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Save new password" })).toHaveCount(0);
     await expect(page.locator("body")).not.toContainText(/PGRST|SQLSTATE|postgrest|gotrue|constraint|policy/i);
