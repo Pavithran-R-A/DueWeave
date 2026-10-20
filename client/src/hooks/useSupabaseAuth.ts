@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { friendlyAuthError, interpretResendResponse, interpretSignInResponse, interpretSignUpResponse } from "@/lib/auth-outcome";
 import type { AuthFlowOutcome, AuthResult, ResendOutcome } from "@/lib/auth-outcome";
 import { supabase } from "@/lib/supabase";
+import { captchaOptions } from "@/lib/turnstile";
 import { confirmationRedirectUrl } from "@/lib/auth-redirect";
 
 export function useSupabaseAuth() {
@@ -46,18 +47,22 @@ export function useSupabaseAuth() {
     };
   }, []);
 
-  const signIn = useCallback(async (email: string, password: string): Promise<AuthFlowOutcome> => {
-    const response = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+  // CL-7 P3 item 12: GoTrue's CAPTCHA setting is one switch covering sign-in, sign-up, recovery
+  // and resend alike, so the token has to ride on all four. An absent token spreads to nothing,
+  // which is what a build without a site key sends.
+  const signIn = useCallback(async (email: string, password: string, captchaToken?: string | null): Promise<AuthFlowOutcome> => {
+    const response = await supabase.auth.signInWithPassword({ email: email.trim(), password, ...captchaOptions(captchaToken) });
     return interpretSignInResponse(response);
   }, []);
 
-  const signUp = useCallback(async (displayName: string, email: string, password: string): Promise<AuthFlowOutcome> => {
+  const signUp = useCallback(async (displayName: string, email: string, password: string, captchaToken?: string | null): Promise<AuthFlowOutcome> => {
     const response = await supabase.auth.signUp({
       email: email.trim(),
       password,
       options: {
         data: { display_name: displayName.trim() },
         emailRedirectTo: confirmationRedirectUrl(window.location.origin),
+        ...captchaOptions(captchaToken),
       },
     });
     return interpretSignUpResponse(response);
@@ -65,11 +70,11 @@ export function useSupabaseAuth() {
 
   // A resent link is the same promise as the first one, so it has to carry the same
   // destination; leaving it out would send the second message to the hosted Site URL.
-  const resendConfirmation = useCallback(async (email: string): Promise<ResendOutcome> => {
+  const resendConfirmation = useCallback(async (email: string, captchaToken?: string | null): Promise<ResendOutcome> => {
     return interpretResendResponse(await supabase.auth.resend({
       type: "signup",
       email: email.trim(),
-      options: { emailRedirectTo: confirmationRedirectUrl(window.location.origin) },
+      options: { emailRedirectTo: confirmationRedirectUrl(window.location.origin), ...captchaOptions(captchaToken) },
     }));
   }, []);
 
@@ -78,9 +83,10 @@ export function useSupabaseAuth() {
     return error ? { error: friendlyAuthError(error.message, error.status) } : {};
   }, []);
 
-  const resetPassword = useCallback(async (email: string): Promise<AuthResult> => {
+  const resetPassword = useCallback(async (email: string, captchaToken?: string | null): Promise<AuthResult> => {
     const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
       redirectTo: `${window.location.origin}/auth/update-password`,
+      ...captchaOptions(captchaToken),
     });
     return error ? { error: friendlyAuthError(error.message, error.status) } : {};
   }, []);

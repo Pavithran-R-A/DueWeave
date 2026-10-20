@@ -103,6 +103,18 @@ describe("every CI build states its release flags on purpose", () => {
     );
     expect(runner).toContain("playwright.paused-bundle.config.ts");
   });
+
+  // The CAPTCHA site key is not a release flag, but it decides the same thing this gate is trusted
+  // for: whether the bundle under test talks to a third party. Inherited from `.env.local` it would
+  // mount a real widget and the paused gate's "no departure from the origin" assertion would be
+  // measuring a bundle production never builds.
+  it("states no CAPTCHA site key in the paused-bundle gate's own build", () => {
+    const runner = readFileSync(path.join(root, "scripts", "run-paused-e2e.mjs"), "utf8");
+    expect(
+      /^\s+VITE_TURNSTILE_SITE_KEY: "",$/m.exec(runner),
+      "the paused-bundle gate leaves VITE_TURNSTILE_SITE_KEY unstated, so a developer's .env.local would decide it",
+    ).not.toBeNull();
+  });
 });
 
 describe("the settings a developer and a reviewer can read", () => {

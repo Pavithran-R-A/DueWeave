@@ -146,6 +146,8 @@ describe("a delivered reset link stays completable in the flags-off build", () =
   });
 
   it("wires the update submit to the provider call rather than to a flag test", () => {
-    expect(auth).toMatch(/mode === "forgot"\s*\?\s*await resetPassword\(email\)\s*:\s*await updatePassword\(password\)/);
+    expect(auth).toMatch(/mode === "forgot"\s*\?\s*await resetPassword\(email,\s*captchaToken\)\s*:\s*await updatePassword\(password\)/);
+    expect(authHook).toMatch(/resetPasswordForEmail\(email\.trim\(\), \{/);
+    expect(authHook).toMatch(/\.\.\.captchaOptions\(captchaToken\)/);
   });
 });

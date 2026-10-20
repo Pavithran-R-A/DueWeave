@@ -89,6 +89,19 @@ const links = externalLinks(readFileSync(path.join(root, "client", "index.html")
 const stylesheetHosts = [...new Set(links.filter((link) => link.rel === "stylesheet").map((link) => link.host))];
 const fontFileHosts = [...new Set(links.filter((link) => link.rel === "preconnect" && link.crossorigin).map((link) => link.host))];
 
+// CL-7 P3 item 12: the one third-party script the app can load is the CAPTCHA loader, and its
+// host belongs in `script-src` and `frame-src` because the widget renders inside a frame that
+// Cloudflare's own script injects. Read from the module that injects it rather than typed a
+// second time here — a policy that allowed a host the loader no longer uses would be an
+// allowance nothing needs, and one that refused the host it does use would break sign-in the
+// moment the hosted CAPTCHA setting is turned on.
+const captchaHost = readFileSync(path.join(root, "client", "src", "lib", "turnstile.ts"), "utf8").match(
+  /TURNSTILE_SCRIPT_SRC = "(https:\/\/[^"/]+)/,
+)?.[1];
+const turnstileMounts = tsFiles(path.join(root, "client", "src")).filter((file) =>
+  readFileSync(file, "utf8").includes("loadTurnstile("),
+);
+
 describe("host response headers (CL-7 item 14)", () => {
   it("applies one block to every path, so a deep link is not an unpoliced page", () => {
     expect([...parsed.keys()], "the file must carry the /* block only: Pages has no other origin to distinguish").toEqual(["/*"]);
@@ -102,13 +115,25 @@ describe("host response headers (CL-7 item 14)", () => {
     }
   });
 
-  it("runs scripts from the origin alone, which is what the built index.html needs", () => {
+  it("runs scripts from the origin plus the CAPTCHA host the loader names, and no other", () => {
     const html = readFileSync(path.join(root, "client", "index.html"), "utf8");
     expect(/<script[^>]*\ssrc=/.test(html), "the proof below only holds if the entry is an external script");
     expect(html, "an inline script would need a concession this policy refuses").not.toMatch(/<script[^>]*>[^<]/);
+    expect(captchaHost, "no module in the bundle injects a third-party script, so the allowance has no owner").toBeTruthy();
     const scriptSrc = directives().get("script-src");
-    expect(scriptSrc, "script-src must be explicit rather than inherited").toEqual(["'self'"]);
+    expect(scriptSrc, "script-src must be explicit rather than inherited").toEqual(["'self'", captchaHost]);
     expect(scriptSrc).not.toContain("'unsafe-eval'");
+  });
+
+  it("opens frame-src for the CAPTCHA widget alone, leaving the app unframeable", () => {
+    // The widget is not markup this repository writes: Cloudflare's script appends the frame.
+    // So the directive is justified by the loader that runs it — and only by that host.
+    expect(turnstileMounts.length, "nothing in the bundle loads the CAPTCHA script").toBeGreaterThan(0);
+    expect(directives().get("frame-src")).toEqual([captchaHost]);
+    // A `frame-src` without `'self'` is the point: the browser now refuses the app framing
+    // itself, which `default-src 'self'` alone would have allowed.
+    expect(directives().get("frame-src")).not.toContain("'self'");
+    expect(directives().get("frame-ancestors"), "allowing a child frame is not allowing DueWeave to be framed").toEqual(["'none'"]);
   });
 
   it("carries exactly the origins the app loads, derived from its own sources", () => {
@@ -175,20 +200,22 @@ describe("host response headers (CL-7 item 14)", () => {
     expect(hsts.toLowerCase(), "preload requires a submitted listing nobody made for this host").not.toContain("preload");
   });
 
-  it("leaves script-src 'self' nothing to refuse anywhere in the bundle", () => {
+  it("leaves script-src nothing to refuse anywhere in the bundle", () => {
     // The browser cases in `e2e/response-headers.spec.ts` can only reach the sign-in screen
     // and the three trust documents — a signed-in run needs the stack and a real account, so
     // the ledger, the export and the Founder screens are never loaded under the policy. That
     // gap is closed here rather than reasoned away: these are the constructs a `script-src
-    // 'self'` policy with no `unsafe-eval`, no `unsafe-inline` and no `worker-src` or
-    // `frame-src` concession refuses, read out of every source file in the bundle.
+    // 'self'` policy with no `unsafe-eval`, no `unsafe-inline` and no `worker-src` refuses,
+    // read out of every source file in the bundle. `frame-src` is opened for one host only —
+    // the CAPTCHA host proved above — so a frame this repository writes itself is still a
+    // refusal, which is why the iframe line below stays.
     const refused = [
       [/[^.\w]eval\s*\(/, "eval() requires script-src 'unsafe-eval'"],
       [/new\s+Function\s*\(/, "generated functions require script-src 'unsafe-eval'"],
       [/new\s+(Shared)?Worker\s*\(/, "a worker requires worker-src, which this policy does not open"],
       [/navigator\.serviceWorker/, "a service worker is fetched through script-src"],
       [/document\.write\s*\(/, "written markup is parsed as if it were inline"],
-      [/<iframe|createElement\("iframe"|createElement\('iframe'/, "an embedded frame requires frame-src"],
+      [/<iframe|createElement\("iframe"|createElement\('iframe'/, `an authored frame needs frame-src, which allows nothing but https://${captchaHost}`],
       [/<script/, "a script written at runtime is an inline script"],
     ] as const;
     for (const file of tsFiles(path.join(root, "client", "src"))) {

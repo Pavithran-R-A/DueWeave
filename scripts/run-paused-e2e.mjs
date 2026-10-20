@@ -59,6 +59,10 @@ if (!skipBuild) {
       // bundle until the hosted end-to-end journeys pass.
       VITE_PUBLIC_SIGNUP_ENABLED: "false",
       VITE_AUTH_EMAIL_ENABLED: "false",
+      // Stated empty rather than left out: an unstated key would be read from a developer's
+      // `.env.local`, and the gate would then drive a bundle that mounts a real CAPTCHA widget —
+      // a third-party departure the suite is written to fail on.
+      VITE_TURNSTILE_SITE_KEY: "",
     },
   });
   if (build.status !== 0) {

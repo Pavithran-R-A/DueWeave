@@ -14,7 +14,7 @@ const PAUSED_SIGNUP_COPY = /New registrations are temporarily paused/i;
 const PAUSED_EMAIL_COPY = /Confirmation emails are temporarily unavailable/i;
 const PAUSED_RECOVERY_COPY = /Password recovery emails are temporarily unavailable/i;
 
-type Intercepted = { signupRequests: string[]; offsiteRequests: string[] };
+type Intercepted = { signupRequests: string[]; tokenRequests: string[]; offsiteRequests: string[] };
 
 /**
  * A stand-in GoTrue that never leaves the browser. Sign-in answers with the one provider
@@ -27,6 +27,7 @@ type Intercepted = { signupRequests: string[]; offsiteRequests: string[] };
  */
 async function interceptAuthServer(page: Page): Promise<Intercepted> {
   const signupRequests: string[] = [];
+  const tokenRequests: string[] = [];
   const offsiteRequests: string[] = [];
   const fontHosts = new Set(["fonts.googleapis.com", "fonts.gstatic.com"]);
   await page.route("**/*", (route) => {
@@ -43,6 +44,8 @@ async function interceptAuthServer(page: Page): Promise<Intercepted> {
         });
       }
       if (url.pathname.endsWith("/token")) {
+        const body = request.postData() ?? "";
+        tokenRequests.push(`${url.pathname} ${body.includes("captcha") ? "with" : "without"} a CAPTCHA field`);
         return route.fulfill({
           status: 400,
           contentType: "application/json",
@@ -55,7 +58,7 @@ async function interceptAuthServer(page: Page): Promise<Intercepted> {
     offsiteRequests.push(url.href);
     return route.abort();
   });
-  return { signupRequests, offsiteRequests };
+  return { signupRequests, tokenRequests, offsiteRequests };
 }
 
 /** The screen a person lands on when an address exists but has not been confirmed. */
@@ -109,4 +112,20 @@ test("no button on the paused confirmation screen opens the registration form", 
 
   expect(signupRequests, "a paused bundle asked the auth server to create a user").toEqual([]);
   expect(offsiteRequests, "the paused-bundle gate reached outside its own loopback server").toEqual([]);
+});
+
+test("a build with no CAPTCHA site key verifies with the provider alone", async ({ page }) => {
+  const { tokenRequests, offsiteRequests } = await interceptAuthServer(page);
+
+  await driveToConfirmationPanel(page);
+  // The positive landmark: the address really was offered to the stand-in GoTrue, so the checks
+  // below measure a build that declined to attach a token, not a screen that never asked.
+  expect(tokenRequests, "sign-in never reached the auth server, so nothing was proved about the CAPTCHA field").toEqual([
+    "/auth/v1/token without a CAPTCHA field",
+  ]);
+
+  // A site key-less build mounts no widget, so it must not load the third-party CAPTCHA API at
+  // all — a stray `<script>` for it would be both a departure from the origin and a visible frame.
+  await expect(page.locator("script[src*='challenges.cloudflare.com'], iframe[src*='challenges.cloudflare.com']")).toHaveCount(0);
+  expect(offsiteRequests, "the CAPTCHA loader reached outside the loopback server in a build with no site key").toEqual([]);
 });

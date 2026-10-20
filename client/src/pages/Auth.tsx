@@ -1,12 +1,14 @@
-import { FormEvent, useEffect, useMemo, useState, type ReactNode } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { ArrowLeft, ArrowRight, CheckCircle2, Loader2, LockKeyhole, Mail, RefreshCw, ShieldCheck } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { BRAND } from "@/config/brand";
+import { TurnstileGate } from "@/components/TurnstileGate";
 import { useSupabaseAuth } from "@/hooks/useSupabaseAuth";
 import { RESEND_REQUESTED_COPY } from "@/lib/auth-outcome";
 import { linkArrivalNotice, withoutLinkArrival } from "@/lib/auth-redirect";
 import { PASSWORD_MIN_LENGTH, noFieldErrors, validateAuthFields, type AuthFieldErrors, type AuthMode } from "@/lib/auth-validation";
 import { releaseFlagEnabled } from "@/lib/release-flags";
+import { TURNSTILE_SITE_KEY } from "@/lib/turnstile";
 
 function copyFor(mode: AuthMode) {
   if (mode === "signUp") return { eyebrow: "A calmer ledger starts here", title: "Keep the promise, not the pressure.", body: "Create your private workspace for the money you are waiting on.", submit: "Create my workspace" };
@@ -52,6 +54,15 @@ export default function Auth() {
   // time, was left on a silent sign-in form with the auth server's technical failure text
   // sitting in their address bar.
   const [linkReport, setLinkReport] = useState("");
+  // CL-7 P3 item 12: the verification token belongs to the attempt that collected it, so it is
+  // cleared after every one. `captchaAttempt` is what re-arms the widget, because a token GoTrue
+  // has already spent cannot be replayed — the visitor would have to reload the page for a new one.
+  const [captchaToken, setCaptchaToken] = useState("");
+  const [captchaAttempt, setCaptchaAttempt] = useState(0);
+  // A build with no site key collects nothing and requires nothing. The condition stays on the
+  // key alone, not on the release flags: GoTrue's CAPTCHA setting protects sign-in too, and a
+  // screen that withheld the widget from a flow the server guards would fail that sign-in closed.
+  const captchaRequired = TURNSTILE_SITE_KEY !== "";
   // A flow is offered only when a build states its flag as exactly "true"; an unstated flag
   // is refused by `vite build` rather than compiled in as enabled. See `@/lib/release-flags`.
   const publicSignUpEnabled = releaseFlagEnabled(import.meta.env.VITE_PUBLIC_SIGNUP_ENABLED);
@@ -115,17 +126,35 @@ export default function Auth() {
   // The only thing this can honestly report is that the sender accepted the request. Whether
   // the link reached an inbox is not something a browser can know, and saying otherwise is
   // how a visitor ends up refreshing a screen forever.
+  // The verification handlers are stable so the widget is not torn down and re-rendered on
+  // every keystroke; it reads them through a ref.
+  const receiveCaptchaToken = useCallback((token: string) => setCaptchaToken(token), []);
+  const refuseCaptcha = useCallback((message: string) => {
+    setCaptchaToken("");
+    setCaptchaAttempt((current) => current + 1);
+    setError(message);
+  }, []);
+
+  // A resent link is asked for from a screen that has no password form, so it gets its own
+  // widget and its own token — but the same refusal: GoTrue guards resend too, and a request
+  // without the token is refused there rather than here.
   async function sendConfirmationAgain() {
+    if (captchaRequired && !captchaToken) {
+      setError("Complete the verification before asking for the email again.");
+      return;
+    }
     setResending(true);
     setError("");
     setResendNews("");
     try {
-      const outcome = await resendConfirmation(unconfirmedEmail);
+      const outcome = await resendConfirmation(unconfirmedEmail, captchaToken);
       if (outcome.status === "requested") setResendNews(RESEND_REQUESTED_COPY);
       else setError(outcome.error);
     } catch {
       setError("DueWeave could not reach the sign-in service. Check your connection and try again.");
     } finally {
+      setCaptchaToken("");
+      setCaptchaAttempt((current) => current + 1);
       setResending(false);
     }
   }
@@ -137,6 +166,13 @@ export default function Auth() {
     const nextErrors = validateAuthFields(mode, { name, email, password });
     setFieldErrors(nextErrors);
     if (nextErrors.name || nextErrors.email || nextErrors.password) return;
+
+    // Checked before the network rather than after: GoTrue would refuse this call anyway, and a
+    // visitor who never saw the widget gets a technical refusal they cannot act on.
+    if (mode !== "update" && captchaRequired && !captchaToken) {
+      setError("Complete the verification before continuing.");
+      return;
+    }
 
     if (mode === "forgot" && !authEmailEnabled) {
       setError("Password recovery email is temporarily unavailable. No reset link has been sent.");
@@ -153,7 +189,7 @@ export default function Auth() {
     setSubmitting(true);
     try {
       if (mode === "signUp") {
-        const signUpOutcome = await signUp(name, email, password);
+        const signUpOutcome = await signUp(name, email, password, captchaToken);
         if (signUpOutcome.status === "error") setError(signUpOutcome.error);
         // A successful sign-in redirects through the authenticated session gate.
         if (signUpOutcome.status === "confirmation-required") setUnconfirmedEmail(email.trim());
@@ -161,7 +197,7 @@ export default function Auth() {
       }
 
       if (mode === "signIn") {
-        const signInOutcome = await signIn(email, password);
+        const signInOutcome = await signIn(email, password, captchaToken);
         if (signInOutcome.status === "error") setError(signInOutcome.error);
         // An address that exists but has not been confirmed is the same waiting as a fresh
         // sign-up, so it gets the same screen — and the same way to ask for the link again.
@@ -170,7 +206,7 @@ export default function Auth() {
       }
 
       const result = mode === "forgot"
-        ? await resetPassword(email)
+        ? await resetPassword(email, captchaToken)
         : await updatePassword(password);
       if (result.error) {
         setError(result.error);
@@ -186,9 +222,18 @@ export default function Auth() {
       // submit button stays permanently disabled and a retry requires reloading the whole page.
       setError("DueWeave could not reach the sign-in service. Check your connection and try again.");
     } finally {
+      // Whatever the server answered, this token is spent: GoTrue will not accept it twice.
+      setCaptchaToken("");
+      setCaptchaAttempt((current) => current + 1);
       setSubmitting(false);
     }
   }
+
+  // One widget, mounted wherever the screen asks the server for something: the form and the
+  // waiting-for-confirmation panel are exclusive branches, so at most one of them is mounted.
+  const captchaGate = captchaRequired ? (
+    <TurnstileGate attempt={captchaAttempt} onToken={receiveCaptchaToken} onFailure={refuseCaptcha} />
+  ) : null;
 
   return (
     <main className="auth-shell">
@@ -214,6 +259,7 @@ export default function Auth() {
           {outcome === "confirm-email" && <OutcomePanel eyebrow="Almost there" title="Confirm your email to open your ledger." body="The account exists, but DueWeave has not opened your private ledger for it yet. Open the confirmation link we emailed you, then come back here to sign in.">
             <p className="auth-outcome__address"><Mail size={15} /><span>{unconfirmedEmail}</span></p>
             <p className="auth-outcome__note">If the email does not arrive within a few minutes, check your spam folder.</p>
+            {captchaGate}
             {authEmailEnabled ? <button type="button" className="button-secondary auth-resend" onClick={() => { void sendConfirmationAgain(); }} disabled={resending}>{resending ? <><Loader2 className="spin" size={16} />Please wait</> : <><RefreshCw size={16} />Send the confirmation email again</>}</button> : <p role="status" className="auth-outcome__note">Confirmation emails are temporarily unavailable.</p>}
             {resendNews && <p className="auth-message auth-message--notice" role="status"><CheckCircle2 size={16} />{resendNews}</p>}
             <button type="button" className="button-primary auth-submit" onClick={goToSignIn}>I have confirmed — sign in<ArrowRight size={16} /></button>
@@ -254,6 +300,7 @@ export default function Auth() {
                 <span className="auth-input"><LockKeyhole size={15} /><input id="auth-password" className="form-input" type="password" autoComplete={mode === "signIn" ? "current-password" : "new-password"} minLength={PASSWORD_MIN_LENGTH} required value={password} aria-invalid={Boolean(fieldErrors.password)} aria-describedby={fieldErrors.password ? "auth-password-error" : undefined} onChange={(event) => { setPassword(event.target.value); clearFieldError("password"); }} placeholder={`At least ${PASSWORD_MIN_LENGTH} characters`} /></span>
                 {fieldErrors.password && <p className="field__error" id="auth-password-error" role="alert">{fieldErrors.password}</p>}
               </div>}
+              {captchaGate}
               {error && <p className="auth-message auth-message--error" role="alert">{error}</p>}
               {notice && <p className="auth-message auth-message--notice"><CheckCircle2 size={16} />{notice}</p>}
               <button className="button-primary auth-submit" disabled={submitting} type="submit">{submitting ? <><Loader2 className="spin" size={17} />Please wait</> : <>{content.submit}<ArrowRight size={16} /></>}</button>
